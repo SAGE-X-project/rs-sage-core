@@ -1,0 +1,64 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.so
+*.dylib
+*.dll
+*.a
+
+# Documentation
+doc/
+docs/book/
+
+# Test coverage
+tarpaulin-report.html
+cobertura.xml
+
+# Benchmarks
+criterion/
+perf.data
+perf.data.old
+flamegraph.svg
+
+# Debug
+*.dSYM/
+callgrind.out.*
+vgcore.*
+
+# Environment
+.env
+.env.local
+
+# Claude AI
+.claude/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Backup files
+*.backup
+*.bak
+
+# Generated documentation
+target/doc/
+target/criterion/
+
+# FFI generated files
+include/sage_crypto.h
