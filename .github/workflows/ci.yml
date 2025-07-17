@@ -64,8 +64,7 @@ jobs:
     - name: Run doctests
       run: cargo test --doc --features wasm
 
-    - name: Build FFI (Linux only)
-      if: runner.os == 'Linux'
+    - name: Build FFI
       run: cargo build --release --features ffi
 
     - name: Test FFI examples (Linux only)
