@@ -13,12 +13,6 @@ categories = ["cryptography", "authentication"]
 name = "sage_crypto_core"
 crate-type = ["cdylib", "rlib"]
 
-[target.'cfg(target_os = "macos")'.dependencies]
-
-[target.'cfg(target_os = "macos")'.build-dependencies]
-
-[target.'cfg(not(target_os = "macos"))'.dependencies]
-
 [dependencies]
 # Cryptographic primitives
 ed25519-dalek = "1.0.1"
