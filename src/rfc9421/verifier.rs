@@ -41,7 +41,7 @@ impl HttpVerifier {
             .decode(&sig_value)
             .map_err(|_| Error::InvalidInput("Invalid base64 signature".to_string()))?;
 
-        let signature = match self.public_key {
+        let signature = match &self.public_key {
             PublicKey::Ed25519(_) => {
                 if signature_bytes.len() != 64 {
                     return Err(Error::InvalidInput(
@@ -101,7 +101,7 @@ impl HttpVerifier {
             .decode(&sig_value)
             .map_err(|_| Error::InvalidInput("Invalid base64 signature".to_string()))?;
 
-        let signature = match self.public_key {
+        let signature = match &self.public_key {
             PublicKey::Ed25519(_) => {
                 if signature_bytes.len() != 64 {
                     return Err(Error::InvalidInput(

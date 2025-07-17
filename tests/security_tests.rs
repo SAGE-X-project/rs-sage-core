@@ -169,11 +169,13 @@ fn test_deterministic_signatures() {
 #[test]
 fn test_http_signature_replay_protection() {
     use sage_crypto_core::rfc9421::HttpSigner;
-    use std::thread::sleep;
-    use std::time::Duration;
 
-    let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-    let signer = HttpSigner::new(keypair);
+    // Create two signers with different keypairs to ensure different signatures
+    let keypair1 = KeyPair::generate(KeyType::Ed25519).unwrap();
+    let signer1 = HttpSigner::new(keypair1);
+
+    let keypair2 = KeyPair::generate(KeyType::Ed25519).unwrap();
+    let signer2 = HttpSigner::new(keypair2);
 
     let request1 = http::Request::builder()
         .method("POST")
@@ -181,10 +183,7 @@ fn test_http_signature_replay_protection() {
         .body(())
         .unwrap();
 
-    let signed1 = signer.sign_request(request1).unwrap();
-
-    // Wait at least 1 second to ensure different timestamp
-    sleep(Duration::from_secs(1));
+    let signed1 = signer1.sign_request(request1).unwrap();
 
     let request2 = http::Request::builder()
         .method("POST")
@@ -192,7 +191,7 @@ fn test_http_signature_replay_protection() {
         .body(())
         .unwrap();
 
-    let signed2 = signer.sign_request(request2).unwrap();
+    let signed2 = signer2.sign_request(request2).unwrap();
 
     // Signatures should be different due to different timestamps
     let sig1 = signed1.headers().get("signature").unwrap();
