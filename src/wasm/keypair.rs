@@ -78,7 +78,7 @@ impl WasmKeyPair {
     #[wasm_bindgen(js_name = fromPrivateKeyHex)]
     pub fn from_private_key_hex(key_type: WasmKeyType, hex_key: &str) -> WasmResult<WasmKeyPair> {
         let bytes = hex::decode(hex_key).map_err(|e| WasmError {
-            message: format!("Invalid hex: {}", e),
+            message: format!("Invalid hex: {e}"),
         })?;
         Self::from_private_key(key_type, &bytes)
     }
@@ -153,7 +153,7 @@ impl WasmPublicKey {
     #[wasm_bindgen(js_name = fromHex)]
     pub fn from_hex(key_type: WasmKeyType, hex_key: &str) -> WasmResult<WasmPublicKey> {
         let bytes = hex::decode(hex_key).map_err(|e| WasmError {
-            message: format!("Invalid hex: {}", e),
+            message: format!("Invalid hex: {e}"),
         })?;
         Self::from_bytes(key_type, &bytes)
     }

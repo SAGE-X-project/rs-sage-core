@@ -23,7 +23,7 @@ impl Signature {
 
     /// Encode signature to base64
     pub fn to_base64(&self) -> String {
-        general_purpose::STANDARD.encode(&self.to_bytes())
+        general_purpose::STANDARD.encode(self.to_bytes())
     }
 
     /// Get signature type name

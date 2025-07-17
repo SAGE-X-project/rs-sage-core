@@ -26,7 +26,7 @@ impl WasmSignature {
     #[wasm_bindgen(js_name = fromHex)]
     pub fn from_hex(key_type: WasmKeyType, hex_sig: &str) -> WasmResult<WasmSignature> {
         let bytes = hex::decode(hex_sig).map_err(|e| WasmError {
-            message: format!("Invalid hex: {}", e),
+            message: format!("Invalid hex: {e}"),
         })?;
         Self::from_bytes(key_type, &bytes)
     }
@@ -49,13 +49,13 @@ impl WasmSignature {
                 k256::ecdsa::Signature::from_der(bytes)
                     .or_else(|_| {
                         if bytes.len() == 64 {
-                            k256::ecdsa::Signature::try_from(&bytes[..])
+                            k256::ecdsa::Signature::try_from(bytes)
                         } else {
                             Err(k256::ecdsa::Error::new())
                         }
                     })
                     .map_err(|e| WasmError {
-                        message: format!("Invalid Secp256k1 signature: {}", e),
+                        message: format!("Invalid Secp256k1 signature: {e}"),
                     })?,
             ),
         };

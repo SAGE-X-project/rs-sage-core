@@ -54,13 +54,13 @@ impl HttpSigner {
         // Add signature headers
         request.headers_mut().insert(
             "signature-input",
-            HeaderValue::from_str(&format!("sig1={}", sig_input))
+            HeaderValue::from_str(&format!("sig1={sig_input}"))
                 .map_err(|_| Error::InvalidInput("Invalid signature input".to_string()))?,
         );
 
         request.headers_mut().insert(
             "signature",
-            HeaderValue::from_str(&format!("sig1=:{}", sig_value))
+            HeaderValue::from_str(&format!("sig1=:{sig_value}"))
                 .map_err(|_| Error::InvalidInput("Invalid signature value".to_string()))?,
         );
 
@@ -92,13 +92,13 @@ impl HttpSigner {
         // Add signature headers
         response.headers_mut().insert(
             "signature-input",
-            HeaderValue::from_str(&format!("sig1={}", sig_input))
+            HeaderValue::from_str(&format!("sig1={sig_input}"))
                 .map_err(|_| Error::InvalidInput("Invalid signature input".to_string()))?,
         );
 
         response.headers_mut().insert(
             "signature",
-            HeaderValue::from_str(&format!("sig1=:{}", sig_value))
+            HeaderValue::from_str(&format!("sig1=:{sig_value}"))
                 .map_err(|_| Error::InvalidInput("Invalid signature value".to_string()))?,
         );
 

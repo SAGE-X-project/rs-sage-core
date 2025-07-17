@@ -22,7 +22,7 @@ pub fn generate_random_hex(length: usize) -> String {
 #[wasm_bindgen(js_name = hexToBytes)]
 pub fn hex_to_bytes(hex: &str) -> WasmResult<Vec<u8>> {
     hex::decode(hex).map_err(|e| WasmError {
-        message: format!("Invalid hex: {}", e),
+        message: format!("Invalid hex: {e}"),
     })
 }
 

@@ -38,8 +38,8 @@ impl HttpVerifier {
                     k256::ecdsa::Signature::from_der(signature_bytes).or_else(|_| {
                         // Try fixed-size format if DER fails
                         if signature_bytes.len() == 64 {
-                            k256::ecdsa::Signature::try_from(&signature_bytes[..]).map_err(|e| {
-                                Error::InvalidInput(format!("Invalid ECDSA signature: {}", e))
+                            k256::ecdsa::Signature::try_from(signature_bytes).map_err(|e| {
+                                Error::InvalidInput(format!("Invalid ECDSA signature: {e}"))
                             })
                         } else {
                             Err(Error::InvalidInput(
@@ -171,8 +171,7 @@ fn parse_signature_input(input: &str) -> Result<(Vec<SignatureComponent>, Signat
                 "@query" => Ok(SignatureComponent::Query),
                 "@status" => Ok(SignatureComponent::Status),
                 _ if component_id.starts_with('@') => Err(Error::Unsupported(format!(
-                    "Unsupported derived component: {}",
-                    component_id
+                    "Unsupported derived component: {component_id}"
                 ))),
                 _ => Ok(SignatureComponent::Header(component_id.to_string())),
             }
@@ -185,14 +184,14 @@ fn parse_signature_input(input: &str) -> Result<(Vec<SignatureComponent>, Signat
     let mut params = SignatureParams::default();
     for param in params_str.split(';') {
         let param = param.trim();
-        if param.starts_with("keyid=") {
-            params.key_id = Some(param[7..].trim_matches('"').to_string());
-        } else if param.starts_with("alg=") {
-            params.alg = Some(param[5..].trim_matches('"').to_string());
-        } else if param.starts_with("created=") {
-            params.created = param[8..].parse().ok();
-        } else if param.starts_with("expires=") {
-            params.expires = param[8..].parse().ok();
+        if let Some(stripped) = param.strip_prefix("keyid=") {
+            params.key_id = Some(stripped.trim_matches('"').to_string());
+        } else if let Some(stripped) = param.strip_prefix("alg=") {
+            params.alg = Some(stripped.trim_matches('"').to_string());
+        } else if let Some(stripped) = param.strip_prefix("created=") {
+            params.created = stripped.parse().ok();
+        } else if let Some(stripped) = param.strip_prefix("expires=") {
+            params.expires = stripped.parse().ok();
         }
     }
 

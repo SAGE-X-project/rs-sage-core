@@ -63,7 +63,7 @@ impl WasmHttpUtils {
     #[wasm_bindgen(js_name = createSignatureInput)]
     pub fn create_signature_input(components: Vec<String>, key_id: &str) -> String {
         let comp_str = components.join(" ");
-        format!("({}); keyid=\"{}\"; alg=\"ed25519\"", comp_str, key_id)
+        format!("({comp_str}); keyid=\"{key_id}\"; alg=\"ed25519\"")
     }
 
     /// Parse signature headers from a response
@@ -82,7 +82,7 @@ impl WasmHttpUtils {
         if let Ok(signature) = Reflect::get(&headers_obj, &"signature".into()) {
             if !signature.is_undefined() {
                 Reflect::set(&result, &"signature".into(), &signature).map_err(|e| WasmError {
-                    message: format!("Failed to set signature: {:?}", e),
+                    message: format!("Failed to set signature: {e:?}"),
                 })?;
             }
         }
@@ -92,7 +92,7 @@ impl WasmHttpUtils {
             if !signature_input.is_undefined() {
                 Reflect::set(&result, &"signature-input".into(), &signature_input).map_err(
                     |e| WasmError {
-                        message: format!("Failed to set signature-input: {:?}", e),
+                        message: format!("Failed to set signature-input: {e:?}"),
                     },
                 )?;
             }

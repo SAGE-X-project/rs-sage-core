@@ -47,7 +47,7 @@ impl SignatureComponent {
             SignatureComponent::Header(name) => name.to_lowercase(),
             SignatureComponent::DerivedComponent { name, params } => {
                 if params.is_empty() {
-                    format!("@{}", name)
+                    format!("@{name}")
                 } else {
                     format!("@{};{}", name, params.join(";"))
                 }
@@ -78,27 +78,27 @@ impl fmt::Display for SignatureParams {
         let mut params = Vec::new();
 
         if let Some(ref key_id) = self.key_id {
-            params.push(format!("keyid=\"{}\"", key_id));
+            params.push(format!("keyid=\"{key_id}\""));
         }
 
         if let Some(ref alg) = self.alg {
-            params.push(format!("alg=\"{}\"", alg));
+            params.push(format!("alg=\"{alg}\""));
         }
 
         if let Some(created) = self.created {
-            params.push(format!("created={}", created));
+            params.push(format!("created={created}"));
         }
 
         if let Some(expires) = self.expires {
-            params.push(format!("expires={}", expires));
+            params.push(format!("expires={expires}"));
         }
 
         if let Some(ref nonce) = self.nonce {
-            params.push(format!("nonce=\"{}\"", nonce));
+            params.push(format!("nonce=\"{nonce}\""));
         }
 
         if let Some(ref tag) = self.tag {
-            params.push(format!("tag=\"{}\"", tag));
+            params.push(format!("tag=\"{tag}\""));
         }
 
         write!(f, "{}", params.join(";"))

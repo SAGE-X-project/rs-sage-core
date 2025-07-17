@@ -63,7 +63,7 @@ impl PublicKey {
         use sha2::{Digest, Sha256};
 
         let mut hasher = Sha256::new();
-        hasher.update(&self.to_bytes());
+        hasher.update(self.to_bytes());
         let result = hasher.finalize();
         hex::encode(&result[..8])
     }
@@ -215,7 +215,7 @@ impl KeyPair {
         use sha2::{Digest, Sha256};
 
         let mut hasher = Sha256::new();
-        hasher.update(&public_key.to_bytes());
+        hasher.update(public_key.to_bytes());
         let result = hasher.finalize();
         hex::encode(&result[..8])
     }
@@ -280,7 +280,7 @@ impl KeyPair {
                 use k256::ecdsa::SigningKey;
                 use k256::elliptic_curve::sec1::ToEncodedPoint;
                 let signing_key = SigningKey::from_bytes(key_bytes).map_err(|e| {
-                    Error::CryptoError(format!("Invalid Secp256k1 private key: {}", e))
+                    Error::CryptoError(format!("Invalid Secp256k1 private key: {e}"))
                 })?;
                 let public_key = signing_key.verifying_key();
                 let point = public_key.to_encoded_point(true); // compressed
