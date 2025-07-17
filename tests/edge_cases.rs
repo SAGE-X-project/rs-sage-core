@@ -103,8 +103,7 @@ fn test_malformed_pem_handling() {
     for pem in malformed_pems {
         let result = pem::parse(pem.as_bytes());
         // At least some of these should fail
-        if result.is_ok() {
-            let pem_data = result.unwrap();
+        if let Ok(pem_data) = result {
             // Even if parsing succeeds, the key creation should fail
             assert!(ed25519::verifying_key_from_bytes(&pem_data.contents).is_err());
         }
