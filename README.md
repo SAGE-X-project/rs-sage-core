@@ -5,32 +5,42 @@ Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in R
 ## Features
 
 - **Cryptographic Primitives**
-  - Ed25519 signatures
-  - Secp256k1 (ECDSA) signatures
-  - Key generation and management
+  - Ed25519 EdDSA signatures (RFC 8032)
+  - Secp256k1 ECDSA signatures
+  - Secure key generation using OS random
+  - Key derivation and management
 
-- **RFC 9421 Support**
-  - HTTP Message Signatures
-  - Request/Response signing and verification
-  - Signature components handling
+- **RFC 9421 HTTP Message Signatures**
+  - HTTP request and response signing
+  - Signature component canonicalization
+  - Derived components support
+  - Multiple signature algorithms
 
-- **Key Formats**
+- **Key Formats & Serialization**
   - JWK (JSON Web Key) import/export
-  - PEM format support
-  - Raw key handling
+  - PEM/DER format support
+  - Raw byte key handling
+  - Secure key storage utilities
 
-- **Multi-platform**
-  - Native Rust library
-  - C FFI bindings for Go integration
-  - WASM support for browser usage
+- **Multi-platform Support**
+  - Native Rust library (no_std compatible core)
+  - C FFI bindings for Go/C integration
+  - WebAssembly for browser/Node.js
+  - Cross-platform build support (Linux, macOS, Windows)
+
+- **Security Features**
+  - Constant-time operations
+  - Secure memory clearing
+  - Input validation and sanitization
+  - Comprehensive test coverage including edge cases
 
 ## Usage
 
 ### Rust
 
 ```rust
-use sage_crypto_core::{KeyPair, KeyType, Signer};
-use sage_crypto_core::rfc9421::HttpSigner;
+use sage_crypto_core::{KeyPair, KeyType};
+use sage_crypto_core::crypto::Signer;
 
 // Generate a new key pair
 let keypair = KeyPair::generate(KeyType::Ed25519)?;
@@ -40,47 +50,83 @@ let message = b"Hello, SAGE!";
 let signature = keypair.sign(message)?;
 
 // Verify signature
-let verified = keypair.verify(message, &signature)?;
+let is_valid = keypair.verify(message, &signature)?;
+
+// Export keys in different formats
+use sage_crypto_core::formats::{KeyExporter, KeyFormat};
+let jwk = keypair.public_key().export(KeyFormat::Jwk)?;
+let pem = keypair.public_key().to_pem()?;
 
 // HTTP Message Signatures (RFC 9421)
-let signer = HttpSigner::new(keypair);
-let request = http::Request::builder()
-    .method("POST")
-    .uri("/api/v1/agent")
-    .body(b"request body")?;
-    
-let signed_request = signer.sign_request(request)?;
+use sage_crypto_core::rfc9421::{HttpSigner, SignatureParams};
+let params = SignatureParams {
+    key_id: Some("my-key".to_string()),
+    alg: Some("ed25519".to_string()),
+    created: Some(chrono::Utc::now().timestamp()),
+    ..Default::default()
+};
+// Note: HttpSigner implementation depends on specific use case
 ```
 
-### FFI (for Go integration)
+### FFI (C API for Go integration)
 
 ```c
-// Generate Ed25519 key pair
-sage_keypair_t* keypair = sage_generate_keypair(SAGE_KEY_ED25519);
+#include "sage_crypto.h"
 
-// Sign message
-sage_signature_t* sig = sage_sign(keypair, message, message_len);
-
-// Free resources
-sage_free_signature(sig);
-sage_free_keypair(keypair);
+int main() {
+    // Initialize library
+    SageResult result = sage_init();
+    
+    // Generate Ed25519 key pair
+    SageKeyPair* keypair = NULL;
+    result = sage_keypair_generate(SAGE_KEY_TYPE_ED25519, &keypair);
+    
+    // Sign message
+    const char* message = "Hello, SAGE!";
+    SageSignature* signature = NULL;
+    result = sage_sign(keypair, (uint8_t*)message, strlen(message), &signature);
+    
+    // Verify signature
+    result = sage_verify_with_keypair(keypair, (uint8_t*)message, strlen(message), signature);
+    
+    // Clean up
+    sage_signature_free(signature);
+    sage_keypair_free(keypair);
+    
+    return 0;
+}
 ```
 
-### WASM
+### WASM (Browser/Node.js)
 
 ```javascript
-import init, { KeyPair, KeyType } from './sage_crypto_core_wasm.js';
+import init, { WasmKeyPair, WasmKeyType, version } from './pkg/sage_crypto_core.js';
 
 await init();
 
+console.log('SAGE Crypto Core version:', version());
+
 // Generate key pair
-const keypair = KeyPair.generate(KeyType.Ed25519);
+const keypair = new WasmKeyPair(WasmKeyType.Ed25519);
 
 // Sign message
-const signature = keypair.sign(new TextEncoder().encode("Hello, SAGE!"));
+const message = new TextEncoder().encode("Hello, SAGE!");
+const signature = keypair.sign(message);
 
-// Export as JWK
-const jwk = keypair.toJWK();
+// Verify signature
+const isValid = keypair.verify(message, signature);
+
+// Export keys
+const publicKeyHex = keypair.exportPublicKeyHex();
+const publicKeyBytes = keypair.exportPublicKey();
+const privateKeyBytes = keypair.exportPrivateKey();
+
+// Utility functions
+import { sha256, generateRandomHex, bytesToHex, hexToBytes } from './pkg/sage_crypto_core.js';
+const hash = sha256(message);
+const randomId = generateRandomHex(16);
+const hexString = bytesToHex(message);
+const bytes = hexToBytes("48656c6c6f");
 ```
 
 ## Building
@@ -94,7 +140,7 @@ cargo build --release
 ### C FFI Library
 
 ```bash
-cargo build --release
+cargo build --release --features ffi
 # Creates target/release/libsage_crypto_core.so (Linux)
 #         target/release/libsage_crypto_core.dylib (macOS)
 #         target/release/sage_crypto_core.dll (Windows)
@@ -107,20 +153,33 @@ cargo build --release
 cargo install wasm-pack
 
 # Build WASM module
-wasm-pack build --target web --out-dir pkg
+wasm-pack build --target web --out-dir pkg --features wasm
 ```
 
 ## Testing
 
 ```bash
 # Run all tests
-cargo test
+cargo test --features wasm
+
+# Run tests for specific features
+cargo test --features ffi  # FFI tests
+cargo test --no-default-features  # Core tests only
+
+# Run doctests
+cargo test --doc
 
 # Run benchmarks
 cargo bench
 
-# Run property-based tests
-cargo test --features proptest
+# Run security tests
+cargo test --test security_tests
+
+# Run edge case tests
+cargo test --test edge_cases
+
+# Run RFC 9421 compliance tests
+cargo test --test rfc9421_compliance
 ```
 
 ## Integration with Go
@@ -131,7 +190,58 @@ The Go SAGE project can use this library through CGO:
 // #cgo LDFLAGS: -L${SRCDIR}/../rs-sage-core/target/release -lsage_crypto_core
 // #include "../rs-sage-core/include/sage_crypto.h"
 import "C"
+import (
+    "log"
+    "unsafe"
+)
+
+func main() {
+    // Initialize SAGE library
+    result := C.sage_init()
+    if result != C.SAGE_SUCCESS {
+        log.Fatal("Failed to initialize SAGE library")
+    }
+    
+    // Generate key pair
+    var keypair *C.SageKeyPair
+    result = C.sage_keypair_generate(C.SAGE_KEY_TYPE_ED25519, &keypair)
+    if result != C.SAGE_SUCCESS {
+        log.Fatal("Failed to generate keypair")
+    }
+    defer C.sage_keypair_free(keypair)
+    
+    // Sign message
+    message := "Hello, SAGE!"
+    messageBytes := []byte(message)
+    var signature *C.SageSignature
+    result = C.sage_sign(keypair, 
+        (*C.uint8_t)(unsafe.Pointer(&messageBytes[0])), 
+        C.size_t(len(messageBytes)), 
+        &signature)
+    if result != C.SAGE_SUCCESS {
+        log.Fatal("Failed to sign message")
+    }
+    defer C.sage_signature_free(signature)
+    
+    // Verify signature
+    result = C.sage_verify_with_keypair(keypair,
+        (*C.uint8_t)(unsafe.Pointer(&messageBytes[0])),
+        C.size_t(len(messageBytes)),
+        signature)
+    if result == C.SAGE_SUCCESS {
+        log.Println("Signature verified successfully")
+    }
+}
 ```
+
+## Examples
+
+The repository includes several examples:
+
+- **FFI Example**: `examples/ffi/basic.c` - Complete C integration example
+- **WASM Example**: `examples/wasm/index.html` - Browser-based cryptographic operations
+- **Advanced WASM**: `examples/wasm/advanced.html` - HTTP signing and advanced features
+- **Python Integration**: `examples/python/basic_usage.py` - Python FFI bindings
 
 ## Performance
 
