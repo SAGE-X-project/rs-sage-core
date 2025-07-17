@@ -114,7 +114,7 @@ jobs:
     - name: Test WASM build
       run: |
         ls -la pkg/
-        test -f pkg/sage_crypto_core.wasm
+        test -f pkg/sage_crypto_core_bg.wasm
         test -f pkg/sage_crypto_core.js
 
   cross-compile:

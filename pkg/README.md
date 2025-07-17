@@ -1,171 +1,155 @@
-# SAGE Crypto Core - WebAssembly Bindings
+# rs-sage-core
 
-[![npm version](https://badge.fury.io/js/@sage-x%2Fcrypto-core.svg)](https://badge.fury.io/js/@sage-x%2Fcrypto-core)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/sage-x-project/rs-sage-core)
-
-Core cryptographic library for SAGE with RFC 9421 support - WebAssembly bindings for JavaScript/TypeScript.
+Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in Rust.
 
 ## Features
 
-- **Ed25519 and Secp256k1** digital signatures
-- **RFC 9421 HTTP Message Signatures** support
-- **Multiple key formats**: Raw, PEM, DER, JWK
-- **Browser and Node.js** compatibility
-- **TypeScript** definitions included
-- **Zero-copy operations** where possible
+- **Cryptographic Primitives**
+  - Ed25519 signatures
+  - Secp256k1 (ECDSA) signatures
+  - Key generation and management
 
-## Installation
+- **RFC 9421 Support**
+  - HTTP Message Signatures
+  - Request/Response signing and verification
+  - Signature components handling
 
-```bash
-npm install @sage-x/crypto-core
-```
+- **Key Formats**
+  - JWK (JSON Web Key) import/export
+  - PEM format support
+  - Raw key handling
 
-## Quick Start
+- **Multi-platform**
+  - Native Rust library
+  - C FFI bindings for Go integration
+  - WASM support for browser usage
 
-```javascript
-import init, { WasmKeyPair, WasmKeyType } from '@sage-x/crypto-core';
+## Usage
 
-// Initialize the WASM module
-await init();
+### Rust
 
-// Generate a key pair
-const keyPair = WasmKeyPair.generateEd25519();
+```rust
+use sage_crypto_core::{KeyPair, KeyType, Signer};
+use sage_crypto_core::rfc9421::HttpSigner;
+
+// Generate a new key pair
+let keypair = KeyPair::generate(KeyType::Ed25519)?;
 
 // Sign a message
-const message = "Hello, SAGE!";
-const signature = keyPair.signString(message);
+let message = b"Hello, SAGE!";
+let signature = keypair.sign(message)?;
 
-// Verify the signature
-const isValid = keyPair.verifyString(message, signature);
-console.log('Signature valid:', isValid);
+// Verify signature
+let verified = keypair.verify(message, &signature)?;
+
+// HTTP Message Signatures (RFC 9421)
+let signer = HttpSigner::new(keypair);
+let request = http::Request::builder()
+    .method("POST")
+    .uri("/api/v1/agent")
+    .body(b"request body")?;
+    
+let signed_request = signer.sign_request(request)?;
 ```
 
-## HTTP Signatures (RFC 9421)
+### FFI (for Go integration)
+
+```c
+// Generate Ed25519 key pair
+sage_keypair_t* keypair = sage_generate_keypair(SAGE_KEY_ED25519);
+
+// Sign message
+sage_signature_t* sig = sage_sign(keypair, message, message_len);
+
+// Free resources
+sage_free_signature(sig);
+sage_free_keypair(keypair);
+```
+
+### WASM
 
 ```javascript
-import { WasmHttpSigner } from '@sage-x/crypto-core';
+import init, { KeyPair, KeyType } from './sage_crypto_core_wasm.js';
 
-const signer = new WasmHttpSigner(keyPair);
+await init();
 
-// Sign an HTTP request
-const request = {
-  method: 'POST',
-  url: 'https://api.example.com/data',
-  headers: {
-    'Content-Type': 'application/json'
-  }
-};
+// Generate key pair
+const keypair = KeyPair.generate(KeyType.Ed25519);
 
-const signedHeaders = signer.signSimpleRequest(request);
-console.log('Signature:', signedHeaders.signature);
-console.log('Signature-Input:', signedHeaders['signature-input']);
+// Sign message
+const signature = keypair.sign(new TextEncoder().encode("Hello, SAGE!"));
+
+// Export as JWK
+const jwk = keypair.toJWK();
 ```
 
-## Key Format Support
+## Building
 
-```javascript
-import { WasmKeyFormat } from '@sage-x/crypto-core';
+### Native Library
 
-// Export to PEM
-const pemKey = WasmKeyFormat.exportKeyPairToPem(keyPair);
-
-// Import from PEM
-const importedKey = WasmKeyFormat.importKeyPairFromPem(
-  WasmKeyType.Ed25519,
-  pemKey
-);
-
-// Export to JWK
-const jwkKey = WasmKeyFormat.exportKeyPairToJwk(keyPair);
+```bash
+cargo build --release
 ```
 
-## Browser Usage
+### C FFI Library
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <script type="module">
-        import init, { WasmKeyPair } from './node_modules/@sage-x/crypto-core/sage_crypto_core.js';
-        
-        async function main() {
-            await init();
-            
-            const keyPair = WasmKeyPair.generateEd25519();
-            const signature = keyPair.signString("Hello from browser!");
-            
-            console.log('Generated signature:', signature.toHex());
-        }
-        
-        main();
-    </script>
-</head>
-<body>
-    <h1>SAGE Crypto Demo</h1>
-</body>
-</html>
+```bash
+cargo build --release
+# Creates target/release/libsage_crypto_core.so (Linux)
+#         target/release/libsage_crypto_core.dylib (macOS)
+#         target/release/sage_crypto_core.dll (Windows)
 ```
 
-## API Reference
+### WASM
 
-### WasmKeyPair
+```bash
+# Install wasm-pack if not already installed
+cargo install wasm-pack
 
-- `generateEd25519()` - Generate Ed25519 key pair
-- `generateSecp256k1()` - Generate Secp256k1 key pair
-- `fromPrivateKeyHex(keyType, hexKey)` - Import from hex
-- `signString(message)` - Sign a string message
-- `verifyString(message, signature)` - Verify string signature
-- `exportPrivateKeyHex()` - Export private key as hex
-- `exportPublicKeyHex()` - Export public key as hex
+# Build WASM module
+wasm-pack build --target web --out-dir pkg
+```
 
-### WasmHttpSigner
+## Testing
 
-- `new WasmHttpSigner(keyPair)` - Create HTTP signer
-- `signSimpleRequest(request)` - Sign HTTP request object
+```bash
+# Run all tests
+cargo test
 
-### WasmKeyFormat
+# Run benchmarks
+cargo bench
 
-- `exportKeyPairToPem(keyPair)` - Export to PEM format
-- `importKeyPairFromPem(keyType, pemData)` - Import from PEM
-- `exportKeyPairToJwk(keyPair)` - Export to JWK format
-- `importKeyPairFromJwk(keyType, jwkData)` - Import from JWK
+# Run property-based tests
+cargo test --features proptest
+```
 
-## Security Considerations
+## Integration with Go
 
-- Private keys are handled securely in WebAssembly memory
-- All cryptographic operations use well-vetted Rust libraries
-- Constant-time operations prevent timing attacks
-- Input validation prevents malformed data issues
+The Go SAGE project can use this library through CGO:
+
+```go
+// #cgo LDFLAGS: -L${SRCDIR}/../rs-sage-core/target/release -lsage_crypto_core
+// #include "../rs-sage-core/include/sage_crypto.h"
+import "C"
+```
 
 ## Performance
 
-The WebAssembly bindings provide excellent performance:
-- Ed25519 signing: ~10,000 ops/sec
-- Ed25519 verification: ~5,000 ops/sec
-- Secp256k1 signing: ~8,000 ops/sec
-- Secp256k1 verification: ~3,000 ops/sec
+This Rust implementation provides significant performance improvements over the Go implementation:
 
-*Performance numbers are approximate and may vary by platform*
-
-## Examples
-
-See the [examples directory](https://github.com/sage-x-project/rs-sage-core/tree/main/examples/wasm) for complete examples:
-
-- Basic usage
-- HTTP signatures
-- Key format conversion
-- Performance testing
-
-## Support
-
-- [GitHub Issues](https://github.com/sage-x-project/rs-sage-core/issues)
-- [Documentation](https://github.com/sage-x-project/rs-sage-core)
-- [Security Policy](https://github.com/sage-x-project/rs-sage-core/security/policy)
+- Ed25519 signing: ~3x faster
+- Secp256k1 signing: ~2.5x faster
+- RFC 9421 canonicalization: ~4x faster
 
 ## License
 
 Licensed under either of:
+
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
 - MIT license ([LICENSE-MIT](LICENSE-MIT))
 
 at your option.
+
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.

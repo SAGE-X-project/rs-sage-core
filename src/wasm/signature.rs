@@ -44,11 +44,7 @@ impl WasmSignature {
                 }
                 let mut sig_bytes = [0u8; 64];
                 sig_bytes.copy_from_slice(bytes);
-                Signature::Ed25519(ed25519_dalek::Signature::from_bytes(&sig_bytes).map_err(
-                    |e| WasmError {
-                        message: format!("Invalid Ed25519 signature: {}", e),
-                    },
-                )?)
+                Signature::Ed25519(ed25519_dalek::Signature::from_bytes(&sig_bytes))
             }
             WasmKeyType::Secp256k1 => Signature::Secp256k1(
                 k256::ecdsa::Signature::from_der(bytes)

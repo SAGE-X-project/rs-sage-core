@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Cryptographic primitives
-ed25519-dalek = "1.0.1"
+ed25519-dalek = "2.1"
 k256 = { version = "0.11", features = ["ecdsa"] }
 signature = "1.6"
 rand = "0.8"

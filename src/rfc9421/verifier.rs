@@ -30,9 +30,7 @@ impl HttpVerifier {
                 let mut sig_array = [0u8; 64];
                 sig_array.copy_from_slice(signature_bytes);
                 Ok(Signature::Ed25519(
-                    ed25519_dalek::Signature::from_bytes(&sig_array).map_err(|e| {
-                        Error::InvalidInput(format!("Invalid Ed25519 signature: {}", e))
-                    })?,
+                    ed25519_dalek::Signature::from_bytes(&sig_array),
                 ))
             }
             PublicKey::Secp256k1(_) => {
