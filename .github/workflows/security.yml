@@ -54,7 +54,11 @@ jobs:
       run: cargo install cargo-deny
 
     - name: Check dependencies
-      run: cargo deny check advisories sources || echo "Dependency check completed with warnings"
+      run: |
+        echo "Running cargo deny with specific checks..."
+        cargo deny check advisories --log-level debug || echo "Advisory check completed with warnings"
+        cargo deny check sources --log-level debug || echo "Sources check completed with warnings"
+        echo "Dependency checks completed"
 
   license-check:
     name: License Check
