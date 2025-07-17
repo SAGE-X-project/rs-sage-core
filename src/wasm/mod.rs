@@ -35,7 +35,9 @@ pub fn version() -> String {
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]
 pub enum WasmKeyType {
+    /// Ed25519 key type for EdDSA signatures
     Ed25519 = 0,
+    /// Secp256k1 key type for ECDSA signatures
     Secp256k1 = 1,
 }
 
@@ -65,6 +67,7 @@ pub struct WasmError {
 
 #[wasm_bindgen]
 impl WasmError {
+    /// Get the error message
     #[wasm_bindgen(getter)]
     pub fn message(&self) -> String {
         self.message.clone()

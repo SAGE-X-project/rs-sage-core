@@ -68,7 +68,7 @@ fn test_invalid_signature_formats() {
     let mut fixed_sig = vec![0u8; 64];
     fixed_sig[31] = 1; // Make r = 1
     fixed_sig[63] = 1; // Make s = 1
-    let secp_sig_result = secp256k1::signature_from_bytes(&fixed_sig);
+    let _secp_sig_result = secp256k1::signature_from_bytes(&fixed_sig);
     // This might still fail as 1,1 might not be valid scalars
     // So we just test that the function doesn't panic
     let _ = secp256k1::signature_from_bytes(&fixed_sig);
@@ -113,7 +113,7 @@ fn test_malformed_pem_handling() {
 
 #[test]
 fn test_signature_malleability() {
-    use sage_crypto_core::crypto::{Signature, Signer};
+    use sage_crypto_core::crypto::Signer;
     use sage_crypto_core::{KeyPair, KeyType};
 
     let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();

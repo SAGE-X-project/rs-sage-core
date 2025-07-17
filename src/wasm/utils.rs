@@ -1,7 +1,6 @@
 //! WASM utility functions
 
 use super::*;
-use wasm_bindgen::prelude::*;
 
 /// Generate random bytes
 #[wasm_bindgen(js_name = generateRandomBytes)]

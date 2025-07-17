@@ -24,7 +24,12 @@ pub enum SignatureComponent {
     /// Header field
     Header(String),
     /// Derived component with parameters
-    DerivedComponent { name: String, params: Vec<String> },
+    DerivedComponent { 
+        /// The name of the derived component
+        name: String, 
+        /// Parameters associated with the derived component
+        params: Vec<String> 
+    },
 }
 
 impl SignatureComponent {

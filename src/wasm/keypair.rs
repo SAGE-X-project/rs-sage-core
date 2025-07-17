@@ -1,7 +1,6 @@
 //! WASM bindings for key pair operations
 
 use super::*;
-use wasm_bindgen::prelude::*;
 
 /// Key pair for WASM
 #[wasm_bindgen]

@@ -2,7 +2,6 @@
 
 use super::*;
 use js_sys::{Object, Reflect};
-use wasm_bindgen::prelude::*;
 
 /// HTTP signer for WASM
 #[wasm_bindgen]

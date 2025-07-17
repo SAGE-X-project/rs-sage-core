@@ -1,16 +1,19 @@
 //! WASM bindings for key format operations
 
 use super::*;
-use crate::formats::{KeyExporter, KeyFormat, KeyImporter};
-use wasm_bindgen::prelude::*;
+use crate::formats::KeyFormat;
 
 /// Key format enum for WASM
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]
 pub enum WasmKeyFormat {
+    /// Raw binary format
     Raw = 0,
+    /// PEM format (Base64 encoded with headers)
     Pem = 1,
+    /// DER format (binary ASN.1)
     Der = 2,
+    /// JWK format (JSON Web Key)
     Jwk = 3,
 }
 

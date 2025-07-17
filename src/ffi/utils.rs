@@ -1,19 +1,7 @@
 //! FFI utility functions
 
 use super::*;
-use std::cell::RefCell;
 
-// Thread-local storage for error messages
-thread_local! {
-    static LAST_ERROR: RefCell<Option<String>> = RefCell::new(None);
-}
-
-/// Set the last error message
-pub(crate) fn set_last_error(error: String) {
-    LAST_ERROR.with(|e| {
-        *e.borrow_mut() = Some(error);
-    });
-}
 
 /// Free a C string allocated by this library
 ///

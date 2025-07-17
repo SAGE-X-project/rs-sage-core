@@ -230,10 +230,6 @@ impl KeyPair {
         }
     }
 
-    /// Extract private key (consumes self)
-    pub(crate) fn into_private_key(self) -> PrivateKey {
-        self.private_key
-    }
 
     /// Get private key bytes
     pub fn private_key_bytes(&self) -> Vec<u8> {

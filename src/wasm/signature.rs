@@ -1,7 +1,6 @@
 //! WASM bindings for signature operations
 
 use super::*;
-use wasm_bindgen::prelude::*;
 
 /// Signature for WASM
 #[wasm_bindgen]
