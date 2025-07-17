@@ -18,6 +18,40 @@ impl HttpVerifier {
         Self { public_key }
     }
 
+    /// Parse signature bytes into a Signature enum based on the public key type
+    fn parse_signature(&self, signature_bytes: &[u8]) -> Result<Signature> {
+        match &self.public_key {
+            PublicKey::Ed25519(_) => {
+                if signature_bytes.len() != 64 {
+                    return Err(Error::InvalidInput(
+                        "Ed25519 signature must be 64 bytes".to_string(),
+                    ));
+                }
+                let mut sig_array = [0u8; 64];
+                sig_array.copy_from_slice(signature_bytes);
+                Signature::Ed25519(ed25519_dalek::Signature::from_bytes(&sig_array).map_err(
+                    |e| Error::InvalidInput(format!("Invalid Ed25519 signature: {}", e)),
+                )?)
+            }
+            PublicKey::Secp256k1(_) => {
+                Signature::Secp256k1(k256::ecdsa::Signature::from_der(signature_bytes).or_else(
+                    |_| {
+                        // Try fixed-size format if DER fails
+                        if signature_bytes.len() == 64 {
+                            k256::ecdsa::Signature::try_from(&signature_bytes[..]).map_err(|e| {
+                                Error::InvalidInput(format!("Invalid ECDSA signature: {}", e))
+                            })
+                        } else {
+                            Err(Error::InvalidInput(
+                                "Invalid Secp256k1 signature format".to_string(),
+                            ))
+                        }
+                    },
+                )?)
+            }
+        }
+    }
+
     /// Verify an HTTP request signature
     pub fn verify_request<B>(&self, request: &Request<B>) -> Result<()> {
         // Extract signature and signature-input headers
@@ -41,36 +75,7 @@ impl HttpVerifier {
             .decode(&sig_value)
             .map_err(|_| Error::InvalidInput("Invalid base64 signature".to_string()))?;
 
-        let signature = match &self.public_key {
-            PublicKey::Ed25519(_) => {
-                if signature_bytes.len() != 64 {
-                    return Err(Error::InvalidInput(
-                        "Ed25519 signature must be 64 bytes".to_string(),
-                    ));
-                }
-                let mut sig_array = [0u8; 64];
-                sig_array.copy_from_slice(&signature_bytes);
-                Signature::Ed25519(ed25519_dalek::Signature::from_bytes(&sig_array).map_err(
-                    |e| Error::InvalidInput(format!("Invalid Ed25519 signature: {}", e)),
-                )?)
-            }
-            PublicKey::Secp256k1(_) => {
-                Signature::Secp256k1(k256::ecdsa::Signature::from_der(&signature_bytes).or_else(
-                    |_| {
-                        // Try fixed-size format if DER fails
-                        if signature_bytes.len() == 64 {
-                            k256::ecdsa::Signature::try_from(&signature_bytes[..]).map_err(|e| {
-                                Error::InvalidInput(format!("Invalid ECDSA signature: {}", e))
-                            })
-                        } else {
-                            Err(Error::InvalidInput(
-                                "Invalid Secp256k1 signature format".to_string(),
-                            ))
-                        }
-                    },
-                )?)
-            }
-        };
+        let signature = self.parse_signature(&signature_bytes)?;
 
         self.public_key
             .verify(signature_base.as_bytes(), &signature)?;
@@ -101,36 +106,7 @@ impl HttpVerifier {
             .decode(&sig_value)
             .map_err(|_| Error::InvalidInput("Invalid base64 signature".to_string()))?;
 
-        let signature = match &self.public_key {
-            PublicKey::Ed25519(_) => {
-                if signature_bytes.len() != 64 {
-                    return Err(Error::InvalidInput(
-                        "Ed25519 signature must be 64 bytes".to_string(),
-                    ));
-                }
-                let mut sig_array = [0u8; 64];
-                sig_array.copy_from_slice(&signature_bytes);
-                Signature::Ed25519(ed25519_dalek::Signature::from_bytes(&sig_array).map_err(
-                    |e| Error::InvalidInput(format!("Invalid Ed25519 signature: {}", e)),
-                )?)
-            }
-            PublicKey::Secp256k1(_) => {
-                Signature::Secp256k1(k256::ecdsa::Signature::from_der(&signature_bytes).or_else(
-                    |_| {
-                        // Try fixed-size format if DER fails
-                        if signature_bytes.len() == 64 {
-                            k256::ecdsa::Signature::try_from(&signature_bytes[..]).map_err(|e| {
-                                Error::InvalidInput(format!("Invalid ECDSA signature: {}", e))
-                            })
-                        } else {
-                            Err(Error::InvalidInput(
-                                "Invalid Secp256k1 signature format".to_string(),
-                            ))
-                        }
-                    },
-                )?)
-            }
-        };
+        let signature = self.parse_signature(&signature_bytes)?;
 
         self.public_key
             .verify(signature_base.as_bytes(), &signature)?;
