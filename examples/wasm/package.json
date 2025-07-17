@@ -1,0 +1,12 @@
+{
+  "name": "sage-crypto-wasm-example",
+  "version": "1.0.0",
+  "description": "Example of using SAGE Crypto Core in the browser",
+  "scripts": {
+    "build": "cd ../.. && make wasm",
+    "serve": "python3 -m http.server 8080",
+    "start": "npm run build && npm run serve"
+  },
+  "keywords": ["crypto", "wasm", "sage"],
+  "license": "MIT"
+}

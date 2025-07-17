@@ -56,6 +56,11 @@ proptest = "1.0"
 name = "crypto_benchmarks"
 harness = false
 
+[features]
+default = []
+ffi = ["libc"]
+wasm = ["wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys"]
+
 [profile.release]
 opt-level = 3
 lto = true
