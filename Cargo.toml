@@ -37,15 +37,13 @@ http = "0.2"
 chrono = "0.4"
 
 # FFI support
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-libc = "0.2"
+libc = { version = "0.2", optional = true }
 
 # WASM support
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-web-sys = "0.3"
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }

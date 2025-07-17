@@ -1,0 +1,28 @@
+Source: libsage-crypto-core
+Section: libs
+Priority: optional
+Maintainer: SAGE Project <contact@sage-project.io>
+Build-Depends: debhelper (>= 12), cargo, rustc, pkg-config, libssl-dev
+Standards-Version: 4.5.0
+Homepage: https://github.com/sage-x-project/rs-sage-core
+Vcs-Git: https://github.com/sage-x-project/rs-sage-core.git
+Vcs-Browser: https://github.com/sage-x-project/rs-sage-core
+
+Package: libsage-crypto-core-dev
+Architecture: any
+Depends: ${misc:Depends}, libsage-crypto-core0 (= ${binary:Version})
+Description: Development files for SAGE Crypto Core
+ SAGE Crypto Core is a cryptographic library that provides Ed25519 and
+ Secp256k1 digital signatures with RFC 9421 HTTP Message Signatures support.
+ .
+ This package contains the development files needed to compile applications
+ that use SAGE Crypto Core.
+
+Package: libsage-crypto-core0
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: SAGE Crypto Core library
+ SAGE Crypto Core is a cryptographic library that provides Ed25519 and
+ Secp256k1 digital signatures with RFC 9421 HTTP Message Signatures support.
+ .
+ This package contains the shared library.

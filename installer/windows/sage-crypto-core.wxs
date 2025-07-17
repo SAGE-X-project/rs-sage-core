@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="SAGE Crypto Core" Language="1033" Version="0.1.0" Manufacturer="SAGE Project" UpgradeCode="12345678-1234-1234-1234-123456789012">
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+    
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    
+    <MediaTemplate EmbedCab="yes" />
+    
+    <Feature Id="ProductFeature" Title="SAGE Crypto Core" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="DeveloperComponents" />
+    </Feature>
+    
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <UIRef Id="WixUI_InstallDir" />
+    
+    <WixVariable Id="WixUILicenseRtf" Value="LICENSE.rtf" />
+    <WixVariable Id="WixUIBannerBmp" Value="banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="dialog.bmp" />
+  </Product>
+  
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="SAGE Crypto Core">
+          <Directory Id="BinFolder" Name="bin" />
+          <Directory Id="LibFolder" Name="lib" />
+          <Directory Id="IncludeFolder" Name="include" />
+          <Directory Id="DocFolder" Name="doc" />
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="SAGE Crypto Core" />
+      </Directory>
+    </Directory>
+  </Fragment>
+  
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainLibrary" Guid="12345678-1234-1234-1234-123456789013">
+        <File Id="MainDLL" Source="$(var.BuildDir)\sage_crypto_core.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="ImportLibrary" Guid="12345678-1234-1234-1234-123456789014">
+        <File Id="ImportLib" Source="$(var.BuildDir)\sage_crypto_core.lib" />
+      </Component>
+    </ComponentGroup>
+    
+    <ComponentGroup Id="DeveloperComponents" Directory="INSTALLFOLDER">
+      <Component Id="HeaderFiles" Guid="12345678-1234-1234-1234-123456789015">
+        <File Id="MainHeader" Source="$(var.SourceDir)\include\sage_crypto.h" />
+      </Component>
+      <Component Id="Documentation" Guid="12345678-1234-1234-1234-123456789016">
+        <File Id="ReadmeFile" Source="$(var.SourceDir)\README.md" />
+        <File Id="LicenseMIT" Source="$(var.SourceDir)\LICENSE-MIT" />
+        <File Id="LicenseApache" Source="$(var.SourceDir)\LICENSE-APACHE" />
+      </Component>
+      <Component Id="ProgramMenuShortcut" Guid="12345678-1234-1234-1234-123456789017">
+        <Shortcut Id="ApplicationStartMenuShortcut" Name="SAGE Crypto Core Documentation" Description="SAGE Crypto Core Documentation" Target="[INSTALLFOLDER]doc\README.md" WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\SAGE Project\SAGE Crypto Core" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>
