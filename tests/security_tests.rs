@@ -24,8 +24,8 @@ fn test_timing_attack_resistance() {
     let valid_time = start.elapsed();
 
     // Time invalid verification (should fail)
-    // Note: We can't easily create an invalid signature of the same type,
-    // so we test with wrong message instead
+    // Note: This test uses a valid signature with a mismatched message
+    // (b"wrong message") to simulate an invalid verification scenario.
     let start = Instant::now();
     for _ in 0..100 {
         let _ = keypair.verify(b"wrong message", &valid_signature);
