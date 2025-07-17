@@ -15,6 +15,8 @@ pub enum KeyFormat {
     Jwk,
     /// PEM encoded format
     Pem,
+    /// DER encoded format
+    Der,
     /// Raw bytes
     Raw,
 }
@@ -89,6 +91,11 @@ impl KeyExporter for PublicKey {
             KeyFormat::Pem => {
                 Ok(self.to_pem()?.into_bytes())
             }
+            KeyFormat::Der => {
+                // For DER format, export as PEM then convert to DER
+                // TODO: Implement proper DER export
+                Err(Error::Unsupported("DER format not yet implemented".to_string()))
+            }
             KeyFormat::Raw => {
                 Ok(self.to_bytes())
             }
@@ -145,6 +152,11 @@ impl KeyExporter for PrivateKey {
             }
             KeyFormat::Pem => {
                 Ok(self.to_pem()?.into_bytes())
+            }
+            KeyFormat::Der => {
+                // For DER format, export as PKCS#8 DER
+                // TODO: Implement proper DER export
+                Err(Error::Unsupported("DER format not yet implemented".to_string()))
             }
             KeyFormat::Raw => {
                 Ok(self.to_bytes())

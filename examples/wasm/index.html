@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAGE Crypto WASM Example</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .output {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .success {
+            color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <h1>SAGE Crypto WASM Example</h1>
+    
+    <div class="section">
+        <h2>Library Info</h2>
+        <div id="version" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Key Generation</h2>
+        <button onclick="generateEd25519()">Generate Ed25519</button>
+        <button onclick="generateSecp256k1()">Generate Secp256k1</button>
+        <div id="keyInfo" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Signing & Verification</h2>
+        <input type="text" id="message" placeholder="Enter message to sign" style="width: 100%; padding: 5px;">
+        <br><br>
+        <button onclick="signMessage()">Sign Message</button>
+        <button onclick="verifySignature()">Verify Signature</button>
+        <div id="signatureInfo" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Import/Export</h2>
+        <button onclick="exportKeys()">Export Keys</button>
+        <button onclick="importKeys()">Import Keys</button>
+        <div id="importExportInfo" class="output"></div>
+    </div>
+
+    <script type="module">
+        import init, * as sage from './sage_crypto_core.js';
+
+        let currentKeyPair = null;
+        let currentSignature = null;
+
+        async function initWasm() {
+            await init();
+            document.getElementById('version').innerHTML = `Version: ${sage.version()}`;
+            window.sage = sage;
+        }
+
+        window.generateEd25519 = () => {
+            try {
+                currentKeyPair = sage.WasmKeyPair.generateEd25519();
+                displayKeyInfo();
+            } catch (e) {
+                showError('keyInfo', e);
+            }
+        };
+
+        window.generateSecp256k1 = () => {
+            try {
+                currentKeyPair = sage.WasmKeyPair.generateSecp256k1();
+                displayKeyInfo();
+            } catch (e) {
+                showError('keyInfo', e);
+            }
+        };
+
+        function displayKeyInfo() {
+            if (!currentKeyPair) return;
+            
+            const keyType = currentKeyPair.keyType === 0 ? 'Ed25519' : 'Secp256k1';
+            const keyId = currentKeyPair.keyId;
+            const publicKey = currentKeyPair.exportPublicKeyHex();
+            
+            document.getElementById('keyInfo').innerHTML = `
+                <strong>Key Type:</strong> ${keyType}<br>
+                <strong>Key ID:</strong> ${keyId}<br>
+                <strong>Public Key:</strong> ${publicKey}
+            `;
+        }
+
+        window.signMessage = () => {
+            if (!currentKeyPair) {
+                showError('signatureInfo', 'Please generate a key pair first');
+                return;
+            }
+
+            const message = document.getElementById('message').value;
+            if (!message) {
+                showError('signatureInfo', 'Please enter a message');
+                return;
+            }
+
+            try {
+                currentSignature = currentKeyPair.signString(message);
+                const sigHex = currentSignature.toHex();
+                
+                document.getElementById('signatureInfo').innerHTML = `
+                    <strong class="success">Signature created!</strong><br>
+                    <strong>Message:</strong> ${message}<br>
+                    <strong>Signature:</strong> ${sigHex}
+                `;
+            } catch (e) {
+                showError('signatureInfo', e);
+            }
+        };
+
+        window.verifySignature = () => {
+            if (!currentKeyPair || !currentSignature) {
+                showError('signatureInfo', 'Please generate keys and sign a message first');
+                return;
+            }
+
+            const message = document.getElementById('message').value;
+            try {
+                const isValid = currentKeyPair.verifyString(message, currentSignature);
+                
+                document.getElementById('signatureInfo').innerHTML += `<br>
+                    <strong>Verification:</strong> 
+                    <span class="${isValid ? 'success' : 'error'}">
+                        ${isValid ? 'Valid ✓' : 'Invalid ✗'}
+                    </span>
+                `;
+            } catch (e) {
+                showError('signatureInfo', e);
+            }
+        };
+
+        window.exportKeys = () => {
+            if (!currentKeyPair) {
+                showError('importExportInfo', 'Please generate a key pair first');
+                return;
+            }
+
+            try {
+                const privateKey = currentKeyPair.exportPrivateKeyHex();
+                const publicKey = currentKeyPair.exportPublicKeyHex();
+                
+                document.getElementById('importExportInfo').innerHTML = `
+                    <strong>Exported Keys:</strong><br>
+                    <strong>Private Key:</strong> ${privateKey}<br>
+                    <strong>Public Key:</strong> ${publicKey}<br>
+                    <em>⚠️ Keep your private key secret!</em>
+                `;
+
+                // Store for import demo
+                window.exportedPrivateKey = privateKey;
+                window.exportedKeyType = currentKeyPair.keyType;
+            } catch (e) {
+                showError('importExportInfo', e);
+            }
+        };
+
+        window.importKeys = () => {
+            if (!window.exportedPrivateKey) {
+                showError('importExportInfo', 'Please export keys first');
+                return;
+            }
+
+            try {
+                const imported = sage.WasmKeyPair.fromPrivateKeyHex(
+                    window.exportedKeyType,
+                    window.exportedPrivateKey
+                );
+                
+                currentKeyPair = imported;
+                displayKeyInfo();
+                
+                document.getElementById('importExportInfo').innerHTML += `<br>
+                    <strong class="success">Keys imported successfully!</strong>
+                `;
+            } catch (e) {
+                showError('importExportInfo', e);
+            }
+        };
+
+        function showError(elementId, error) {
+            document.getElementById(elementId).innerHTML = 
+                `<span class="error">Error: ${error.message || error}</span>`;
+        }
+
+        // Initialize on load
+        initWasm().catch(console.error);
+    </script>
+</body>
+</html>

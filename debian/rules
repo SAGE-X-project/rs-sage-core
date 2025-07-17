@@ -1,0 +1,22 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --features ffi
+
+override_dh_auto_install:
+	mkdir -p debian/libsage-crypto-core0/usr/lib/x86_64-linux-gnu
+	mkdir -p debian/libsage-crypto-core-dev/usr/include
+	mkdir -p debian/libsage-crypto-core-dev/usr/lib/x86_64-linux-gnu
+	
+	cp target/release/libsage_crypto_core.so debian/libsage-crypto-core0/usr/lib/x86_64-linux-gnu/
+	cp target/release/libsage_crypto_core.a debian/libsage-crypto-core-dev/usr/lib/x86_64-linux-gnu/
+	cp include/sage_crypto.h debian/libsage-crypto-core-dev/usr/include/
+
+override_dh_auto_clean:
+	cargo clean || true
+
+override_dh_auto_test:
+	cargo test --features ffi || true

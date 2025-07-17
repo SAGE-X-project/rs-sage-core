@@ -5,12 +5,18 @@
 //! and RFC 9421 HTTP Message Signatures support.
 
 #![warn(missing_docs)]
-#![deny(unsafe_code)]
+#![cfg_attr(not(feature = "ffi"), deny(unsafe_code))]
 
 pub mod crypto;
 pub mod error;
 pub mod formats;
 pub mod rfc9421;
+
+#[cfg(feature = "ffi")]
+pub mod ffi;
+
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 // Re-export main types
 pub use crypto::{KeyPair, KeyType, PublicKey, PrivateKey, Signature};

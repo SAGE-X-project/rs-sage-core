@@ -1,6 +1,6 @@
 //! HTTP message signing implementation for RFC 9421
 
-use crate::crypto::{KeyPair, Signature, Signer as CryptoSigner};
+use crate::crypto::{KeyPair, Signer as CryptoSigner};
 use crate::error::{Error, Result};
 use crate::rfc9421::{SignatureAlgorithm, SignatureComponent, SignatureParams};
 use base64::{engine::general_purpose, Engine as _};
