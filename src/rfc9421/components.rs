@@ -24,7 +24,12 @@ pub enum SignatureComponent {
     /// Header field
     Header(String),
     /// Derived component with parameters
-    DerivedComponent { name: String, params: Vec<String> },
+    DerivedComponent {
+        /// The name of the derived component
+        name: String,
+        /// Parameters associated with the derived component
+        params: Vec<String>,
+    },
 }
 
 impl SignatureComponent {
@@ -42,7 +47,7 @@ impl SignatureComponent {
             SignatureComponent::Header(name) => name.to_lowercase(),
             SignatureComponent::DerivedComponent { name, params } => {
                 if params.is_empty() {
-                    format!("@{}", name)
+                    format!("@{name}")
                 } else {
                     format!("@{};{}", name, params.join(";"))
                 }
@@ -73,27 +78,27 @@ impl fmt::Display for SignatureParams {
         let mut params = Vec::new();
 
         if let Some(ref key_id) = self.key_id {
-            params.push(format!("keyid=\"{}\"", key_id));
+            params.push(format!("keyid=\"{key_id}\""));
         }
 
         if let Some(ref alg) = self.alg {
-            params.push(format!("alg=\"{}\"", alg));
+            params.push(format!("alg=\"{alg}\""));
         }
 
         if let Some(created) = self.created {
-            params.push(format!("created={}", created));
+            params.push(format!("created={created}"));
         }
 
         if let Some(expires) = self.expires {
-            params.push(format!("expires={}", expires));
+            params.push(format!("expires={expires}"));
         }
 
         if let Some(ref nonce) = self.nonce {
-            params.push(format!("nonce=\"{}\"", nonce));
+            params.push(format!("nonce=\"{nonce}\""));
         }
 
         if let Some(ref tag) = self.tag {
-            params.push(format!("tag=\"{}\"", tag));
+            params.push(format!("tag=\"{tag}\""));
         }
 
         write!(f, "{}", params.join(";"))
@@ -118,7 +123,7 @@ mod tests {
         let params = SignatureParams {
             key_id: Some("test-key".to_string()),
             alg: Some("ed25519".to_string()),
-            created: Some(1234567890),
+            created: Some(1_234_567_890),
             expires: None,
             nonce: None,
             tag: None,

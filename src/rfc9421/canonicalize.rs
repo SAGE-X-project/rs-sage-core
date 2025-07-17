@@ -1,8 +1,7 @@
 //! HTTP message canonicalization for RFC 9421
 
 use crate::error::{Error, Result};
-use http::{HeaderMap, Method, Request, Response, Uri};
-use std::collections::BTreeMap;
+use http::{HeaderMap, Request, Response};
 
 /// Canonicalize an HTTP request for signing
 pub fn canonicalize_request<B>(
@@ -40,9 +39,9 @@ pub fn canonicalize_request<B>(
                 let query = request
                     .uri()
                     .query()
-                    .map(|q| format!("?{}", q))
+                    .map(|q| format!("?{q}"))
                     .unwrap_or_default();
-                ("@request-target".to_string(), format!("{}{}", path, query))
+                ("@request-target".to_string(), format!("{path}{query}"))
             }
             super::SignatureComponent::Path => {
                 ("@path".to_string(), request.uri().path().to_string())
@@ -51,7 +50,7 @@ pub fn canonicalize_request<B>(
                 let query = request
                     .uri()
                     .query()
-                    .map(|q| format!("?{}", q))
+                    .map(|q| format!("?{q}"))
                     .unwrap_or_else(|| "?".to_string());
                 ("@query".to_string(), query)
             }
@@ -102,8 +101,7 @@ pub fn canonicalize_response<B>(
             | super::SignatureComponent::Path
             | super::SignatureComponent::Query => {
                 return Err(Error::InvalidInput(format!(
-                    "{:?} component not valid for responses",
-                    component
+                    "{component:?} component not valid for responses"
                 )));
             }
             super::SignatureComponent::DerivedComponent { .. } => {
@@ -126,10 +124,10 @@ fn get_header_value(headers: &HeaderMap, name: &str) -> Result<String> {
         .iter()
         .map(|v| v.to_str())
         .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|_| Error::InvalidInput(format!("Invalid header value for {}", name)))?;
+        .map_err(|_| Error::InvalidInput(format!("Invalid header value for {name}")))?;
 
     if values.is_empty() {
-        return Err(Error::InvalidInput(format!("Header {} not found", name)));
+        return Err(Error::InvalidInput(format!("Header {name} not found")));
     }
 
     // Join multiple values with comma and space
@@ -141,10 +139,10 @@ pub fn build_signature_base(components: &[(String, String)], signature_params: &
     let mut lines = Vec::new();
 
     for (name, value) in components {
-        lines.push(format!("\"{}\": {}", name, value));
+        lines.push(format!("\"{name}\": {value}"));
     }
 
-    lines.push(format!("\"@signature-params\": {}", signature_params));
+    lines.push(format!("\"@signature-params\": {signature_params}"));
 
     lines.join("\n")
 }

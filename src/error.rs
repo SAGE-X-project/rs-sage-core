@@ -56,6 +56,10 @@ pub enum Error {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    /// Cryptographic operation error
+    #[error("Cryptographic error: {0}")]
+    CryptoError(String),
+
     /// Unsupported operation
     #[error("Unsupported operation: {0}")]
     Unsupported(String),

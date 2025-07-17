@@ -24,14 +24,23 @@ docs:
 	cargo doc --all-features --no-deps --open
 
 # Build for FFI
-ffi: release
+ffi:
+	cargo build --release --features ffi
 	@echo "FFI library built at target/release/"
 	@ls -la target/release/libsage_crypto_core.*
 
 # Build WASM
 wasm:
 	@command -v wasm-pack >/dev/null 2>&1 || { echo "Installing wasm-pack..."; cargo install wasm-pack; }
-	wasm-pack build --target web --out-dir pkg
+	wasm-pack build --target web --out-dir pkg --features wasm
+
+# Build all platforms
+build-all:
+	./scripts/build-all.sh release
+
+# Install cross-compilation dependencies
+install-deps:
+	./scripts/install-deps.sh
 
 # Clean build artifacts
 clean:

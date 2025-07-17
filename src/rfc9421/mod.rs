@@ -37,6 +37,12 @@ pub struct SignatureInput {
     params: SignatureParams,
 }
 
+impl Default for SignatureInput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SignatureInput {
     /// Create a new signature input builder
     pub fn new() -> Self {
@@ -82,9 +88,9 @@ impl SignatureInput {
         let params = self.params.to_string();
 
         if params.is_empty() {
-            format!("({})", components)
+            format!("({components})")
         } else {
-            format!("({});{}", components, params)
+            format!("({components});{params}")
         }
     }
 }

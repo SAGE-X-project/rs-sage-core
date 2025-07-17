@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Cryptographic primitives
-ed25519-dalek = "1.0.1"
+ed25519-dalek = "2.1"
 k256 = { version = "0.11", features = ["ecdsa"] }
 signature = "1.6"
 rand = "0.8"
@@ -37,15 +37,15 @@ http = "0.2"
 chrono = "0.4"
 
 # FFI support
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-libc = "0.2"
+libc = { version = "0.2", optional = true }
 
 # WASM support
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-web-sys = "0.3"
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", features = ["Headers", "Request", "Response"], optional = true }
+getrandom = { version = "0.2", features = ["js"], optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }
@@ -55,6 +55,11 @@ proptest = "1.0"
 [[bench]]
 name = "crypto_benchmarks"
 harness = false
+
+[features]
+default = []
+ffi = ["libc"]
+wasm = ["wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys", "getrandom", "console_error_panic_hook"]
 
 [profile.release]
 opt-level = 3

@@ -63,9 +63,35 @@ impl PublicKey {
         use sha2::{Digest, Sha256};
 
         let mut hasher = Sha256::new();
-        hasher.update(&self.to_bytes());
+        hasher.update(self.to_bytes());
         let result = hasher.finalize();
         hex::encode(&result[..8])
+    }
+
+    /// Create PublicKey from bytes
+    pub fn from_bytes(key_type: KeyType, bytes: &[u8]) -> Result<Self> {
+        match key_type {
+            KeyType::Ed25519 => {
+                if bytes.len() != 32 {
+                    return Err(Error::InvalidInput(
+                        "Ed25519 public key must be 32 bytes".to_string(),
+                    ));
+                }
+                let mut key_bytes = [0u8; 32];
+                key_bytes.copy_from_slice(bytes);
+                Ok(PublicKey::Ed25519(key_bytes))
+            }
+            KeyType::Secp256k1 => {
+                if bytes.len() != 33 {
+                    return Err(Error::InvalidInput(
+                        "Secp256k1 public key must be 33 bytes (compressed)".to_string(),
+                    ));
+                }
+                let mut key_bytes = [0u8; 33];
+                key_bytes.copy_from_slice(bytes);
+                Ok(PublicKey::Secp256k1(key_bytes))
+            }
+        }
     }
 }
 
@@ -91,10 +117,10 @@ impl PrivateKey {
     pub fn public_key(&self) -> PublicKey {
         match self {
             PrivateKey::Ed25519(key_bytes) => {
-                use ed25519_dalek::{PublicKey as DalekPublicKey, SecretKey};
-                let secret = SecretKey::from_bytes(key_bytes).unwrap();
-                let public = DalekPublicKey::from(&secret);
-                PublicKey::Ed25519(public.to_bytes())
+                use ed25519_dalek::SigningKey;
+                let signing_key = SigningKey::from_bytes(key_bytes);
+                let verifying_key = signing_key.verifying_key();
+                PublicKey::Ed25519(verifying_key.to_bytes())
             }
             PrivateKey::Secp256k1(key_bytes) => {
                 use k256::ecdsa::SigningKey;
@@ -130,15 +156,15 @@ impl KeyPair {
     pub fn generate(key_type: KeyType) -> Result<Self> {
         let (private_key, public_key) = match key_type {
             KeyType::Ed25519 => {
-                use ed25519_dalek::{PublicKey as DalekPublicKey, SecretKey};
+                use ed25519_dalek::SigningKey;
                 let mut rng = OsRng;
                 let mut bytes = [0u8; 32];
                 rng.fill_bytes(&mut bytes);
-                let secret = SecretKey::from_bytes(&bytes).expect("Valid secret key");
-                let public = DalekPublicKey::from(&secret);
+                let signing_key = SigningKey::from_bytes(&bytes);
+                let verifying_key = signing_key.verifying_key();
                 (
-                    PrivateKey::Ed25519(secret.to_bytes()),
-                    PublicKey::Ed25519(public.to_bytes()),
+                    PrivateKey::Ed25519(signing_key.to_bytes()),
+                    PublicKey::Ed25519(verifying_key.to_bytes()),
                 )
             }
             KeyType::Secp256k1 => {
@@ -189,7 +215,7 @@ impl KeyPair {
         use sha2::{Digest, Sha256};
 
         let mut hasher = Sha256::new();
-        hasher.update(&public_key.to_bytes());
+        hasher.update(public_key.to_bytes());
         let result = hasher.finalize();
         hex::encode(&result[..8])
     }
@@ -204,9 +230,67 @@ impl KeyPair {
         }
     }
 
-    /// Extract private key (consumes self)
-    pub(crate) fn into_private_key(self) -> PrivateKey {
-        self.private_key
+    /// Get private key bytes
+    pub fn private_key_bytes(&self) -> Vec<u8> {
+        match &self.private_key {
+            PrivateKey::Ed25519(bytes) => bytes.to_vec(),
+            PrivateKey::Secp256k1(bytes) => bytes.to_vec(),
+        }
+    }
+
+    /// Get public key bytes
+    pub fn public_key_bytes(&self) -> Vec<u8> {
+        self.public_key.to_bytes()
+    }
+
+    /// Create KeyPair from private key bytes
+    pub fn from_private_key_bytes(key_type: KeyType, bytes: &[u8]) -> Result<Self> {
+        let private_key = match key_type {
+            KeyType::Ed25519 => {
+                if bytes.len() != 32 {
+                    return Err(Error::InvalidInput(
+                        "Ed25519 private key must be 32 bytes".to_string(),
+                    ));
+                }
+                let mut key_bytes = [0u8; 32];
+                key_bytes.copy_from_slice(bytes);
+                PrivateKey::Ed25519(key_bytes)
+            }
+            KeyType::Secp256k1 => {
+                if bytes.len() != 32 {
+                    return Err(Error::InvalidInput(
+                        "Secp256k1 private key must be 32 bytes".to_string(),
+                    ));
+                }
+                let mut key_bytes = [0u8; 32];
+                key_bytes.copy_from_slice(bytes);
+                PrivateKey::Secp256k1(key_bytes)
+            }
+        };
+
+        // Derive public key from private key
+        let public_key = match &private_key {
+            PrivateKey::Ed25519(key_bytes) => {
+                use ed25519_dalek::SigningKey;
+                let signing_key = SigningKey::from_bytes(key_bytes);
+                let verifying_key = signing_key.verifying_key();
+                PublicKey::Ed25519(verifying_key.to_bytes())
+            }
+            PrivateKey::Secp256k1(key_bytes) => {
+                use k256::ecdsa::SigningKey;
+                use k256::elliptic_curve::sec1::ToEncodedPoint;
+                let signing_key = SigningKey::from_bytes(key_bytes).map_err(|e| {
+                    Error::CryptoError(format!("Invalid Secp256k1 private key: {e}"))
+                })?;
+                let public_key = signing_key.verifying_key();
+                let point = public_key.to_encoded_point(true); // compressed
+                let mut bytes = [0u8; 33];
+                bytes.copy_from_slice(point.as_bytes());
+                PublicKey::Secp256k1(bytes)
+            }
+        };
+
+        Ok(Self::from_parts(private_key, public_key))
     }
 }
 
@@ -214,11 +298,9 @@ impl Signer for KeyPair {
     fn sign(&self, message: &[u8]) -> Result<Signature> {
         match &self.private_key {
             PrivateKey::Ed25519(key_bytes) => {
-                use ed25519_dalek::{Keypair, PublicKey as DalekPublicKey, SecretKey, Signer};
-                let secret = SecretKey::from_bytes(key_bytes).unwrap();
-                let public = DalekPublicKey::from(&secret);
-                let keypair = Keypair { secret, public };
-                let signature = keypair.sign(message);
+                use ed25519_dalek::{Signer, SigningKey};
+                let signing_key = SigningKey::from_bytes(key_bytes);
+                let signature = signing_key.sign(message);
                 Ok(Signature::Ed25519(signature))
             }
             PrivateKey::Secp256k1(key_bytes) => {
@@ -241,10 +323,10 @@ impl Verifier for PublicKey {
     fn verify(&self, message: &[u8], signature: &Signature) -> Result<()> {
         match (self, signature) {
             (PublicKey::Ed25519(key_bytes), Signature::Ed25519(sig)) => {
-                use ed25519_dalek::{PublicKey as DalekPublicKey, Verifier};
-                let public_key = DalekPublicKey::from_bytes(key_bytes)
+                use ed25519_dalek::{Verifier, VerifyingKey};
+                let verifying_key = VerifyingKey::from_bytes(key_bytes)
                     .map_err(|_| Error::Verification("Invalid Ed25519 public key".to_string()))?;
-                public_key.verify(message, sig).map_err(|_| {
+                verifying_key.verify(message, sig).map_err(|_| {
                     Error::Verification("Ed25519 signature verification failed".to_string())
                 })
             }

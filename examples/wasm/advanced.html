@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAGE Crypto Advanced WASM Example</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .output {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            word-break: break-all;
+            margin: 10px 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .success {
+            color: #28a745;
+        }
+        .warning {
+            color: #ffc107;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        .tab-container {
+            margin: 20px 0;
+        }
+        .tab-buttons {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        .tab-button.active {
+            background: white;
+            border-bottom-color: #007bff;
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-top: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>SAGE Crypto Advanced WASM Example</h1>
+    
+    <div class="section full-width">
+        <h2>Library Information</h2>
+        <div id="libraryInfo" class="output"></div>
+    </div>
+
+    <div class="container">
+        <div class="section">
+            <h2>Key Management</h2>
+            <select id="keyType">
+                <option value="0">Ed25519</option>
+                <option value="1">Secp256k1</option>
+            </select>
+            <br>
+            <button onclick="generateNewKey()">Generate New Key</button>
+            <button onclick="clearKeys()">Clear Keys</button>
+            <div id="keyInfo" class="output"></div>
+        </div>
+
+        <div class="section">
+            <h2>Key Formats</h2>
+            <select id="keyFormat">
+                <option value="0">Raw Binary</option>
+                <option value="1">PEM</option>
+                <option value="2">DER</option>
+                <option value="3">JWK</option>
+            </select>
+            <br>
+            <button onclick="exportKeyInFormat()">Export Key</button>
+            <button onclick="importKeyFromFormat()">Import Key</button>
+            <div id="keyFormatInfo" class="output"></div>
+            <textarea id="keyFormatData" placeholder="Paste key data here for import"></textarea>
+        </div>
+    </div>
+
+    <div class="section full-width">
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showTab('basic-signing')">Basic Signing</button>
+                <button class="tab-button" onclick="showTab('http-signatures')">HTTP Signatures</button>
+                <button class="tab-button" onclick="showTab('batch-operations')">Batch Operations</button>
+            </div>
+            
+            <div id="basic-signing" class="tab-content active">
+                <h3>Basic Message Signing</h3>
+                <input type="text" id="basicMessage" placeholder="Enter message to sign" value="Hello, SAGE!">
+                <br>
+                <button onclick="signBasicMessage()">Sign Message</button>
+                <button onclick="verifyBasicMessage()">Verify Signature</button>
+                <button onclick="testInvalidMessage()">Test Invalid Message</button>
+                <div id="basicSigningInfo" class="output"></div>
+            </div>
+            
+            <div id="http-signatures" class="tab-content">
+                <h3>HTTP Message Signatures (RFC 9421)</h3>
+                <input type="text" id="httpMethod" placeholder="HTTP Method" value="POST">
+                <input type="text" id="httpUrl" placeholder="URL" value="https://api.example.com/data">
+                <textarea id="httpHeaders" placeholder="Headers (JSON format)">{
+  "Content-Type": "application/json",
+  "Authorization": "Bearer token123"
+}</textarea>
+                <br>
+                <button onclick="signHttpRequest()">Sign HTTP Request</button>
+                <button onclick="verifyHttpRequest()">Verify HTTP Request</button>
+                <button onclick="createSignedFetch()">Create Signed Fetch</button>
+                <div id="httpSigningInfo" class="output"></div>
+            </div>
+            
+            <div id="batch-operations" class="tab-content">
+                <h3>Batch Operations</h3>
+                <input type="number" id="batchSize" placeholder="Number of operations" value="100" min="1" max="1000">
+                <br>
+                <button onclick="batchSignOperations()">Batch Sign</button>
+                <button onclick="batchVerifyOperations()">Batch Verify</button>
+                <button onclick="performanceTest()">Performance Test</button>
+                <div id="batchInfo" class="output"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section full-width">
+        <h2>Security Features</h2>
+        <button onclick="testTimingAttackResistance()">Test Timing Attack Resistance</button>
+        <button onclick="testKeyReuseSafety()">Test Key Reuse Safety</button>
+        <button onclick="testMalformedInputs()">Test Malformed Inputs</button>
+        <div id="securityInfo" class="output"></div>
+    </div>
+
+    <script type="module">
+        import init, * as sage from './sage_crypto_core.js';
+
+        let currentKeyPair = null;
+        let currentSignature = null;
+        let httpSigner = null;
+        let httpVerifier = null;
+
+        async function initWasm() {
+            await init();
+            
+            document.getElementById('libraryInfo').innerHTML = `
+                <strong>SAGE Crypto Core Version:</strong> ${sage.version()}<br>
+                <strong>Platform:</strong> WebAssembly<br>
+                <strong>Supported Key Types:</strong> Ed25519, Secp256k1<br>
+                <strong>Supported Formats:</strong> Raw, PEM, DER, JWK<br>
+                <strong>HTTP Signatures:</strong> RFC 9421 compliant
+            `;
+            
+            window.sage = sage;
+            
+            // Generate initial key
+            generateNewKey();
+        }
+
+        window.generateNewKey = () => {
+            try {
+                const keyType = parseInt(document.getElementById('keyType').value);
+                
+                if (keyType === 0) {
+                    currentKeyPair = sage.WasmKeyPair.generateEd25519();
+                } else {
+                    currentKeyPair = sage.WasmKeyPair.generateSecp256k1();
+                }
+                
+                // Create HTTP signer/verifier
+                httpSigner = new sage.WasmHttpSigner(currentKeyPair);
+                httpVerifier = new sage.WasmHttpVerifier(currentKeyPair.getPublicKey());
+                
+                displayKeyInfo();
+                log('keyInfo', 'New key pair generated successfully', 'success');
+            } catch (e) {
+                showError('keyInfo', e);
+            }
+        };
+
+        window.clearKeys = () => {
+            currentKeyPair = null;
+            currentSignature = null;
+            httpSigner = null;
+            httpVerifier = null;
+            document.getElementById('keyInfo').innerHTML = '';
+            log('keyInfo', 'Keys cleared', 'warning');
+        };
+
+        function displayKeyInfo() {
+            if (!currentKeyPair) return;
+            
+            const keyType = currentKeyPair.keyType === 0 ? 'Ed25519' : 'Secp256k1';
+            const keyId = currentKeyPair.keyId;
+            const publicKey = currentKeyPair.exportPublicKeyHex();
+            
+            document.getElementById('keyInfo').innerHTML = `
+                <strong>Key Type:</strong> ${keyType}<br>
+                <strong>Key ID:</strong> ${keyId}<br>
+                <strong>Public Key:</strong> ${publicKey.substring(0, 32)}...
+            `;
+        }
+
+        // Key Format Operations
+        window.exportKeyInFormat = () => {
+            if (!currentKeyPair) {
+                showError('keyFormatInfo', 'Please generate a key pair first');
+                return;
+            }
+
+            try {
+                const format = parseInt(document.getElementById('keyFormat').value);
+                let exported;
+                
+                switch (format) {
+                    case 1: // PEM
+                        exported = sage.WasmKeyFormat.exportKeyPairToPem(currentKeyPair);
+                        break;
+                    case 3: // JWK
+                        exported = sage.WasmKeyFormat.exportKeyPairToJwk(currentKeyPair);
+                        break;
+                    default: // Raw or DER
+                        exported = sage.bytesToHex(sage.WasmKeyFormat.exportKeyPair(currentKeyPair, format));
+                }
+                
+                document.getElementById('keyFormatData').value = exported;
+                log('keyFormatInfo', 'Key exported successfully', 'success');
+            } catch (e) {
+                showError('keyFormatInfo', e);
+            }
+        };
+
+        window.importKeyFromFormat = () => {
+            const data = document.getElementById('keyFormatData').value.trim();
+            if (!data) {
+                showError('keyFormatInfo', 'Please enter key data');
+                return;
+            }
+
+            try {
+                const keyType = parseInt(document.getElementById('keyType').value);
+                const format = parseInt(document.getElementById('keyFormat').value);
+                
+                let imported;
+                switch (format) {
+                    case 1: // PEM
+                        imported = sage.WasmKeyFormat.importKeyPairFromPem(keyType, data);
+                        break;
+                    case 3: // JWK
+                        imported = sage.WasmKeyFormat.importKeyPairFromJwk(keyType, data);
+                        break;
+                    default: // Raw or DER
+                        const bytes = sage.hexToBytes(data);
+                        imported = sage.WasmKeyFormat.importKeyPair(keyType, format, bytes);
+                }
+                
+                currentKeyPair = imported;
+                httpSigner = new sage.WasmHttpSigner(currentKeyPair);
+                httpVerifier = new sage.WasmHttpVerifier(currentKeyPair.getPublicKey());
+                
+                displayKeyInfo();
+                log('keyFormatInfo', 'Key imported successfully', 'success');
+            } catch (e) {
+                showError('keyFormatInfo', e);
+            }
+        };
+
+        // Basic Signing
+        window.signBasicMessage = () => {
+            if (!currentKeyPair) {
+                showError('basicSigningInfo', 'Please generate a key pair first');
+                return;
+            }
+
+            const message = document.getElementById('basicMessage').value;
+            if (!message) {
+                showError('basicSigningInfo', 'Please enter a message');
+                return;
+            }
+
+            try {
+                currentSignature = currentKeyPair.signString(message);
+                const sigHex = currentSignature.toHex();
+                
+                log('basicSigningInfo', `
+                    <strong>Message:</strong> ${message}<br>
+                    <strong>Signature:</strong> ${sigHex.substring(0, 32)}...
+                `, 'success');
+            } catch (e) {
+                showError('basicSigningInfo', e);
+            }
+        };
+
+        window.verifyBasicMessage = () => {
+            if (!currentKeyPair || !currentSignature) {
+                showError('basicSigningInfo', 'Please sign a message first');
+                return;
+            }
+
+            const message = document.getElementById('basicMessage').value;
+            try {
+                const isValid = currentKeyPair.verifyString(message, currentSignature);
+                log('basicSigningInfo', `
+                    <strong>Verification:</strong> 
+                    <span class="${isValid ? 'success' : 'error'}">
+                        ${isValid ? 'Valid ✓' : 'Invalid ✗'}
+                    </span>
+                `, isValid ? 'success' : 'error');
+            } catch (e) {
+                showError('basicSigningInfo', e);
+            }
+        };
+
+        window.testInvalidMessage = () => {
+            if (!currentKeyPair || !currentSignature) {
+                showError('basicSigningInfo', 'Please sign a message first');
+                return;
+            }
+
+            try {
+                const isValid = currentKeyPair.verifyString('Wrong message', currentSignature);
+                log('basicSigningInfo', `
+                    <strong>Wrong message test:</strong> 
+                    <span class="${!isValid ? 'success' : 'error'}">
+                        ${!isValid ? 'Correctly rejected ✓' : 'Incorrectly accepted ✗'}
+                    </span>
+                `, !isValid ? 'success' : 'error');
+            } catch (e) {
+                showError('basicSigningInfo', e);
+            }
+        };
+
+        // HTTP Signatures
+        window.signHttpRequest = () => {
+            if (!httpSigner) {
+                showError('httpSigningInfo', 'Please generate a key pair first');
+                return;
+            }
+
+            try {
+                const method = document.getElementById('httpMethod').value;
+                const url = document.getElementById('httpUrl').value;
+                const headersText = document.getElementById('httpHeaders').value;
+                
+                let headers = {};
+                if (headersText.trim()) {
+                    headers = JSON.parse(headersText);
+                }
+
+                const signedRequest = httpSigner.signSimpleRequest({
+                    method: method,
+                    url: url,
+                    headers: headers
+                });
+
+                log('httpSigningInfo', `
+                    <strong>HTTP Request Signed:</strong><br>
+                    <strong>Method:</strong> ${method}<br>
+                    <strong>URL:</strong> ${url}<br>
+                    <strong>Signature:</strong> ${signedRequest.signature || 'N/A'}<br>
+                    <strong>Signature-Input:</strong> ${signedRequest['signature-input'] || 'N/A'}
+                `, 'success');
+            } catch (e) {
+                showError('httpSigningInfo', e);
+            }
+        };
+
+        // Batch Operations
+        window.batchSignOperations = () => {
+            if (!currentKeyPair) {
+                showError('batchInfo', 'Please generate a key pair first');
+                return;
+            }
+
+            const batchSize = parseInt(document.getElementById('batchSize').value);
+            const startTime = performance.now();
+            
+            try {
+                const signatures = [];
+                for (let i = 0; i < batchSize; i++) {
+                    const message = `Message ${i}`;
+                    const signature = currentKeyPair.signString(message);
+                    signatures.push(signature);
+                }
+                
+                const endTime = performance.now();
+                const totalTime = endTime - startTime;
+                const avgTime = totalTime / batchSize;
+                
+                log('batchInfo', `
+                    <strong>Batch Signing Complete:</strong><br>
+                    <strong>Operations:</strong> ${batchSize}<br>
+                    <strong>Total Time:</strong> ${totalTime.toFixed(2)}ms<br>
+                    <strong>Average Time:</strong> ${avgTime.toFixed(2)}ms per operation<br>
+                    <strong>Throughput:</strong> ${(1000 / avgTime).toFixed(0)} ops/sec
+                `, 'success');
+            } catch (e) {
+                showError('batchInfo', e);
+            }
+        };
+
+        window.performanceTest = () => {
+            if (!currentKeyPair) {
+                showError('batchInfo', 'Please generate a key pair first');
+                return;
+            }
+
+            const testSize = 1000;
+            const message = "Performance test message";
+            
+            try {
+                // Sign performance test
+                const signStart = performance.now();
+                const signatures = [];
+                for (let i = 0; i < testSize; i++) {
+                    signatures.push(currentKeyPair.signString(message));
+                }
+                const signEnd = performance.now();
+                
+                // Verify performance test
+                const verifyStart = performance.now();
+                let verifyCount = 0;
+                for (let i = 0; i < testSize; i++) {
+                    if (currentKeyPair.verifyString(message, signatures[i])) {
+                        verifyCount++;
+                    }
+                }
+                const verifyEnd = performance.now();
+                
+                const signTime = signEnd - signStart;
+                const verifyTime = verifyEnd - verifyStart;
+                
+                log('batchInfo', `
+                    <strong>Performance Test Results:</strong><br>
+                    <strong>Operations:</strong> ${testSize}<br>
+                    <strong>Sign Time:</strong> ${signTime.toFixed(2)}ms (${(testSize * 1000 / signTime).toFixed(0)} ops/sec)<br>
+                    <strong>Verify Time:</strong> ${verifyTime.toFixed(2)}ms (${(testSize * 1000 / verifyTime).toFixed(0)} ops/sec)<br>
+                    <strong>Verification Success Rate:</strong> ${(verifyCount / testSize * 100).toFixed(1)}%
+                `, 'success');
+            } catch (e) {
+                showError('batchInfo', e);
+            }
+        };
+
+        // Security Tests
+        window.testTimingAttackResistance = () => {
+            if (!currentKeyPair) {
+                showError('securityInfo', 'Please generate a key pair first');
+                return;
+            }
+
+            try {
+                const message = "Timing test message";
+                const validSignature = currentKeyPair.signString(message);
+                const iterations = 1000;
+                
+                // Test valid signature timing
+                const validStart = performance.now();
+                for (let i = 0; i < iterations; i++) {
+                    currentKeyPair.verifyString(message, validSignature);
+                }
+                const validEnd = performance.now();
+                
+                // Test invalid signature timing
+                const invalidStart = performance.now();
+                for (let i = 0; i < iterations; i++) {
+                    currentKeyPair.verifyString("Wrong message", validSignature);
+                }
+                const invalidEnd = performance.now();
+                
+                const validTime = validEnd - validStart;
+                const invalidTime = invalidEnd - invalidStart;
+                const ratio = validTime / invalidTime;
+                
+                log('securityInfo', `
+                    <strong>Timing Attack Resistance Test:</strong><br>
+                    <strong>Valid Signature Time:</strong> ${validTime.toFixed(2)}ms<br>
+                    <strong>Invalid Signature Time:</strong> ${invalidTime.toFixed(2)}ms<br>
+                    <strong>Time Ratio:</strong> ${ratio.toFixed(3)}<br>
+                    <strong>Result:</strong> ${ratio > 0.5 && ratio < 2.0 ? 'Good timing resistance' : 'Potential timing vulnerability'}
+                `, ratio > 0.5 && ratio < 2.0 ? 'success' : 'warning');
+            } catch (e) {
+                showError('securityInfo', e);
+            }
+        };
+
+        // Utility functions
+        function showTab(tabId) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function log(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            element.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            element.scrollTop = element.scrollHeight;
+        }
+
+        function showError(elementId, error) {
+            log(elementId, `Error: ${error.message || error}`, 'error');
+        }
+
+        // Make functions global
+        window.showTab = showTab;
+
+        // Initialize on load
+        initWasm().catch(console.error);
+    </script>
+</body>
+</html>

@@ -1,0 +1,240 @@
+name: Security
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
+
+jobs:
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+
+    - name: Run security audit
+      run: cargo audit
+
+    - name: Run cargo-audit with JSON output
+      run: cargo audit --json > audit-results.json || true
+
+    - name: Upload audit results
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-audit-results
+        path: audit-results.json
+
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install cargo-deny
+      run: cargo install cargo-deny
+
+    - name: Check dependencies
+      run: cargo deny check advisories sources
+
+  license-check:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install cargo-license
+      run: cargo install cargo-license
+
+    - name: Check licenses
+      run: cargo license --json > licenses.json || true
+
+    - name: Upload license information
+      uses: actions/upload-artifact@v4
+      with:
+        name: license-information
+        path: licenses.json
+
+  memory-safety:
+    name: Memory Safety Check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev
+
+    - name: Run Miri
+      run: |
+        cargo miri setup
+        cargo miri test --all-features || true  # Don't fail on Miri issues for now
+
+  fuzz-testing:
+    name: Fuzz Testing
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@nightly
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev
+
+    - name: Install cargo-fuzz
+      run: cargo install cargo-fuzz
+
+    - name: Create fuzz targets directory
+      run: mkdir -p fuzz/fuzz_targets
+
+    - name: Create basic fuzz target
+      run: |
+        cat > fuzz/fuzz_targets/keypair_generation.rs << 'EOF'
+        #![no_main]
+        use libfuzzer_sys::fuzz_target;
+        use sage_crypto_core::{KeyPair, KeyType};
+
+        fuzz_target!(|data: &[u8]| {
+            if data.len() >= 32 {
+                let _ = KeyPair::from_private_key_bytes(KeyType::Ed25519, &data[..32]);
+            }
+        });
+        EOF
+
+    - name: Initialize fuzz project
+      run: |
+        cd fuzz
+        cat > Cargo.toml << 'EOF'
+        [package]
+        name = "sage-crypto-fuzz"
+        version = "0.0.0"
+        edition = "2021"
+        publish = false
+
+        [package.metadata]
+        cargo-fuzz = true
+
+        [dependencies]
+        libfuzzer-sys = "0.4"
+        sage_crypto_core = { path = "..", features = ["ffi"] }
+
+        [[bin]]
+        name = "keypair_generation"
+        path = "fuzz_targets/keypair_generation.rs"
+        test = false
+        doc = false
+        EOF
+
+    - name: Run fuzz test (short duration)
+      run: |
+        cd fuzz
+        timeout 60 cargo fuzz run keypair_generation || true
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev
+
+    - name: Run Clippy with security lints
+      run: |
+        cargo clippy --all-targets --all-features -- \
+          -D warnings \
+          -A clippy::multiple-crate-versions \
+          -A clippy::must-use-candidate \
+          -A clippy::missing-errors-doc \
+          -A clippy::missing-panics-doc \
+          -A clippy::module-name-repetitions
+
+  secret-scanning:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run TruffleHog
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+
+  supply-chain:
+    name: Supply Chain Security
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install cargo-vet
+      run: cargo install cargo-vet
+
+    - name: Initialize cargo-vet (if needed)
+      run: cargo vet init || true
+
+    - name: Run cargo-vet
+      run: cargo vet || true  # Don't fail if not fully configured

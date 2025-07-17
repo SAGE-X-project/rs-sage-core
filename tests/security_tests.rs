@@ -24,8 +24,8 @@ fn test_timing_attack_resistance() {
     let valid_time = start.elapsed();
 
     // Time invalid verification (should fail)
-    // Note: We can't easily create an invalid signature of the same type,
-    // so we test with wrong message instead
+    // Note: This test uses a valid signature with a mismatched message
+    // (b"wrong message") to simulate an invalid verification scenario.
     let start = Instant::now();
     for _ in 0..100 {
         let _ = keypair.verify(b"wrong message", &valid_signature);
@@ -36,8 +36,7 @@ fn test_timing_attack_resistance() {
     let ratio = valid_time.as_nanos() as f64 / invalid_time.as_nanos() as f64;
     assert!(
         ratio > 0.5 && ratio < 2.0,
-        "Timing difference too large: ratio={}",
-        ratio
+        "Timing difference too large: ratio={ratio}"
     );
 }
 
@@ -128,8 +127,7 @@ fn test_signature_non_malleability() {
             let result = keypair.verify(message, &Signature::Secp256k1(modified_sig));
             assert!(
                 result.is_err(),
-                "Modified signature at byte {} should not verify",
-                i
+                "Modified signature at byte {i} should not verify"
             );
         }
     }

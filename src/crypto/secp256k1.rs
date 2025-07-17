@@ -11,24 +11,20 @@ pub fn generate_signing_key() -> SigningKey {
 
 /// Create signing key from bytes
 pub fn signing_key_from_bytes(bytes: &[u8]) -> Result<SigningKey> {
-    SigningKey::from_bytes(
-        bytes
-            .try_into()
-            .map_err(|_| Error::InvalidKeyFormat("Invalid key length".to_string()))?,
-    )
-    .map_err(|e| Error::InvalidKeyFormat(format!("Invalid Secp256k1 private key: {}", e)))
+    SigningKey::from_bytes(bytes)
+        .map_err(|e| Error::InvalidKeyFormat(format!("Invalid Secp256k1 private key: {e}")))
 }
 
 /// Create verifying key from SEC1 bytes
 pub fn verifying_key_from_bytes(bytes: &[u8]) -> Result<VerifyingKey> {
     VerifyingKey::from_sec1_bytes(bytes)
-        .map_err(|e| Error::InvalidKeyFormat(format!("Invalid Secp256k1 public key: {}", e)))
+        .map_err(|e| Error::InvalidKeyFormat(format!("Invalid Secp256k1 public key: {e}")))
 }
 
 /// Create signature from DER bytes
 pub fn signature_from_der(bytes: &[u8]) -> Result<EcdsaSignature> {
     EcdsaSignature::from_der(bytes)
-        .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {}", e)))
+        .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))
 }
 
 /// Create signature from fixed-size bytes
@@ -46,7 +42,7 @@ pub fn signature_from_bytes(bytes: &[u8]) -> Result<EcdsaSignature> {
                 FieldBytes::clone_from_slice(&bytes[..32]),
                 FieldBytes::clone_from_slice(&bytes[32..]),
             )
-            .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {}", e)))
+            .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))
         } else {
             Err(Error::InvalidKeyFormat(
                 "Invalid ECDSA signature length".to_string(),
