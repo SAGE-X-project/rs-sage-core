@@ -16,6 +16,8 @@ pub enum SignatureAlgorithm {
     Ed25519,
     /// ECDSA P-256 SHA-256
     EcdsaP256Sha256,
+    /// ECDSA Secp256k1 SHA-256
+    EcdsaSecp256k1Sha256,
 }
 
 impl SignatureAlgorithm {
@@ -24,6 +26,7 @@ impl SignatureAlgorithm {
         match self {
             SignatureAlgorithm::Ed25519 => "ed25519",
             SignatureAlgorithm::EcdsaP256Sha256 => "ecdsa-p256-sha256",
+            SignatureAlgorithm::EcdsaSecp256k1Sha256 => "ecdsa-secp256k1-sha256",
         }
     }
 }

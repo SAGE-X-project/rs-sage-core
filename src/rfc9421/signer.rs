@@ -114,7 +114,7 @@ impl HttpSigner {
 
         let alg = match self.keypair.key_type() {
             crate::crypto::KeyType::Ed25519 => SignatureAlgorithm::Ed25519,
-            crate::crypto::KeyType::Secp256k1 => SignatureAlgorithm::EcdsaP256Sha256,
+            crate::crypto::KeyType::Secp256k1 => SignatureAlgorithm::EcdsaSecp256k1Sha256,
         };
 
         Ok(SignatureParams {
@@ -138,7 +138,7 @@ impl HttpSigner {
             .map(|c| format!("\"{}\"", c.identifier()))
             .collect();
 
-        format!("({}){}", component_ids.join(" "), params)
+        format!("({});{}", component_ids.join(" "), params)
     }
 }
 
