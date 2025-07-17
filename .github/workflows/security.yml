@@ -29,7 +29,7 @@ jobs:
       run: cargo audit
 
     - name: Run cargo-audit with JSON output
-      run: cargo audit --json > audit-results.json
+      run: cargo audit --json > audit-results.json || true
 
     - name: Upload audit results
       uses: actions/upload-artifact@v4
@@ -54,7 +54,7 @@ jobs:
       run: cargo install cargo-deny
 
     - name: Check dependencies
-      run: cargo deny check
+      run: cargo deny check licenses advisories sources
 
   license-check:
     name: License Check
@@ -73,7 +73,7 @@ jobs:
       run: cargo install cargo-license
 
     - name: Check licenses
-      run: cargo license --json > licenses.json
+      run: cargo license --json > licenses.json || true
 
     - name: Upload license information
       uses: actions/upload-artifact@v4

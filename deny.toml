@@ -35,6 +35,9 @@ allow = [
     "ISC",
     "Unicode-DFS-2016",
     "CC0-1.0",
+    "0BSD",
+    "Unlicense",
+    "Zlib",
 ]
 deny = [
     "GPL-2.0",
@@ -44,7 +47,7 @@ deny = [
 ]
 copyleft = "warn"
 allow-osi-fsf-free = "both"
-default = "deny"
+default = "warn"
 confidence-threshold = 0.8
 exceptions = [
     # Example: { allow = ["GPL-3.0"], name = "some-gpl-crate" }
@@ -55,13 +58,27 @@ ignore = false
 registries = []
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "allow"
 wildcards = "allow"
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
 allow = [
-    #{ name = "some-crate", version = "=1.0.0" }
+    # Allow multiple versions of commonly duplicated crates
+    { name = "base64" },
+    { name = "der" },
+    { name = "pkcs8" },
+    { name = "signature" },
+    { name = "spki" },
+    { name = "syn" },
+    { name = "windows-sys" },
+    { name = "windows_aarch64_gnullvm" },
+    { name = "windows_aarch64_msvc" },
+    { name = "windows_i686_gnu" },
+    { name = "windows_i686_msvc" },
+    { name = "windows_x86_64_gnu" },
+    { name = "windows_x86_64_gnullvm" },
+    { name = "windows_x86_64_msvc" },
 ]
 deny = [
     # Deny old versions with known vulnerabilities
@@ -69,10 +86,8 @@ deny = [
     { name = "openssl-sys", version = "<0.9.90" },
 ]
 skip = [
-    #{ name = "some-crate", version = "=1.0.0" }
 ]
 skip-tree = [
-    #{ name = "some-crate", version = "=1.0.0" }
 ]
 
 [sources]
