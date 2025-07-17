@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 /// Key pair for WASM
 #[wasm_bindgen]
 pub struct WasmKeyPair {
-    inner: KeyPair,
+    pub(crate) inner: KeyPair,
 }
 
 #[wasm_bindgen]
@@ -40,7 +40,7 @@ impl WasmKeyPair {
     /// Get the key ID
     #[wasm_bindgen(getter, js_name = keyId)]
     pub fn key_id(&self) -> String {
-        self.inner.key_id()
+        self.inner.key_id().to_string()
     }
 
     /// Get the public key
@@ -78,8 +78,9 @@ impl WasmKeyPair {
     /// Import key pair from private key hex string
     #[wasm_bindgen(js_name = fromPrivateKeyHex)]
     pub fn from_private_key_hex(key_type: WasmKeyType, hex_key: &str) -> WasmResult<WasmKeyPair> {
-        let bytes = hex::decode(hex_key)
-            .map_err(|e| WasmError { message: format!("Invalid hex: {}", e) })?;
+        let bytes = hex::decode(hex_key).map_err(|e| WasmError {
+            message: format!("Invalid hex: {}", e),
+        })?;
         Self::from_private_key(key_type, &bytes)
     }
 
@@ -93,7 +94,8 @@ impl WasmKeyPair {
 
     /// Sign a message
     pub fn sign(&self, message: &[u8]) -> WasmResult<WasmSignature> {
-        self.inner.sign(message)
+        self.inner
+            .sign(message)
             .map(|sig| WasmSignature { inner: sig })
             .map_err(Into::into)
     }
@@ -119,7 +121,7 @@ impl WasmKeyPair {
 /// Public key for WASM
 #[wasm_bindgen]
 pub struct WasmPublicKey {
-    inner: PublicKey,
+    pub(crate) inner: PublicKey,
 }
 
 #[wasm_bindgen]
@@ -133,7 +135,7 @@ impl WasmPublicKey {
     /// Get the key ID
     #[wasm_bindgen(getter, js_name = keyId)]
     pub fn key_id(&self) -> String {
-        self.inner.key_id()
+        self.inner.key_id().to_string()
     }
 
     /// Export as hex string
@@ -151,8 +153,9 @@ impl WasmPublicKey {
     /// Import from hex string
     #[wasm_bindgen(js_name = fromHex)]
     pub fn from_hex(key_type: WasmKeyType, hex_key: &str) -> WasmResult<WasmPublicKey> {
-        let bytes = hex::decode(hex_key)
-            .map_err(|e| WasmError { message: format!("Invalid hex: {}", e) })?;
+        let bytes = hex::decode(hex_key).map_err(|e| WasmError {
+            message: format!("Invalid hex: {}", e),
+        })?;
         Self::from_bytes(key_type, &bytes)
     }
 

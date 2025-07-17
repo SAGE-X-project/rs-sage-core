@@ -1,5 +1,5 @@
 //! SAGE Crypto Core Library
-//! 
+//!
 //! This library provides core cryptographic functionality for SAGE,
 //! including Ed25519 and Secp256k1 signatures, key management,
 //! and RFC 9421 HTTP Message Signatures support.
@@ -19,9 +19,9 @@ pub mod ffi;
 pub mod wasm;
 
 // Re-export main types
-pub use crypto::{KeyPair, KeyType, PublicKey, PrivateKey, Signature};
+pub use crypto::{KeyPair, KeyType, PrivateKey, PublicKey, Signature};
 pub use error::{Error, Result};
-pub use formats::{KeyFormat, KeyImporter, KeyExporter};
+pub use formats::{KeyExporter, KeyFormat, KeyImporter};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

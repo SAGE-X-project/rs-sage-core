@@ -7,17 +7,17 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 use std::slice;
 
+pub mod formats;
+pub mod http;
 pub mod keypair;
 pub mod signature;
 pub mod utils;
-pub mod http;
-pub mod formats;
 
+pub use formats::*;
+pub use http::*;
 pub use keypair::*;
 pub use signature::*;
 pub use utils::*;
-pub use http::*;
-pub use formats::*;
 
 /// Error codes for FFI
 #[repr(C)]
@@ -139,8 +139,14 @@ mod tests {
 
     #[test]
     fn test_error_code_conversion() {
-        assert_eq!(SageErrorCode::from(Error::InvalidInput("test".to_string())), SageErrorCode::InvalidInput);
-        assert_eq!(SageErrorCode::from(Error::CryptoError("test".to_string())), SageErrorCode::CryptoError);
+        assert_eq!(
+            SageErrorCode::from(Error::InvalidInput("test".to_string())),
+            SageErrorCode::InvalidInput
+        );
+        assert_eq!(
+            SageErrorCode::from(Error::CryptoError("test".to_string())),
+            SageErrorCode::CryptoError
+        );
     }
 
     #[test]

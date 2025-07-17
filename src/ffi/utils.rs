@@ -53,7 +53,7 @@ pub unsafe extern "C" fn sage_generate_nonce(out_nonce: *mut c_uchar, len: size_
     let mut rng = rand::thread_rng();
     let nonce_slice = slice::from_raw_parts_mut(out_nonce, len);
     rng.fill_bytes(nonce_slice);
-    
+
     SageErrorCode::Success.into()
 }
 
@@ -67,12 +67,12 @@ pub unsafe extern "C" fn sage_generate_nonce(out_nonce: *mut c_uchar, len: size_
 pub unsafe extern "C" fn sage_secure_zero(ptr: *mut c_uchar, len: size_t) {
     if !ptr.is_null() && len > 0 {
         let slice = slice::from_raw_parts_mut(ptr, len);
-        
+
         // Use volatile writes to prevent optimization
         for i in 0..len {
             std::ptr::write_volatile(slice.as_mut_ptr().add(i), 0);
         }
-        
+
         // Additional fence to ensure ordering
         std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
     }

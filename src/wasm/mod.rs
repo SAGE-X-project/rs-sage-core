@@ -1,21 +1,21 @@
 //! WebAssembly bindings for browser and Node.js integration
 
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsValue;
 use crate::crypto::{KeyPair, KeyType, PublicKey, Signature};
 use crate::crypto::{Signer, Verifier};
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsValue;
 
+pub mod formats;
+pub mod http;
 pub mod keypair;
 pub mod signature;
 pub mod utils;
-pub mod http;
-pub mod formats;
 
+pub use formats::*;
+pub use http::*;
 pub use keypair::*;
 pub use signature::*;
 pub use utils::*;
-pub use http::*;
-pub use formats::*;
 
 /// Initialize the WASM module
 #[wasm_bindgen(start)]
@@ -79,11 +79,6 @@ impl From<crate::error::Error> for WasmError {
     }
 }
 
-impl From<WasmError> for JsValue {
-    fn from(err: WasmError) -> Self {
-        JsValue::from_str(&err.message)
-    }
-}
 
 /// Result type for WASM
 pub type WasmResult<T> = Result<T, WasmError>;

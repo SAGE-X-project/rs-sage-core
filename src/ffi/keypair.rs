@@ -85,7 +85,11 @@ pub unsafe extern "C" fn sage_keypair_get_key_id(
         return SageErrorCode::InvalidInput.into();
     }
 
-    ptr::copy_nonoverlapping(key_id_bytes.as_ptr(), out_key_id as *mut u8, key_id_bytes.len());
+    ptr::copy_nonoverlapping(
+        key_id_bytes.as_ptr(),
+        out_key_id as *mut u8,
+        key_id_bytes.len(),
+    );
     *out_len = key_id_bytes.len();
     SageErrorCode::Success.into()
 }
@@ -121,16 +125,17 @@ pub unsafe extern "C" fn sage_keypair_export(
     out_public_key: *mut c_uchar,
     public_key_len: *mut size_t,
 ) -> SageResult {
-    if keypair.is_null() 
-        || out_private_key.is_null() 
+    if keypair.is_null()
+        || out_private_key.is_null()
         || private_key_len.is_null()
         || out_public_key.is_null()
-        || public_key_len.is_null() {
+        || public_key_len.is_null()
+    {
         return SageErrorCode::InvalidInput.into();
     }
 
     let keypair = &(*keypair).inner;
-    
+
     // Export private key
     let private_bytes = keypair.private_key_bytes();
     if private_bytes.len() > *private_key_len {
@@ -172,7 +177,7 @@ pub unsafe extern "C" fn sage_keypair_import(
     }
 
     let private_key_slice = slice::from_raw_parts(private_key, private_key_len);
-    
+
     match KeyPair::from_private_key_bytes(key_type.into(), private_key_slice) {
         Ok(keypair) => {
             let boxed = Box::new(SageKeyPair { inner: keypair });

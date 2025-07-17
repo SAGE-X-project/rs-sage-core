@@ -1,12 +1,12 @@
 //! Key format handling for import/export
-//! 
+//!
 //! This module provides functionality to import and export cryptographic keys
 //! in various formats including JWK, PEM, and raw bytes.
 
+use crate::crypto::{KeyPair, PrivateKey, PublicKey};
 use crate::error::{Error, Result};
-use crate::crypto::{KeyPair, PublicKey, PrivateKey};
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
-use base64::{Engine as _, engine::general_purpose};
 
 /// Supported key formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,10 +25,10 @@ pub enum KeyFormat {
 pub trait KeyImporter {
     /// Import a public key from the specified format
     fn import_public_key(data: &[u8], format: KeyFormat) -> Result<PublicKey>;
-    
+
     /// Import a private key from the specified format
     fn import_private_key(data: &[u8], format: KeyFormat) -> Result<PrivateKey>;
-    
+
     /// Import a key pair from the specified format
     fn import_key_pair(data: &[u8], format: KeyFormat) -> Result<KeyPair>;
 }
@@ -37,10 +37,10 @@ pub trait KeyImporter {
 pub trait KeyExporter {
     /// Export to the specified format
     fn export(&self, format: KeyFormat) -> Result<Vec<u8>>;
-    
+
     /// Export to JWK format
     fn to_jwk(&self) -> Result<serde_json::Value>;
-    
+
     /// Export to PEM format
     fn to_pem(&self) -> Result<String>;
 }
@@ -88,20 +88,18 @@ impl KeyExporter for PublicKey {
                 let jwk = self.to_jwk()?;
                 serde_json::to_vec(&jwk).map_err(|e| Error::Serialization(e.to_string()))
             }
-            KeyFormat::Pem => {
-                Ok(self.to_pem()?.into_bytes())
-            }
+            KeyFormat::Pem => Ok(self.to_pem()?.into_bytes()),
             KeyFormat::Der => {
                 // For DER format, export as PEM then convert to DER
                 // TODO: Implement proper DER export
-                Err(Error::Unsupported("DER format not yet implemented".to_string()))
+                Err(Error::Unsupported(
+                    "DER format not yet implemented".to_string(),
+                ))
             }
-            KeyFormat::Raw => {
-                Ok(self.to_bytes())
-            }
+            KeyFormat::Raw => Ok(self.to_bytes()),
         }
     }
-    
+
     fn to_jwk(&self) -> Result<serde_json::Value> {
         match self {
             PublicKey::Ed25519(key_bytes) => {
@@ -118,11 +116,13 @@ impl KeyExporter for PublicKey {
                 // For secp256k1, we need to decode the compressed public key
                 // In a real implementation, this would use the k256 library to properly decode
                 // For now, we'll return an error as this requires more complex handling
-                Err(Error::Unsupported("Secp256k1 JWK export not yet implemented".to_string()))
+                Err(Error::Unsupported(
+                    "Secp256k1 JWK export not yet implemented".to_string(),
+                ))
             }
         }
     }
-    
+
     fn to_pem(&self) -> Result<String> {
         match self {
             PublicKey::Ed25519(key_bytes) => {
@@ -150,20 +150,18 @@ impl KeyExporter for PrivateKey {
                 let jwk = self.to_jwk()?;
                 serde_json::to_vec(&jwk).map_err(|e| Error::Serialization(e.to_string()))
             }
-            KeyFormat::Pem => {
-                Ok(self.to_pem()?.into_bytes())
-            }
+            KeyFormat::Pem => Ok(self.to_pem()?.into_bytes()),
             KeyFormat::Der => {
                 // For DER format, export as PKCS#8 DER
                 // TODO: Implement proper DER export
-                Err(Error::Unsupported("DER format not yet implemented".to_string()))
+                Err(Error::Unsupported(
+                    "DER format not yet implemented".to_string(),
+                ))
             }
-            KeyFormat::Raw => {
-                Ok(self.to_bytes())
-            }
+            KeyFormat::Raw => Ok(self.to_bytes()),
         }
     }
-    
+
     fn to_jwk(&self) -> Result<serde_json::Value> {
         match self {
             PrivateKey::Ed25519(key_bytes) => {
@@ -177,12 +175,12 @@ impl KeyExporter for PrivateKey {
                 };
                 serde_json::to_value(jwk).map_err(|e| Error::Serialization(e.to_string()))
             }
-            PrivateKey::Secp256k1(_) => {
-                Err(Error::Unsupported("Secp256k1 JWK export not yet implemented".to_string()))
-            }
+            PrivateKey::Secp256k1(_) => Err(Error::Unsupported(
+                "Secp256k1 JWK export not yet implemented".to_string(),
+            )),
         }
     }
-    
+
     fn to_pem(&self) -> Result<String> {
         match self {
             PrivateKey::Ed25519(key_bytes) => {
@@ -207,11 +205,11 @@ impl KeyExporter for KeyPair {
     fn export(&self, format: KeyFormat) -> Result<Vec<u8>> {
         self.private_key().export(format)
     }
-    
+
     fn to_jwk(&self) -> Result<serde_json::Value> {
         self.private_key().to_jwk()
     }
-    
+
     fn to_pem(&self) -> Result<String> {
         self.private_key().to_pem()
     }
@@ -220,7 +218,7 @@ impl KeyExporter for KeyPair {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_key_format_equality() {
         assert_eq!(KeyFormat::Jwk, KeyFormat::Jwk);

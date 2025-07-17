@@ -29,13 +29,15 @@ impl HttpVerifier {
                 }
                 let mut sig_array = [0u8; 64];
                 sig_array.copy_from_slice(signature_bytes);
-                Ok(Signature::Ed25519(ed25519_dalek::Signature::from_bytes(&sig_array).map_err(
-                    |e| Error::InvalidInput(format!("Invalid Ed25519 signature: {}", e)),
-                )?))
+                Ok(Signature::Ed25519(
+                    ed25519_dalek::Signature::from_bytes(&sig_array).map_err(|e| {
+                        Error::InvalidInput(format!("Invalid Ed25519 signature: {}", e))
+                    })?,
+                ))
             }
             PublicKey::Secp256k1(_) => {
-                Ok(Signature::Secp256k1(k256::ecdsa::Signature::from_der(signature_bytes).or_else(
-                    |_| {
+                Ok(Signature::Secp256k1(
+                    k256::ecdsa::Signature::from_der(signature_bytes).or_else(|_| {
                         // Try fixed-size format if DER fails
                         if signature_bytes.len() == 64 {
                             k256::ecdsa::Signature::try_from(&signature_bytes[..]).map_err(|e| {
@@ -46,8 +48,8 @@ impl HttpVerifier {
                                 "Invalid Secp256k1 signature format".to_string(),
                             ))
                         }
-                    },
-                )?))
+                    })?,
+                ))
             }
         }
     }

@@ -73,7 +73,9 @@ impl PublicKey {
         match key_type {
             KeyType::Ed25519 => {
                 if bytes.len() != 32 {
-                    return Err(Error::InvalidInput("Ed25519 public key must be 32 bytes".to_string()));
+                    return Err(Error::InvalidInput(
+                        "Ed25519 public key must be 32 bytes".to_string(),
+                    ));
                 }
                 let mut key_bytes = [0u8; 32];
                 key_bytes.copy_from_slice(bytes);
@@ -81,7 +83,9 @@ impl PublicKey {
             }
             KeyType::Secp256k1 => {
                 if bytes.len() != 33 {
-                    return Err(Error::InvalidInput("Secp256k1 public key must be 33 bytes (compressed)".to_string()));
+                    return Err(Error::InvalidInput(
+                        "Secp256k1 public key must be 33 bytes (compressed)".to_string(),
+                    ));
                 }
                 let mut key_bytes = [0u8; 33];
                 key_bytes.copy_from_slice(bytes);
@@ -249,7 +253,9 @@ impl KeyPair {
         let private_key = match key_type {
             KeyType::Ed25519 => {
                 if bytes.len() != 32 {
-                    return Err(Error::InvalidInput("Ed25519 private key must be 32 bytes".to_string()));
+                    return Err(Error::InvalidInput(
+                        "Ed25519 private key must be 32 bytes".to_string(),
+                    ));
                 }
                 let mut key_bytes = [0u8; 32];
                 key_bytes.copy_from_slice(bytes);
@@ -257,7 +263,9 @@ impl KeyPair {
             }
             KeyType::Secp256k1 => {
                 if bytes.len() != 32 {
-                    return Err(Error::InvalidInput("Secp256k1 private key must be 32 bytes".to_string()));
+                    return Err(Error::InvalidInput(
+                        "Secp256k1 private key must be 32 bytes".to_string(),
+                    ));
                 }
                 let mut key_bytes = [0u8; 32];
                 key_bytes.copy_from_slice(bytes);
@@ -269,16 +277,18 @@ impl KeyPair {
         let public_key = match &private_key {
             PrivateKey::Ed25519(key_bytes) => {
                 use ed25519_dalek::{PublicKey as DalekPublicKey, SecretKey};
-                let secret = SecretKey::from_bytes(key_bytes)
-                    .map_err(|e| Error::CryptoError(format!("Invalid Ed25519 private key: {}", e)))?;
+                let secret = SecretKey::from_bytes(key_bytes).map_err(|e| {
+                    Error::CryptoError(format!("Invalid Ed25519 private key: {}", e))
+                })?;
                 let public = DalekPublicKey::from(&secret);
                 PublicKey::Ed25519(public.to_bytes())
             }
             PrivateKey::Secp256k1(key_bytes) => {
                 use k256::ecdsa::SigningKey;
                 use k256::elliptic_curve::sec1::ToEncodedPoint;
-                let signing_key = SigningKey::from_bytes(key_bytes)
-                    .map_err(|e| Error::CryptoError(format!("Invalid Secp256k1 private key: {}", e)))?;
+                let signing_key = SigningKey::from_bytes(key_bytes).map_err(|e| {
+                    Error::CryptoError(format!("Invalid Secp256k1 private key: {}", e))
+                })?;
                 let public_key = signing_key.verifying_key();
                 let point = public_key.to_encoded_point(true); // compressed
                 let mut bytes = [0u8; 33];

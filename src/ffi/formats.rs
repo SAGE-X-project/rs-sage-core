@@ -1,7 +1,7 @@
 //! FFI functions for key format operations (PEM, DER, etc.)
 
 use super::*;
-use crate::formats::{KeyFormat, KeyExporter};
+use crate::formats::{KeyExporter, KeyFormat};
 
 /// Key format enum for FFI
 #[repr(C)]

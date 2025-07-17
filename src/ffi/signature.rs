@@ -195,7 +195,7 @@ pub unsafe extern "C" fn sage_public_key_import(
     }
 
     let bytes_slice = slice::from_raw_parts(bytes, bytes_len);
-    
+
     match PublicKey::from_bytes(key_type.into(), bytes_slice) {
         Ok(public_key) => {
             let boxed = Box::new(SagePublicKey { inner: public_key });

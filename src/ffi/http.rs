@@ -91,7 +91,11 @@ pub unsafe extern "C" fn sage_http_signer_sign_request(
     out_signed_headers: *mut SageHttpHeader,
     out_headers_count: *mut size_t,
 ) -> SageResult {
-    if signer.is_null() || request.is_null() || out_signed_headers.is_null() || out_headers_count.is_null() {
+    if signer.is_null()
+        || request.is_null()
+        || out_signed_headers.is_null()
+        || out_headers_count.is_null()
+    {
         return SageErrorCode::InvalidInput.into();
     }
 
@@ -109,9 +113,7 @@ pub unsafe extern "C" fn sage_http_signer_sign_request(
     };
 
     // Build HTTP request
-    let mut builder = Request::builder()
-        .method(method_str)
-        .uri(uri_str);
+    let mut builder = Request::builder().method(method_str).uri(uri_str);
 
     // Add headers
     let headers_slice = slice::from_raw_parts(request.headers, request.headers_count);
@@ -147,8 +149,12 @@ pub unsafe extern "C" fn sage_http_signer_sign_request(
             let mut header_count = 0;
 
             // Count signature-related headers
-            if headers.contains_key("signature") { header_count += 1; }
-            if headers.contains_key("signature-input") { header_count += 1; }
+            if headers.contains_key("signature") {
+                header_count += 1;
+            }
+            if headers.contains_key("signature-input") {
+                header_count += 1;
+            }
 
             if header_count > *out_headers_count {
                 *out_headers_count = header_count;
@@ -242,9 +248,7 @@ pub unsafe extern "C" fn sage_http_verifier_verify_request(
     };
 
     // Build HTTP request
-    let mut builder = Request::builder()
-        .method(method_str)
-        .uri(uri_str);
+    let mut builder = Request::builder().method(method_str).uri(uri_str);
 
     // Add headers
     let headers_slice = slice::from_raw_parts(request.headers, request.headers_count);

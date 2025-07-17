@@ -26,8 +26,9 @@ impl WasmSignature {
     /// Import signature from hex string
     #[wasm_bindgen(js_name = fromHex)]
     pub fn from_hex(key_type: WasmKeyType, hex_sig: &str) -> WasmResult<WasmSignature> {
-        let bytes = hex::decode(hex_sig)
-            .map_err(|e| WasmError { message: format!("Invalid hex: {}", e) })?;
+        let bytes = hex::decode(hex_sig).map_err(|e| WasmError {
+            message: format!("Invalid hex: {}", e),
+        })?;
         Self::from_bytes(key_type, &bytes)
     }
 
@@ -43,26 +44,27 @@ impl WasmSignature {
                 }
                 let mut sig_bytes = [0u8; 64];
                 sig_bytes.copy_from_slice(bytes);
-                Signature::Ed25519(
-                    ed25519_dalek::Signature::from_bytes(&sig_bytes)
-                        .map_err(|e| WasmError { message: format!("Invalid Ed25519 signature: {}", e) })?
-                )
+                Signature::Ed25519(ed25519_dalek::Signature::from_bytes(&sig_bytes).map_err(
+                    |e| WasmError {
+                        message: format!("Invalid Ed25519 signature: {}", e),
+                    },
+                )?)
             }
-            WasmKeyType::Secp256k1 => {
-                Signature::Secp256k1(
-                    k256::ecdsa::Signature::from_der(bytes)
-                        .or_else(|_| {
-                            if bytes.len() == 64 {
-                                k256::ecdsa::Signature::try_from(&bytes[..])
-                            } else {
-                                Err(k256::ecdsa::Error::new())
-                            }
-                        })
-                        .map_err(|e| WasmError { message: format!("Invalid Secp256k1 signature: {}", e) })?
-                )
-            }
+            WasmKeyType::Secp256k1 => Signature::Secp256k1(
+                k256::ecdsa::Signature::from_der(bytes)
+                    .or_else(|_| {
+                        if bytes.len() == 64 {
+                            k256::ecdsa::Signature::try_from(&bytes[..])
+                        } else {
+                            Err(k256::ecdsa::Error::new())
+                        }
+                    })
+                    .map_err(|e| WasmError {
+                        message: format!("Invalid Secp256k1 signature: {}", e),
+                    })?,
+            ),
         };
-        
+
         Ok(WasmSignature { inner: signature })
     }
 }
