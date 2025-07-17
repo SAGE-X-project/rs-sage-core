@@ -1,0 +1,10 @@
+# CODEOWNERS file for automatic code review assignment
+
+# All files in the repository will be reviewed by Copilot
+* @Copilot
+
+# Rust source files
+*.rs @Copilot
+
+# TOML files (Cargo.toml, etc.)
+*.toml @Copilot

@@ -1,0 +1,62 @@
+[package]
+name = "sage_crypto_core"
+version = "0.1.0"
+edition = "2021"
+authors = ["SAGE Project <contact@sage-project.io>"]
+description = "Core cryptographic library for SAGE with RFC 9421 support"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sage-x-project/rs-sage-core"
+keywords = ["cryptography", "rfc9421", "http-signatures", "ed25519", "secp256k1"]
+categories = ["cryptography", "authentication"]
+
+[lib]
+name = "sage_crypto_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Cryptographic primitives
+ed25519-dalek = "1.0.1"
+k256 = { version = "0.11", features = ["ecdsa"] }
+signature = "1.6"
+rand = "0.8"
+sha2 = "0.10"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.21"
+hex = "0.4"
+pem = "1.1"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# HTTP message signatures (RFC 9421)
+http = "0.2"
+chrono = "0.4"
+
+# FFI support
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libc = "0.2"
+
+# WASM support
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+criterion = "0.5"
+proptest = "1.0"
+
+[[bench]]
+name = "crypto_benchmarks"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
