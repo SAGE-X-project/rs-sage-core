@@ -54,16 +54,18 @@ let is_valid = keypair.verify(message, &signature)?;
 
 // Export keys in different formats
 use sage_crypto_core::formats::{KeyExporter, KeyFormat};
-let jwk = keypair.export_public_key(KeyFormat::JWK)?;
-let pem = keypair.export_public_key(KeyFormat::PEM)?;
+let jwk = keypair.public_key().export(KeyFormat::Jwk)?;
+let pem = keypair.public_key().to_pem()?;
 
 // HTTP Message Signatures (RFC 9421)
 use sage_crypto_core::rfc9421::{HttpSigner, SignatureParams};
-let params = SignatureParams::new()
-    .with_key_id("my-key")
-    .with_algorithm("ed25519");
-let signer = HttpSigner::new(keypair, params);
-// ... HTTP signing implementation
+let params = SignatureParams {
+    key_id: Some("my-key".to_string()),
+    alg: Some("ed25519".to_string()),
+    created: Some(chrono::Utc::now().timestamp()),
+    ..Default::default()
+};
+// Note: HttpSigner implementation depends on specific use case
 ```
 
 ### FFI (C API for Go integration)
@@ -105,7 +107,7 @@ await init();
 console.log('SAGE Crypto Core version:', version());
 
 // Generate key pair
-const keypair = WasmKeyPair.generate(WasmKeyType.Ed25519);
+const keypair = new WasmKeyPair(WasmKeyType.Ed25519);
 
 // Sign message
 const message = new TextEncoder().encode("Hello, SAGE!");
@@ -114,14 +116,17 @@ const signature = keypair.sign(message);
 // Verify signature
 const isValid = keypair.verify(message, signature);
 
-// Export as different formats
-const jwk = keypair.toJWK();
-const publicKeyHex = keypair.getPublicKeyHex();
+// Export keys
+const publicKeyHex = keypair.exportPublicKeyHex();
+const publicKeyBytes = keypair.exportPublicKey();
+const privateKeyBytes = keypair.exportPrivateKey();
 
 // Utility functions
-import { sha256, generateRandomHex } from './pkg/sage_crypto_core.js';
+import { sha256, generateRandomHex, bytesToHex, hexToBytes } from './pkg/sage_crypto_core.js';
 const hash = sha256(message);
 const randomId = generateRandomHex(16);
+const hexString = bytesToHex(message);
+const bytes = hexToBytes("48656c6c6f");
 ```
 
 ## Building
@@ -185,6 +190,10 @@ The Go SAGE project can use this library through CGO:
 // #cgo LDFLAGS: -L${SRCDIR}/../rs-sage-core/target/release -lsage_crypto_core
 // #include "../rs-sage-core/include/sage_crypto.h"
 import "C"
+import (
+    "log"
+    "unsafe"
+)
 
 func main() {
     // Initialize SAGE library
@@ -196,16 +205,32 @@ func main() {
     // Generate key pair
     var keypair *C.SageKeyPair
     result = C.sage_keypair_generate(C.SAGE_KEY_TYPE_ED25519, &keypair)
+    if result != C.SAGE_SUCCESS {
+        log.Fatal("Failed to generate keypair")
+    }
     defer C.sage_keypair_free(keypair)
     
-    // Sign and verify
+    // Sign message
     message := "Hello, SAGE!"
+    messageBytes := []byte(message)
     var signature *C.SageSignature
     result = C.sage_sign(keypair, 
-        (*C.uint8_t)(unsafe.Pointer(C.CString(message))), 
-        C.size_t(len(message)), 
+        (*C.uint8_t)(unsafe.Pointer(&messageBytes[0])), 
+        C.size_t(len(messageBytes)), 
         &signature)
+    if result != C.SAGE_SUCCESS {
+        log.Fatal("Failed to sign message")
+    }
     defer C.sage_signature_free(signature)
+    
+    // Verify signature
+    result = C.sage_verify_with_keypair(keypair,
+        (*C.uint8_t)(unsafe.Pointer(&messageBytes[0])),
+        C.size_t(len(messageBytes)),
+        signature)
+    if result == C.SAGE_SUCCESS {
+        log.Println("Signature verified successfully")
+    }
 }
 ```
 
