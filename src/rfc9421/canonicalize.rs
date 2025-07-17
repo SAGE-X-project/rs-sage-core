@@ -51,7 +51,7 @@ pub fn canonicalize_request<B>(
                     .uri()
                     .query()
                     .map(|q| format!("?{}", q))
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| "?".to_string());
                 ("@query".to_string(), query)
             }
             super::SignatureComponent::Status => {

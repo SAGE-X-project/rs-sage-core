@@ -1,19 +1,17 @@
 //! FFI utility functions
 
 use super::*;
-use std::sync::Mutex;
+use std::cell::RefCell;
 
 // Thread-local storage for error messages
 thread_local! {
-    static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+    static LAST_ERROR: RefCell<Option<String>> = RefCell::new(None);
 }
 
 /// Set the last error message
 pub(crate) fn set_last_error(error: String) {
     LAST_ERROR.with(|e| {
-        if let Ok(mut last_error) = e.lock() {
-            *last_error = Some(error);
-        }
+        *e.borrow_mut() = Some(error);
     });
 }
 
@@ -69,10 +67,13 @@ pub unsafe extern "C" fn sage_generate_nonce(out_nonce: *mut c_uchar, len: size_
 pub unsafe extern "C" fn sage_secure_zero(ptr: *mut c_uchar, len: size_t) {
     if !ptr.is_null() && len > 0 {
         let slice = slice::from_raw_parts_mut(ptr, len);
-        for byte in slice.iter_mut() {
-            *byte = 0;
+        
+        // Use volatile writes to prevent optimization
+        for i in 0..len {
+            std::ptr::write_volatile(slice.as_mut_ptr().add(i), 0);
         }
-        // Prevent compiler optimization
+        
+        // Additional fence to ensure ordering
         std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
     }
 }
