@@ -123,7 +123,7 @@ mod tests {
         let params = SignatureParams {
             key_id: Some("test-key".to_string()),
             alg: Some("ed25519".to_string()),
-            created: Some(1234567890),
+            created: Some(1_234_567_890),
             expires: None,
             nonce: None,
             tag: None,

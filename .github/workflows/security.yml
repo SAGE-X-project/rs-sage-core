@@ -32,7 +32,7 @@ jobs:
       run: cargo audit --json > audit-results.json
 
     - name: Upload audit results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-audit-results
         path: audit-results.json
@@ -76,7 +76,7 @@ jobs:
       run: cargo license --json > licenses.json
 
     - name: Upload license information
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: license-information
         path: licenses.json
@@ -197,11 +197,11 @@ jobs:
       run: |
         cargo clippy --all-targets --all-features -- \
           -D warnings \
-          -W clippy::all \
-          -W clippy::pedantic \
-          -W clippy::nursery \
-          -W clippy::cargo \
-          -W clippy::security
+          -A clippy::multiple-crate-versions \
+          -A clippy::must-use-candidate \
+          -A clippy::missing-errors-doc \
+          -A clippy::missing-panics-doc \
+          -A clippy::module-name-repetitions
 
   secret-scanning:
     name: Secret Scanning

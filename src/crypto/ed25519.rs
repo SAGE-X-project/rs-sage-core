@@ -2,13 +2,12 @@
 
 use crate::error::{Error, Result};
 use ed25519_dalek::{Signature as Ed25519Signature, SigningKey, VerifyingKey};
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, RngCore};
 
 /// Generate a new Ed25519 signing key
 pub fn generate_signing_key() -> SigningKey {
     let mut rng = OsRng;
     let mut bytes = [0u8; 32];
-    use rand::RngCore;
     rng.fill_bytes(&mut bytes);
     SigningKey::from_bytes(&bytes)
 }
