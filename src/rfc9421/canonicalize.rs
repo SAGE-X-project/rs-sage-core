@@ -1,8 +1,7 @@
 //! HTTP message canonicalization for RFC 9421
 
 use crate::error::{Error, Result};
-use http::{HeaderMap, Method, Request, Response, Uri};
-use std::collections::BTreeMap;
+use http::{HeaderMap, Request, Response};
 
 /// Canonicalize an HTTP request for signing
 pub fn canonicalize_request<B>(
