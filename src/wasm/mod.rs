@@ -82,6 +82,5 @@ impl From<crate::error::Error> for WasmError {
     }
 }
 
-
 /// Result type for WASM
 pub type WasmResult<T> = Result<T, WasmError>;

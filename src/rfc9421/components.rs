@@ -24,11 +24,11 @@ pub enum SignatureComponent {
     /// Header field
     Header(String),
     /// Derived component with parameters
-    DerivedComponent { 
+    DerivedComponent {
         /// The name of the derived component
-        name: String, 
+        name: String,
         /// Parameters associated with the derived component
-        params: Vec<String> 
+        params: Vec<String>,
     },
 }
 

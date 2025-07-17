@@ -1,7 +1,7 @@
 //! Ed25519 signature implementation
 
 use crate::error::{Error, Result};
-use ed25519_dalek::{SigningKey, VerifyingKey, Signature as Ed25519Signature};
+use ed25519_dalek::{Signature as Ed25519Signature, SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 
 /// Generate a new Ed25519 signing key

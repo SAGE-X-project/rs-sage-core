@@ -14,9 +14,7 @@ impl WasmHttpSigner {
     /// Create a new HTTP signer
     #[wasm_bindgen(constructor)]
     pub fn new(keypair: WasmKeyPair) -> WasmHttpSigner {
-        WasmHttpSigner {
-            keypair,
-        }
+        WasmHttpSigner { keypair }
     }
 
     /// Get the key ID
@@ -44,9 +42,7 @@ impl WasmHttpVerifier {
     /// Create a new HTTP verifier
     #[wasm_bindgen(constructor)]
     pub fn new(public_key: WasmPublicKey) -> WasmHttpVerifier {
-        WasmHttpVerifier {
-            public_key,
-        }
+        WasmHttpVerifier { public_key }
     }
 
     /// Verify a message signature
@@ -73,9 +69,12 @@ impl WasmHttpUtils {
     /// Parse signature headers from a response
     #[wasm_bindgen(js_name = parseSignatureHeaders)]
     pub fn parse_signature_headers(headers: &JsValue) -> WasmResult<JsValue> {
-        let headers_obj = headers.clone().dyn_into::<Object>().map_err(|_| WasmError {
-            message: "Headers must be an object".to_string(),
-        })?;
+        let headers_obj = headers
+            .clone()
+            .dyn_into::<Object>()
+            .map_err(|_| WasmError {
+                message: "Headers must be an object".to_string(),
+            })?;
 
         let result = Object::new();
 

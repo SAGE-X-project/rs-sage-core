@@ -2,7 +2,6 @@
 
 use super::*;
 
-
 /// Free a C string allocated by this library
 ///
 /// # Safety

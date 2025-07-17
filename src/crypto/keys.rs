@@ -230,7 +230,6 @@ impl KeyPair {
         }
     }
 
-
     /// Get private key bytes
     pub fn private_key_bytes(&self) -> Vec<u8> {
         match &self.private_key {
