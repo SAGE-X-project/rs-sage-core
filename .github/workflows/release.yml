@@ -1,0 +1,226 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+  build-native:
+    name: Build Native Libraries
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            archive: tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev
+        if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+        fi
+
+    - name: Install system dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install pkg-config openssl
+
+    - name: Install cross (Linux cross-compilation)
+      if: runner.os == 'Linux' && matrix.target != 'x86_64-unknown-linux-gnu'
+      run: cargo install cross
+
+    - name: Build release
+      run: |
+        if [ "${{ runner.os }}" = "Linux" ] && [ "${{ matrix.target }}" != "x86_64-unknown-linux-gnu" ]; then
+          cross build --release --target ${{ matrix.target }} --features ffi
+        else
+          cargo build --release --target ${{ matrix.target }} --features ffi
+        fi
+
+    - name: Create archive (Unix)
+      if: matrix.archive == 'tar.gz'
+      run: |
+        mkdir -p dist
+        cp target/${{ matrix.target }}/release/libsage_crypto_core.* dist/ || true
+        cp include/sage_crypto.h dist/
+        cp README.md dist/
+        cp LICENSE* dist/
+        tar -czf sage-crypto-core-${{ matrix.target }}.tar.gz -C dist .
+
+    - name: Create archive (Windows)
+      if: matrix.archive == 'zip'
+      run: |
+        mkdir dist
+        cp target/${{ matrix.target }}/release/sage_crypto_core.dll dist/ || echo "No DLL"
+        cp target/${{ matrix.target }}/release/sage_crypto_core.lib dist/ || echo "No LIB"
+        cp include/sage_crypto.h dist/
+        cp README.md dist/
+        cp LICENSE* dist/
+        Compress-Archive -Path dist/* -DestinationPath sage-crypto-core-${{ matrix.target }}.zip
+
+    - name: Upload Release Asset (tar.gz)
+      if: matrix.archive == 'tar.gz'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./sage-crypto-core-${{ matrix.target }}.tar.gz
+        asset_name: sage-crypto-core-${{ matrix.target }}.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Upload Release Asset (zip)
+      if: matrix.archive == 'zip'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./sage-crypto-core-${{ matrix.target }}.zip
+        asset_name: sage-crypto-core-${{ matrix.target }}.zip
+        asset_content_type: application/zip
+
+  build-wasm:
+    name: Build WASM
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Build WASM
+      run: wasm-pack build --target web --out-dir pkg --features wasm
+
+    - name: Create WASM package
+      run: |
+        mkdir -p wasm-dist
+        cp pkg/* wasm-dist/
+        cp examples/wasm/*.html wasm-dist/
+        cp examples/wasm/package.json wasm-dist/
+        cp README.md wasm-dist/
+        tar -czf sage-crypto-core-wasm.tar.gz -C wasm-dist .
+
+    - name: Upload WASM Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./sage-crypto-core-wasm.tar.gz
+        asset_name: sage-crypto-core-wasm.tar.gz
+        asset_content_type: application/gzip
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libssl-dev
+
+    - name: Publish to crates.io
+      run: cargo publish --token ${{ secrets.CRATES_TOKEN }}
+
+  publish-npm:
+    name: Publish to npm
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        registry-url: 'https://registry.npmjs.org'
+
+    - name: Build and publish to npm
+      run: |
+        wasm-pack build --target web --out-dir pkg --features wasm
+        wasm-pack publish --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

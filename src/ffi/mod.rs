@@ -10,10 +10,14 @@ use std::slice;
 pub mod keypair;
 pub mod signature;
 pub mod utils;
+pub mod http;
+pub mod formats;
 
 pub use keypair::*;
 pub use signature::*;
 pub use utils::*;
+pub use http::*;
+pub use formats::*;
 
 /// Error codes for FFI
 #[repr(C)]
