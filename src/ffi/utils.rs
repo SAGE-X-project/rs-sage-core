@@ -3,7 +3,7 @@
 use super::*;
 use std::sync::Mutex;
 
-/// Thread-local storage for error messages
+// Thread-local storage for error messages
 thread_local! {
     static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
 }

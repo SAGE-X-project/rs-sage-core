@@ -1,7 +1,7 @@
 //! FFI functions for key pair operations
 
 use super::*;
-use crate::crypto::{KeyPair, Signer, Verifier};
+use crate::crypto::KeyPair;
 
 /// Generate a new key pair
 ///

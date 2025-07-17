@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::rfc9421::{HttpSigner, HttpVerifier};
+use ::http::Request;
 use std::ffi::CStr;
 
 /// Opaque handle for HTTP signer
@@ -98,23 +99,31 @@ pub unsafe extern "C" fn sage_http_signer_sign_request(
     let request = &*request;
 
     // Convert FFI request to Rust HTTP request
-    let method_str = CStr::from_ptr(request.method).to_str()
-        .map_err(|_| SageErrorCode::InvalidInput)?;
-    let uri_str = CStr::from_ptr(request.uri).to_str()
-        .map_err(|_| SageErrorCode::InvalidInput)?;
+    let method_str = match CStr::from_ptr(request.method).to_str() {
+        Ok(s) => s,
+        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    };
+    let uri_str = match CStr::from_ptr(request.uri).to_str() {
+        Ok(s) => s,
+        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    };
 
     // Build HTTP request
-    let mut builder = http::Request::builder()
+    let mut builder = Request::builder()
         .method(method_str)
         .uri(uri_str);
 
     // Add headers
     let headers_slice = slice::from_raw_parts(request.headers, request.headers_count);
     for header in headers_slice {
-        let name = CStr::from_ptr(header.name).to_str()
-            .map_err(|_| SageErrorCode::InvalidInput)?;
-        let value = CStr::from_ptr(header.value).to_str()
-            .map_err(|_| SageErrorCode::InvalidInput)?;
+        let name = match CStr::from_ptr(header.name).to_str() {
+            Ok(s) => s,
+            Err(_) => return SageErrorCode::InvalidInput as SageResult,
+        };
+        let value = match CStr::from_ptr(header.value).to_str() {
+            Ok(s) => s,
+            Err(_) => return SageErrorCode::InvalidInput as SageResult,
+        };
         builder = builder.header(name, value);
     }
 
@@ -125,8 +134,10 @@ pub unsafe extern "C" fn sage_http_signer_sign_request(
         slice::from_raw_parts(request.body, request.body_len).to_vec()
     };
 
-    let http_request = builder.body(body)
-        .map_err(|_| SageErrorCode::InvalidInput)?;
+    let http_request = match builder.body(body) {
+        Ok(req) => req,
+        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    };
 
     // Sign the request
     match signer.sign_request(http_request) {
@@ -221,23 +232,31 @@ pub unsafe extern "C" fn sage_http_verifier_verify_request(
     let request = &*request;
 
     // Convert FFI request to Rust HTTP request
-    let method_str = CStr::from_ptr(request.method).to_str()
-        .map_err(|_| SageErrorCode::InvalidInput)?;
-    let uri_str = CStr::from_ptr(request.uri).to_str()
-        .map_err(|_| SageErrorCode::InvalidInput)?;
+    let method_str = match CStr::from_ptr(request.method).to_str() {
+        Ok(s) => s,
+        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    };
+    let uri_str = match CStr::from_ptr(request.uri).to_str() {
+        Ok(s) => s,
+        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    };
 
     // Build HTTP request
-    let mut builder = http::Request::builder()
+    let mut builder = Request::builder()
         .method(method_str)
         .uri(uri_str);
 
     // Add headers
     let headers_slice = slice::from_raw_parts(request.headers, request.headers_count);
     for header in headers_slice {
-        let name = CStr::from_ptr(header.name).to_str()
-            .map_err(|_| SageErrorCode::InvalidInput)?;
-        let value = CStr::from_ptr(header.value).to_str()
-            .map_err(|_| SageErrorCode::InvalidInput)?;
+        let name = match CStr::from_ptr(header.name).to_str() {
+            Ok(s) => s,
+            Err(_) => return SageErrorCode::InvalidInput as SageResult,
+        };
+        let value = match CStr::from_ptr(header.value).to_str() {
+            Ok(s) => s,
+            Err(_) => return SageErrorCode::InvalidInput as SageResult,
+        };
         builder = builder.header(name, value);
     }
 
@@ -248,8 +267,10 @@ pub unsafe extern "C" fn sage_http_verifier_verify_request(
         slice::from_raw_parts(request.body, request.body_len).to_vec()
     };
 
-    let http_request = builder.body(body)
-        .map_err(|_| SageErrorCode::InvalidInput)?;
+    let http_request = match builder.body(body) {
+        Ok(req) => req,
+        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    };
 
     // Verify the request
     match verifier.verify_request(&http_request) {

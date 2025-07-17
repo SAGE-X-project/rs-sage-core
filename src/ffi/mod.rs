@@ -46,8 +46,16 @@ impl From<Error> for SageErrorCode {
             Error::CryptoError(_) => SageErrorCode::CryptoError,
             Error::Verification(_) => SageErrorCode::VerificationFailed,
             Error::Unsupported(_) => SageErrorCode::Unsupported,
-            Error::SerializationError(_) => SageErrorCode::InvalidInput,
+            Error::Serialization(_) => SageErrorCode::InvalidInput,
             Error::Other(_) => SageErrorCode::UnknownError,
+            Error::KeyGeneration(_) => SageErrorCode::CryptoError,
+            Error::Signature(_) => SageErrorCode::CryptoError,
+            Error::InvalidKeyFormat(_) => SageErrorCode::InvalidInput,
+            Error::Base64(_) => SageErrorCode::InvalidInput,
+            Error::Pem(_) => SageErrorCode::InvalidInput,
+            Error::HttpSignature(_) => SageErrorCode::InvalidInput,
+            Error::InvalidKeyType(_) => SageErrorCode::InvalidInput,
+            Error::Io(_) => SageErrorCode::UnknownError,
         }
     }
 }

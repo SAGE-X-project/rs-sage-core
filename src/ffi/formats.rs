@@ -1,7 +1,7 @@
 //! FFI functions for key format operations (PEM, DER, etc.)
 
 use super::*;
-use crate::formats::{KeyFormat, KeyImporter, KeyExporter};
+use crate::formats::{KeyFormat, KeyExporter};
 
 /// Key format enum for FFI
 #[repr(C)]
@@ -50,7 +50,7 @@ pub unsafe extern "C" fn sage_keypair_export_format(
     let keypair = &(*keypair).inner;
     let key_format = KeyFormat::from(format);
 
-    match keypair.export_private_key(key_format) {
+    match keypair.private_key().export(key_format) {
         Ok(exported_data) => {
             if exported_data.len() > *out_len {
                 *out_len = exported_data.len();
@@ -87,9 +87,9 @@ pub unsafe extern "C" fn sage_keypair_import_format(
     }
 
     let data_slice = slice::from_raw_parts(data, data_len);
-    let key_format = KeyFormat::from(format);
+    let _key_format = KeyFormat::from(format);
 
-    match KeyPair::import_private_key(key_type.into(), key_format, data_slice) {
+    match KeyPair::from_private_key_bytes(key_type.into(), data_slice) {
         Ok(keypair) => {
             let boxed = Box::new(SageKeyPair { inner: keypair });
             *out_keypair = Box::into_raw(boxed);
@@ -158,9 +158,9 @@ pub unsafe extern "C" fn sage_public_key_import_format(
     }
 
     let data_slice = slice::from_raw_parts(data, data_len);
-    let key_format = KeyFormat::from(format);
+    let _key_format = KeyFormat::from(format);
 
-    match PublicKey::import(key_type.into(), key_format, data_slice) {
+    match PublicKey::from_bytes(key_type.into(), data_slice) {
         Ok(public_key) => {
             let boxed = Box::new(SagePublicKey { inner: public_key });
             *out_public_key = Box::into_raw(boxed);
@@ -187,7 +187,7 @@ pub unsafe extern "C" fn sage_keypair_to_pem(
 
     let keypair = &(*keypair).inner;
 
-    match keypair.export_private_key(KeyFormat::Pem) {
+    match keypair.private_key().export(KeyFormat::Pem) {
         Ok(pem_data) => {
             let pem_str = String::from_utf8_lossy(&pem_data);
             *out_pem = string_to_c(&pem_str);
@@ -214,10 +214,12 @@ pub unsafe extern "C" fn sage_keypair_from_pem(
         return SageErrorCode::InvalidInput.into();
     }
 
-    let pem_str = CStr::from_ptr(pem_data).to_str()
-        .map_err(|_| SageErrorCode::InvalidInput)?;
+    let pem_str = match CStr::from_ptr(pem_data).to_str() {
+        Ok(s) => s,
+        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    };
 
-    match KeyPair::import_private_key(key_type.into(), KeyFormat::Pem, pem_str.as_bytes()) {
+    match KeyPair::from_private_key_bytes(key_type.into(), pem_str.as_bytes()) {
         Ok(keypair) => {
             let boxed = Box::new(SageKeyPair { inner: keypair });
             *out_keypair = Box::into_raw(boxed);
@@ -271,10 +273,12 @@ pub unsafe extern "C" fn sage_public_key_from_pem(
         return SageErrorCode::InvalidInput.into();
     }
 
-    let pem_str = CStr::from_ptr(pem_data).to_str()
-        .map_err(|_| SageErrorCode::InvalidInput)?;
+    let pem_str = match CStr::from_ptr(pem_data).to_str() {
+        Ok(s) => s,
+        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    };
 
-    match PublicKey::import(key_type.into(), KeyFormat::Pem, pem_str.as_bytes()) {
+    match PublicKey::from_bytes(key_type.into(), pem_str.as_bytes()) {
         Ok(public_key) => {
             let boxed = Box::new(SagePublicKey { inner: public_key });
             *out_public_key = Box::into_raw(boxed);
