@@ -43,8 +43,8 @@ impl FileKeyStorage {
 
     /// Parses PEM data and returns a KeyPair
     fn parse_pem(pem_data: &str) -> Result<KeyPair> {
-        let pem = pem::parse(pem_data)
-            .map_err(|e| Error::Other(format!("Failed to parse PEM: {e}")))?;
+        let pem =
+            pem::parse(pem_data).map_err(|e| Error::Other(format!("Failed to parse PEM: {e}")))?;
 
         // Determine key type from PEM tag
         let key_type = match pem.tag.as_str() {

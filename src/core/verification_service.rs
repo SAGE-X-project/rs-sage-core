@@ -125,8 +125,8 @@ mod tests {
 
     #[test]
     fn test_verification_service_creation() {
-        let service = VerificationService::new();
-        assert!(true); // Service created successfully
+        let _service = VerificationService::new();
+        // Service created successfully
     }
 
     #[test]
@@ -142,9 +142,11 @@ mod tests {
             .build()
             .unwrap();
 
-        let mut options = VerificationOptions::default();
-        options.check_timestamp = true;
-        options.max_age_secs = Some(3600); // 1 hour
+        let options = VerificationOptions {
+            check_timestamp: true,
+            max_age_secs: Some(3600), // 1 hour
+            ..Default::default()
+        };
 
         let is_valid = service.verify_timestamp(&msg, &options).unwrap();
         assert!(is_valid);
