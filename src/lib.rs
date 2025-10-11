@@ -7,6 +7,7 @@
 #![warn(missing_docs)]
 #![cfg_attr(not(feature = "ffi"), deny(unsafe_code))]
 
+pub mod core;
 pub mod crypto;
 pub mod error;
 pub mod formats;
@@ -19,6 +20,9 @@ pub mod ffi;
 pub mod wasm;
 
 // Re-export main types
+pub use core::{
+    Message, MessageBuilder, VerificationOptions, VerificationResult, VerificationService,
+};
 pub use crypto::{KeyPair, KeyType, PrivateKey, PublicKey, Signature};
 pub use error::{Error, Result};
 pub use formats::{KeyExporter, KeyFormat, KeyImporter};

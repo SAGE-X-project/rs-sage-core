@@ -2,11 +2,15 @@
 
 pub mod ed25519;
 pub mod keys;
+pub mod manager;
 pub mod secp256k1;
 pub mod signature;
+pub mod storage;
 
 pub use keys::{KeyPair, KeyType, PrivateKey, PublicKey};
+pub use manager::CryptoManager;
 pub use signature::{Signature, Signer, Verifier};
+pub use storage::KeyStorage;
 
 /// Supported key types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
