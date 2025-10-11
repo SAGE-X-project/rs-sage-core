@@ -28,6 +28,12 @@ pub mod transaction;
 pub mod contract;
 #[cfg(feature = "blockchain")]
 pub mod did_registry;
+#[cfg(feature = "blockchain")]
+pub mod nonce_tracker;
+#[cfg(feature = "blockchain")]
+pub mod event_listener;
+#[cfg(feature = "blockchain")]
+pub mod synchronizer;
 
 #[cfg(feature = "blockchain")]
 pub use client::{BlockchainClient, BlockchainConfig};
@@ -37,6 +43,12 @@ pub use transaction::{Transaction, TransactionReceipt};
 pub use contract::{ContractCall, ContractHelper, ContractInterface};
 #[cfg(feature = "blockchain")]
 pub use did_registry::DIDRegistry;
+#[cfg(feature = "blockchain")]
+pub use nonce_tracker::NonceTracker;
+#[cfg(feature = "blockchain")]
+pub use event_listener::{EventListener, EventListenerConfig, RegistryEvent, EventCallback, EventCallbacks};
+#[cfg(feature = "blockchain")]
+pub use synchronizer::{Synchronizer, SynchronizerBuilder};
 
 /// Re-export ethers types for convenience
 #[cfg(feature = "blockchain")]
