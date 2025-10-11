@@ -5,7 +5,8 @@
 
 use crate::core::{Message, VerificationOptions, VerificationResult};
 use crate::crypto::keys::PublicKey;
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::rfc9421::HttpVerifier;
 
 /// Service for verifying SAGE messages
 pub struct VerificationService;
@@ -67,11 +68,63 @@ impl VerificationService {
         Ok(result)
     }
 
-    /// Verifies the message signature
-    fn verify_signature(&self, message: &Message, _public_key: &PublicKey) -> Result<bool> {
-        // TODO: Integrate with RFC 9421 verifier in Task 1-4
-        // For now, just check if signature is not empty
-        Ok(!message.signature.is_empty())
+    /// Verifies the message signature using RFC 9421 HttpVerifier
+    fn verify_signature(&self, message: &Message, public_key: &PublicKey) -> Result<bool> {
+        // Check if message is signed
+        if message.signature.is_empty() || message.signature_input.is_empty() {
+            return Ok(false);
+        }
+
+        // Reconstruct HTTP Request from Message
+        let request = self.reconstruct_http_request(message)?;
+
+        // Create HttpVerifier with public key
+        let verifier = HttpVerifier::new(public_key.clone());
+
+        // Verify the request signature
+        match verifier.verify_request(&request) {
+            Ok(()) => Ok(true),
+            Err(e) => {
+                // Log verification failure details for debugging
+                eprintln!("Signature verification failed: {}", e);
+                Ok(false)
+            }
+        }
+    }
+
+    /// Reconstructs an HTTP Request from a Message for verification
+    fn reconstruct_http_request(&self, message: &Message) -> Result<http::Request<Vec<u8>>> {
+        use base64::Engine;
+
+        // Build request with SAGE headers
+        let mut request_builder = http::Request::builder()
+            .method("POST")
+            .uri("/message")
+            .header("content-type", "application/json")
+            .header("x-sage-agent-did", &message.agent_did)
+            .header("x-sage-message-id", &message.message_id)
+            .header("x-sage-timestamp", message.timestamp.to_string())
+            .header("x-sage-nonce", &message.nonce);
+
+        // Add custom headers from message
+        for (key, value) in &message.headers {
+            request_builder = request_builder.header(key, value);
+        }
+
+        // Add RFC 9421 signature headers
+        // Format: "sig1=:base64_signature:"
+        let signature_base64 =
+            base64::engine::general_purpose::STANDARD.encode(&message.signature);
+        let signature_header = format!("sig1=:{signature_base64}");
+
+        request_builder = request_builder
+            .header("signature", signature_header)
+            .header("signature-input", &message.signature_input);
+
+        // Build request with body
+        request_builder
+            .body(message.body.clone())
+            .map_err(|e| Error::Other(format!("Failed to reconstruct HTTP request: {e}")))
     }
 
     /// Verifies the message timestamp

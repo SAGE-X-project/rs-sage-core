@@ -250,11 +250,9 @@ fn test_timestamp_verification() {
 
 /// Test cross-key-type verification fails
 ///
-/// Note: This test is currently ignored because VerificationService.verify_signature()
-/// is a placeholder that only checks if signature is non-empty. Actual signature
-/// verification will be implemented in a later phase.
+/// Verifies that a message signed with one key type (Ed25519) cannot be verified
+/// with a different key type (Secp256k1). This ensures proper cryptographic isolation.
 #[test]
-#[ignore = "Actual signature verification not yet implemented"]
 fn test_cross_key_type_verification_fails() {
     let ed25519_keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
     let secp256k1_keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
