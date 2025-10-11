@@ -44,8 +44,6 @@ pub use ethers::prelude::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_blockchain_module() {
         // Module structure test
