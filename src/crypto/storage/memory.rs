@@ -48,13 +48,13 @@ impl KeyStorage for MemoryKeyStorage {
         self.store
             .get(id)
             .map(|entry| entry.value().clone())
-            .ok_or_else(|| Error::InvalidInput(format!("Key not found: {}", id)))
+            .ok_or_else(|| Error::InvalidInput(format!("Key not found: {id}")))
     }
 
     fn delete(&self, id: &str) -> Result<()> {
         self.store
             .remove(id)
-            .ok_or_else(|| Error::InvalidInput(format!("Key not found: {}", id)))?;
+            .ok_or_else(|| Error::InvalidInput(format!("Key not found: {id}")))?;
         Ok(())
     }
 

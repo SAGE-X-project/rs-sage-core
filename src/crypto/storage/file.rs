@@ -27,7 +27,7 @@ impl FileKeyStorage {
         // Create directory if it doesn't exist
         if !base_dir.exists() {
             fs::create_dir_all(&base_dir)
-                .map_err(|e| Error::Other(format!("Failed to create storage directory: {}", e)))?;
+                .map_err(|e| Error::Other(format!("Failed to create storage directory: {e}")))?;
         }
 
         Ok(Self {
@@ -38,13 +38,13 @@ impl FileKeyStorage {
 
     /// Returns the file path for a given key ID
     fn key_path(&self, id: &str) -> PathBuf {
-        self.base_dir.join(format!("{}.pem", id))
+        self.base_dir.join(format!("{id}.pem"))
     }
 
     /// Parses PEM data and returns a KeyPair
     fn parse_pem(pem_data: &str) -> Result<KeyPair> {
         let pem = pem::parse(pem_data)
-            .map_err(|e| Error::Other(format!("Failed to parse PEM: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to parse PEM: {e}")))?;
 
         // Determine key type from PEM tag
         let key_type = match pem.tag.as_str() {
@@ -67,15 +67,15 @@ impl FileKeyStorage {
         }
 
         for entry in fs::read_dir(&self.base_dir)
-            .map_err(|e| Error::Other(format!("Failed to read storage directory: {}", e)))?
+            .map_err(|e| Error::Other(format!("Failed to read storage directory: {e}")))?
         {
-            let entry = entry.map_err(|e| Error::Other(format!("Failed to read entry: {}", e)))?;
+            let entry = entry.map_err(|e| Error::Other(format!("Failed to read entry: {e}")))?;
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) == Some("pem") {
                 if let Some(id) = path.file_stem().and_then(|s| s.to_str()) {
                     let pem_data = fs::read_to_string(&path)
-                        .map_err(|e| Error::Other(format!("Failed to read key file: {}", e)))?;
+                        .map_err(|e| Error::Other(format!("Failed to read key file: {e}")))?;
 
                     let keypair = Self::parse_pem(&pem_data)?;
                     cache.insert(id.to_string(), keypair);
@@ -95,7 +95,7 @@ impl KeyStorage for FileKeyStorage {
         // Write to file
         let path = self.key_path(id);
         fs::write(&path, pem_data)
-            .map_err(|e| Error::Other(format!("Failed to write key file: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to write key file: {e}")))?;
 
         // Update cache
         let mut cache = self.cache.write();
@@ -116,11 +116,11 @@ impl KeyStorage for FileKeyStorage {
         // Load from file
         let path = self.key_path(id);
         if !path.exists() {
-            return Err(Error::InvalidInput(format!("Key not found: {}", id)));
+            return Err(Error::InvalidInput(format!("Key not found: {id}")));
         }
 
         let pem_data = fs::read_to_string(&path)
-            .map_err(|e| Error::Other(format!("Failed to read key file: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to read key file: {e}")))?;
 
         let keypair = Self::parse_pem(&pem_data)?;
 
@@ -135,12 +135,12 @@ impl KeyStorage for FileKeyStorage {
         let path = self.key_path(id);
 
         if !path.exists() {
-            return Err(Error::InvalidInput(format!("Key not found: {}", id)));
+            return Err(Error::InvalidInput(format!("Key not found: {id}")));
         }
 
         // Delete file
         fs::remove_file(&path)
-            .map_err(|e| Error::Other(format!("Failed to delete key file: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to delete key file: {e}")))?;
 
         // Remove from cache
         let mut cache = self.cache.write();
