@@ -42,6 +42,12 @@ dashmap = "5.5"
 parking_lot = "0.12"
 uuid = { version = "1.6", features = ["v4"] }
 
+# Blockchain integration (Phase 3)
+ethers = { version = "2.0", features = ["abigen", "ws"], optional = true }
+tokio = { version = "1.0", features = ["full", "sync"], optional = true }
+async-trait = { version = "0.1", optional = true }
+futures = { version = "0.3", optional = true }
+
 # FFI support
 libc = { version = "0.2", optional = true }
 
@@ -67,6 +73,7 @@ harness = false
 default = []
 ffi = ["libc"]
 wasm = ["wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys", "getrandom", "console_error_panic_hook"]
+blockchain = ["ethers", "tokio", "async-trait", "futures"]
 
 [profile.release]
 opt-level = 3

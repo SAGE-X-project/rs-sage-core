@@ -14,6 +14,9 @@ pub mod error;
 pub mod formats;
 pub mod rfc9421;
 
+#[cfg(feature = "blockchain")]
+pub mod blockchain;
+
 #[cfg(feature = "ffi")]
 pub mod ffi;
 
