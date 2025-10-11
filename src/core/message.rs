@@ -31,6 +31,8 @@ pub struct Message {
     pub key_id: String,
     /// Cryptographic signature of the message
     pub signature: Vec<u8>,
+    /// RFC 9421 signature-input header value (e.g., "sig1=(...);created=...;keyid=...")
+    pub signature_input: String,
     /// List of fields that were signed
     pub signed_fields: Vec<String>,
     /// Additional metadata
@@ -153,6 +155,7 @@ impl MessageBuilder {
                 algorithm: String::new(),
                 key_id: String::new(),
                 signature: Vec::new(),
+                signature_input: String::new(),
                 signed_fields: Vec::new(),
                 metadata: self.metadata,
             });
@@ -189,11 +192,12 @@ impl MessageBuilder {
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
 
-        let _signature_input_header = signed_request
+        let signature_input_header = signed_request
             .headers()
             .get("signature-input")
             .and_then(|h| h.to_str().ok())
-            .unwrap_or("");
+            .unwrap_or("")
+            .to_string();
 
         // Parse signature value (format: "sig1=:base64:")
         let signature_bytes = if let Some(sig_val) = signature_header.strip_prefix("sig1=:") {
@@ -227,6 +231,7 @@ impl MessageBuilder {
             algorithm,
             key_id: keypair.public_key().key_id(),
             signature: signature_bytes,
+            signature_input: signature_input_header,
             signed_fields,
             metadata: self.metadata,
         })
