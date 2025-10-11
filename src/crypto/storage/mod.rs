@@ -3,10 +3,16 @@
 //! This module provides traits and implementations for storing and retrieving
 //! cryptographic key pairs.
 
+pub mod file;
+pub mod memory;
+
 use std::sync::Arc;
 
 use crate::crypto::keys::KeyPair;
 use crate::error::Result;
+
+pub use file::FileKeyStorage;
+pub use memory::MemoryKeyStorage;
 
 /// Trait for key storage backends
 pub trait KeyStorage: Send + Sync {
@@ -28,5 +34,3 @@ pub trait KeyStorage: Send + Sync {
 
 /// Type alias for boxed KeyStorage trait objects
 pub type DynKeyStorage = Arc<dyn KeyStorage>;
-
-// TODO: Implement MemoryKeyStorage and FileKeyStorage in Task 1-3
