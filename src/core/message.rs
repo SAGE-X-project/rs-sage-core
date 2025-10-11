@@ -10,16 +10,27 @@ use crate::error::Result;
 /// Represents a SAGE message with RFC 9421 signature
 #[derive(Debug, Clone)]
 pub struct Message {
+    /// Agent DID (Decentralized Identifier)
     pub agent_did: String,
+    /// Unique message identifier
     pub message_id: String,
+    /// Unix timestamp when the message was created
     pub timestamp: i64,
+    /// Nonce for replay attack prevention
     pub nonce: String,
+    /// HTTP headers included in the message
     pub headers: HashMap<String, String>,
+    /// Message body content
     pub body: Vec<u8>,
+    /// Signature algorithm used (e.g., "ed25519", "secp256k1")
     pub algorithm: String,
+    /// Key identifier used for signing
     pub key_id: String,
+    /// Cryptographic signature of the message
     pub signature: Vec<u8>,
+    /// List of fields that were signed
     pub signed_fields: Vec<String>,
+    /// Additional metadata
     pub metadata: HashMap<String, serde_json::Value>,
 }
 

@@ -20,7 +20,9 @@ pub mod ffi;
 pub mod wasm;
 
 // Re-export main types
-pub use core::{Message, VerificationOptions, VerificationResult};
+pub use core::{
+    Message, MessageBuilder, VerificationOptions, VerificationResult, VerificationService,
+};
 pub use crypto::{KeyPair, KeyType, PrivateKey, PublicKey, Signature};
 pub use error::{Error, Result};
 pub use formats::{KeyExporter, KeyFormat, KeyImporter};
