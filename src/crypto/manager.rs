@@ -54,6 +54,61 @@ impl CryptoManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::storage::MemoryKeyStorage;
 
-    // TODO: Add tests after implementing storage backends in Task 1-3
+    #[test]
+    fn test_generate_keypair() {
+        let storage = Arc::new(MemoryKeyStorage::new());
+        let manager = CryptoManager::new(storage);
+
+        let keypair = manager.generate_keypair(KeyType::Ed25519).unwrap();
+        assert_eq!(keypair.key_type(), KeyType::Ed25519);
+    }
+
+    #[test]
+    fn test_store_and_load() {
+        let storage = Arc::new(MemoryKeyStorage::new());
+        let manager = CryptoManager::new(storage);
+
+        let keypair = manager.generate_keypair(KeyType::Ed25519).unwrap();
+        let id = "test-key";
+
+        manager.store_keypair(id, &keypair).unwrap();
+        assert!(manager.key_exists(id));
+
+        let loaded = manager.load_keypair(id).unwrap();
+        assert_eq!(loaded.public_key().key_id(), keypair.public_key().key_id());
+    }
+
+    #[test]
+    fn test_delete() {
+        let storage = Arc::new(MemoryKeyStorage::new());
+        let manager = CryptoManager::new(storage);
+
+        let keypair = manager.generate_keypair(KeyType::Ed25519).unwrap();
+        let id = "test-key";
+
+        manager.store_keypair(id, &keypair).unwrap();
+        assert!(manager.key_exists(id));
+
+        manager.delete_keypair(id).unwrap();
+        assert!(!manager.key_exists(id));
+    }
+
+    #[test]
+    fn test_list_keys() {
+        let storage = Arc::new(MemoryKeyStorage::new());
+        let manager = CryptoManager::new(storage);
+
+        let kp1 = manager.generate_keypair(KeyType::Ed25519).unwrap();
+        let kp2 = manager.generate_keypair(KeyType::Secp256k1).unwrap();
+
+        manager.store_keypair("key1", &kp1).unwrap();
+        manager.store_keypair("key2", &kp2).unwrap();
+
+        let keys = manager.list_keys().unwrap();
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains(&"key1".to_string()));
+        assert!(keys.contains(&"key2".to_string()));
+    }
 }
