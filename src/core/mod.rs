@@ -5,6 +5,8 @@
 
 pub mod message;
 pub mod types;
+pub mod verification_service;
 
-pub use message::Message;
+pub use message::{Message, MessageBuilder};
 pub use types::{VerificationOptions, VerificationResult};
+pub use verification_service::VerificationService;
