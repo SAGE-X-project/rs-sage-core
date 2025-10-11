@@ -21,9 +21,9 @@ pub mod document;
 pub mod method;
 pub mod resolver;
 
-pub use document::{DIDDocument, VerificationMethod};
+pub use document::{DIDDocument, ServiceEndpoint, ServiceEndpointValue, VerificationMethod, VerificationReference};
 pub use method::{DIDMethod, generate_did_from_pubkey, parse_did};
-pub use resolver::{DIDResolver, ResolutionResult};
+pub use resolver::{BlockchainDIDResolver, DIDResolver, MemoryDIDResolver, ResolutionMetadata, ResolutionResult};
 
 use crate::error::{Error, Result};
 
