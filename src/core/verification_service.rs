@@ -174,7 +174,7 @@ mod tests {
 
         let options = VerificationOptions::default();
         let result = service
-            .verify(&msg, &keypair.public_key(), &options)
+            .verify(&msg, keypair.public_key(), &options)
             .unwrap();
 
         // Should fail because signature is empty

@@ -10,7 +10,7 @@ pub mod storage;
 pub use keys::{KeyPair, KeyType, PrivateKey, PublicKey};
 pub use manager::CryptoManager;
 pub use signature::{Signature, Signer, Verifier};
-pub use storage::KeyStorage;
+pub use storage::{FileKeyStorage, KeyStorage, MemoryKeyStorage};
 
 /// Supported key types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
