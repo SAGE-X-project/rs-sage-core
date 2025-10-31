@@ -18,6 +18,10 @@ pub enum SignatureAlgorithm {
     EcdsaP256Sha256,
     /// ECDSA Secp256k1 SHA-256
     EcdsaSecp256k1Sha256,
+    /// RSA PKCS#1 v1.5 with SHA-256
+    RsaPkcs1v15Sha256,
+    /// RSA PSS with SHA-512
+    RsaPssSha512,
 }
 
 impl SignatureAlgorithm {
@@ -27,6 +31,8 @@ impl SignatureAlgorithm {
             SignatureAlgorithm::Ed25519 => "ed25519",
             SignatureAlgorithm::EcdsaP256Sha256 => "ecdsa-p256-sha256",
             SignatureAlgorithm::EcdsaSecp256k1Sha256 => "ecdsa-secp256k1-sha256",
+            SignatureAlgorithm::RsaPkcs1v15Sha256 => "rsa-v1_5-sha256",
+            SignatureAlgorithm::RsaPssSha512 => "rsa-pss-sha512",
         }
     }
 }
@@ -91,6 +97,286 @@ impl SignatureInput {
             format!("({components})")
         } else {
             format!("({components});{params}")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ===== SignatureAlgorithm Tests =====
+
+    #[test]
+    fn test_signature_algorithm_ed25519_identifier() {
+        let alg = SignatureAlgorithm::Ed25519;
+        assert_eq!(alg.identifier(), "ed25519");
+    }
+
+    #[test]
+    fn test_signature_algorithm_ecdsa_p256_identifier() {
+        let alg = SignatureAlgorithm::EcdsaP256Sha256;
+        assert_eq!(alg.identifier(), "ecdsa-p256-sha256");
+    }
+
+    #[test]
+    fn test_signature_algorithm_ecdsa_secp256k1_identifier() {
+        let alg = SignatureAlgorithm::EcdsaSecp256k1Sha256;
+        assert_eq!(alg.identifier(), "ecdsa-secp256k1-sha256");
+    }
+
+    #[test]
+    fn test_signature_algorithm_rsa_pkcs1_identifier() {
+        let alg = SignatureAlgorithm::RsaPkcs1v15Sha256;
+        assert_eq!(alg.identifier(), "rsa-v1_5-sha256");
+    }
+
+    #[test]
+    fn test_signature_algorithm_rsa_pss_identifier() {
+        let alg = SignatureAlgorithm::RsaPssSha512;
+        assert_eq!(alg.identifier(), "rsa-pss-sha512");
+    }
+
+    #[test]
+    fn test_signature_algorithm_equality() {
+        let alg1 = SignatureAlgorithm::Ed25519;
+        let alg2 = SignatureAlgorithm::Ed25519;
+        let alg3 = SignatureAlgorithm::EcdsaP256Sha256;
+
+        assert_eq!(alg1, alg2);
+        assert_ne!(alg1, alg3);
+    }
+
+    #[test]
+    fn test_signature_algorithm_clone() {
+        let alg1 = SignatureAlgorithm::Ed25519;
+        let alg2 = alg1;
+
+        assert_eq!(alg1, alg2);
+    }
+
+    // ===== SignatureInput Builder Tests =====
+
+    #[test]
+    fn test_signature_input_new() {
+        let input = SignatureInput::new();
+        assert_eq!(input.components.len(), 0);
+    }
+
+    #[test]
+    fn test_signature_input_default() {
+        let input = SignatureInput::default();
+        assert_eq!(input.components.len(), 0);
+    }
+
+    #[test]
+    fn test_signature_input_add_component() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method);
+
+        assert_eq!(input.components.len(), 1);
+        assert_eq!(input.components[0], "@method");
+    }
+
+    #[test]
+    fn test_signature_input_add_multiple_components() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method)
+            .add_component(SignatureComponent::Path)
+            .add_component(SignatureComponent::Header("content-type".to_string()));
+
+        assert_eq!(input.components.len(), 3);
+        assert_eq!(input.components[0], "@method");
+        assert_eq!(input.components[1], "@path");
+        assert_eq!(input.components[2], "content-type");
+    }
+
+    #[test]
+    fn test_signature_input_key_id() {
+        let input = SignatureInput::new()
+            .key_id("test-key-123");
+
+        assert_eq!(input.params.key_id, Some("test-key-123".to_string()));
+    }
+
+    #[test]
+    fn test_signature_input_algorithm() {
+        let input = SignatureInput::new()
+            .algorithm(SignatureAlgorithm::Ed25519);
+
+        assert_eq!(input.params.alg, Some("ed25519".to_string()));
+    }
+
+    #[test]
+    fn test_signature_input_created() {
+        let input = SignatureInput::new()
+            .created(1618884473);
+
+        assert_eq!(input.params.created, Some(1618884473));
+    }
+
+    #[test]
+    fn test_signature_input_expires() {
+        let input = SignatureInput::new()
+            .expires(1618884773);
+
+        assert_eq!(input.params.expires, Some(1618884773));
+    }
+
+    #[test]
+    fn test_signature_input_build_empty() {
+        let input = SignatureInput::new();
+        let result = input.build();
+
+        assert_eq!(result, "()");
+    }
+
+    #[test]
+    fn test_signature_input_build_single_component() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method);
+
+        let result = input.build();
+
+        assert_eq!(result, "(@method)");
+    }
+
+    #[test]
+    fn test_signature_input_build_multiple_components() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method)
+            .add_component(SignatureComponent::Path);
+
+        let result = input.build();
+
+        assert_eq!(result, "(@method @path)");
+    }
+
+    #[test]
+    fn test_signature_input_build_with_key_id() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method)
+            .key_id("test-key");
+
+        let result = input.build();
+
+        assert!(result.starts_with("(@method);"));
+        assert!(result.contains("keyid=\"test-key\""));
+    }
+
+    #[test]
+    fn test_signature_input_build_with_algorithm() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method)
+            .algorithm(SignatureAlgorithm::Ed25519);
+
+        let result = input.build();
+
+        assert!(result.starts_with("(@method);"));
+        assert!(result.contains("alg=\"ed25519\""));
+    }
+
+    #[test]
+    fn test_signature_input_build_with_created() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method)
+            .created(1618884473);
+
+        let result = input.build();
+
+        assert!(result.starts_with("(@method);"));
+        assert!(result.contains("created=1618884473"));
+    }
+
+    #[test]
+    fn test_signature_input_build_with_expires() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method)
+            .expires(1618884773);
+
+        let result = input.build();
+
+        assert!(result.starts_with("(@method);"));
+        assert!(result.contains("expires=1618884773"));
+    }
+
+    #[test]
+    fn test_signature_input_build_with_all_params() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method)
+            .add_component(SignatureComponent::Path)
+            .key_id("test-key")
+            .algorithm(SignatureAlgorithm::Ed25519)
+            .created(1618884473)
+            .expires(1618884773);
+
+        let result = input.build();
+
+        assert!(result.starts_with("(@method @path);"));
+        assert!(result.contains("keyid=\"test-key\""));
+        assert!(result.contains("alg=\"ed25519\""));
+        assert!(result.contains("created=1618884473"));
+        assert!(result.contains("expires=1618884773"));
+    }
+
+    #[test]
+    fn test_signature_input_builder_chain() {
+        let result = SignatureInput::new()
+            .add_component(SignatureComponent::Method)
+            .add_component(SignatureComponent::Path)
+            .add_component(SignatureComponent::Authority)
+            .key_id("my-key")
+            .algorithm(SignatureAlgorithm::EcdsaP256Sha256)
+            .created(1000000)
+            .expires(2000000)
+            .build();
+
+        assert!(result.starts_with("(@method @path @authority);"));
+    }
+
+    #[test]
+    fn test_signature_input_with_header_component() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Header("content-type".to_string()))
+            .add_component(SignatureComponent::Header("x-custom".to_string()));
+
+        let result = input.build();
+
+        assert_eq!(result, "(content-type x-custom)");
+    }
+
+    #[test]
+    fn test_signature_input_all_component_types() {
+        let input = SignatureInput::new()
+            .add_component(SignatureComponent::Method)
+            .add_component(SignatureComponent::TargetUri)
+            .add_component(SignatureComponent::Authority)
+            .add_component(SignatureComponent::Scheme)
+            .add_component(SignatureComponent::RequestTarget)
+            .add_component(SignatureComponent::Path)
+            .add_component(SignatureComponent::Query)
+            .add_component(SignatureComponent::Header("content-type".to_string()));
+
+        assert_eq!(input.components.len(), 8);
+    }
+
+    #[test]
+    fn test_signature_input_all_algorithms() {
+        let algorithms = vec![
+            (SignatureAlgorithm::Ed25519, "ed25519"),
+            (SignatureAlgorithm::EcdsaP256Sha256, "ecdsa-p256-sha256"),
+            (SignatureAlgorithm::EcdsaSecp256k1Sha256, "ecdsa-secp256k1-sha256"),
+            (SignatureAlgorithm::RsaPkcs1v15Sha256, "rsa-v1_5-sha256"),
+            (SignatureAlgorithm::RsaPssSha512, "rsa-pss-sha512"),
+        ];
+
+        for (alg, expected) in algorithms {
+            let input = SignatureInput::new()
+                .add_component(SignatureComponent::Method)
+                .algorithm(alg);
+
+            let result = input.build();
+            assert!(result.contains(&format!("alg=\"{}\"", expected)));
         }
     }
 }

@@ -56,6 +56,9 @@ impl From<Error> for SageErrorCode {
             Error::HttpSignature(_) => SageErrorCode::InvalidInput,
             Error::InvalidKeyType(_) => SageErrorCode::InvalidInput,
             Error::Io(_) => SageErrorCode::UnknownError,
+            Error::ParseError(_) => SageErrorCode::InvalidInput,
+            Error::ResolutionError(_) => SageErrorCode::UnknownError,
+            Error::ValidationError(_) => SageErrorCode::InvalidInput,
         }
     }
 }

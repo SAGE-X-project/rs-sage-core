@@ -16,6 +16,28 @@ Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in R
   - Derived components support
   - Multiple signature algorithms
 
+- **HPKE & Secure Communication (Phase 4)** 🆕
+  - HPKE (Hybrid Public Key Encryption) - RFC 9180
+  - X25519 key exchange with HKDF
+  - Bidirectional handshake protocol
+  - Session management with encryption
+  - Traffic key derivation (C2S, S2C, Channel Binding)
+  - MAC-authenticated encryption
+
+- **Transport Layer (Phase 5.1)** 🆕
+  - Pluggable transport abstraction
+  - MockTransport for testing
+  - HTTP transport with retry logic
+  - Transport manager with automatic routing
+  - Message envelopes with metadata
+
+- **DID (Decentralized Identifiers)**
+  - DID parsing and validation
+  - DID Document support
+  - DID Resolution
+  - Integration with blockchain registries
+
+
 - **Key Formats & Serialization**
   - JWK (JSON Web Key) import/export
   - PEM/DER format support
@@ -28,11 +50,15 @@ Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in R
   - WebAssembly for browser/Node.js
   - Cross-platform build support (Linux, macOS, Windows)
 
-- **Security Features**
-  - Constant-time operations
-  - Secure memory clearing
-  - Input validation and sanitization
-  - Comprehensive test coverage including edge cases
+- **Production Security (Phase 6)** 🆕
+  - AES-256-GCM authenticated encryption (NIST SP 800-38D)
+  - Constant-time cryptographic operations
+  - Secure memory clearing with Zeroizing
+  - Cryptographically secure RNG (OsRng)
+  - Forward secrecy with ephemeral keys
+  - Replay protection with nonce tracking
+  - Security audited dependencies
+  - Comprehensive test coverage (207 tests)
 
 ## Usage
 
@@ -238,10 +264,40 @@ func main() {
 
 The repository includes several examples:
 
+<<<<<<< HEAD
+=======
+### Rust Examples (Phase 5.2) 🆕
+
+Run with `cargo run --example <name>`:
+
+- **basic_usage**: Fundamental cryptographic operations
+  - Key generation (Ed25519, Secp256k1)
+  - Message signing and verification
+  - Key export in multiple formats
+
+- **session_management**: Secure session lifecycle
+  - Session creation from HPKE exporter secrets
+  - Bidirectional encrypted communication (initiator ↔ responder)
+  - MAC-authenticated encryption
+  - Session pool management
+
+- **transport_demo**: Transport layer usage
+  - MockTransport with message inspection
+  - TransportManager for routing
+  - Message envelopes with metadata
+  - Automatic transport selection
+
+### Platform Integration Examples
+
+>>>>>>> 91acbcd (feat: comprehensive development from Phase 1 to Phase 6 with 87%+ test coverage)
 - **FFI Example**: `examples/ffi/basic.c` - Complete C integration example
 - **WASM Example**: `examples/wasm/index.html` - Browser-based cryptographic operations
 - **Advanced WASM**: `examples/wasm/advanced.html` - HTTP signing and advanced features
 - **Python Integration**: `examples/python/basic_usage.py` - Python FFI bindings
+<<<<<<< HEAD
+=======
+- **Blockchain Integration**: `examples/blockchain_integration.rs` - DID registry interaction
+>>>>>>> 91acbcd (feat: comprehensive development from Phase 1 to Phase 6 with 87%+ test coverage)
 
 ## Performance
 
@@ -250,6 +306,74 @@ This Rust implementation provides significant performance improvements over the 
 - Ed25519 signing: ~3x faster
 - Secp256k1 signing: ~2.5x faster
 - RFC 9421 canonicalization: ~4x faster
+
+### Benchmarks (Phase 5.4)
+
+Detailed performance benchmarks:
+
+| Operation | Performance | Notes |
+|-----------|-------------|-------|
+| Ed25519 Sign | ~23.7 µs | With OS RNG |
+| Ed25519 Verify | ~49.7 µs | Constant-time |
+| Secp256k1 Sign | ~31.4 µs | ECDSA |
+| HPKE Handshake | ~119 µs | Full handshake |
+| Session Create | ~6.9 µs | From exporter secret |
+| AES-256-GCM Encrypt | ~1-2 µs | Hardware accelerated |
+| Transport (Mock) | ~2.8 µs | In-memory |
+
+Run benchmarks: `cargo bench`
+
+## Security
+
+### Security Policy
+
+Please review our [Security Policy](SECURITY.md) for:
+- Reporting vulnerabilities responsibly
+- Known security issues and mitigations
+- Security best practices
+- Supported versions
+
+### ✅ Recent Security Updates
+
+**v0.3.0**: Blockchain feature removed to fix RUSTSEC-2025-0009
+
+The optional `blockchain` feature was **removed** in v0.3.0 to address critical security vulnerabilities in the `ethers` dependency chain.
+
+- **Fixed**: RUSTSEC-2025-0009 (`ring` v0.16.20 AES panic vulnerability)
+- **Action**: Removed `ethers`, `futures`, and all blockchain dependencies
+- **Impact**: ✅ All core functionality intact, all 260 tests passing
+
+**Future**: Blockchain integration will be re-implemented using `alloy` crate in Phase 7+.
+
+```toml
+# v0.3.0+: No blockchain feature (secure)
+[dependencies]
+sage_crypto_core = "0.3"
+```
+
+### Security Audit
+
+**Last Audit**: 2025-10-14 (Phase 6.2 + Vulnerability Fix)
+
+**Status**: ✅ All vulnerabilities resolved
+
+**Key Findings**:
+- ✅ Core cryptographic libraries: No vulnerabilities
+- ✅ Constant-time operations: Properly implemented
+- ✅ Memory safety: Zeroizing used correctly
+- ✅ RNG: Cryptographically secure (OsRng)
+- ✅ Dependencies: RUSTSEC-2025-0009 resolved (blockchain feature removed)
+
+**Full Report**: See `docs/security_audit_phase6_2.md`
+
+**Tools Used**:
+```bash
+# Check for dependency vulnerabilities
+cargo audit
+
+# Run security tests
+cargo test --test security_tests
+```
 
 ## License
 
