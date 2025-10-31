@@ -264,8 +264,6 @@ func main() {
 
 The repository includes several examples:
 
-<<<<<<< HEAD
-=======
 ### Rust Examples (Phase 5.2) 🆕
 
 Run with `cargo run --example <name>`:
@@ -289,15 +287,11 @@ Run with `cargo run --example <name>`:
 
 ### Platform Integration Examples
 
->>>>>>> 91acbcd (feat: comprehensive development from Phase 1 to Phase 6 with 87%+ test coverage)
 - **FFI Example**: `examples/ffi/basic.c` - Complete C integration example
 - **WASM Example**: `examples/wasm/index.html` - Browser-based cryptographic operations
 - **Advanced WASM**: `examples/wasm/advanced.html` - HTTP signing and advanced features
 - **Python Integration**: `examples/python/basic_usage.py` - Python FFI bindings
-<<<<<<< HEAD
-=======
 - **Blockchain Integration**: `examples/blockchain_integration.rs` - DID registry interaction
->>>>>>> 91acbcd (feat: comprehensive development from Phase 1 to Phase 6 with 87%+ test coverage)
 
 ## Performance
 
