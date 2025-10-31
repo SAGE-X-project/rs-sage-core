@@ -63,4 +63,24 @@ pub enum Error {
     /// Unsupported operation
     #[error("Unsupported operation: {0}")]
     Unsupported(String),
+
+    /// Parse error
+    #[error("Parse error: {0}")]
+    ParseError(String),
+
+    /// DID resolution error
+    #[error("DID resolution error: {0}")]
+    ResolutionError(String),
+
+    /// Validation error
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
+    /// Resource not found
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    /// Storage operation error
+    #[error("Storage error: {0}")]
+    StorageError(String),
 }

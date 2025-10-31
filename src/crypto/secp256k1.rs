@@ -33,14 +33,16 @@ pub fn signature_from_bytes(bytes: &[u8]) -> Result<EcdsaSignature> {
     EcdsaSignature::from_der(bytes).or_else(|_| {
         if bytes.len() == 64 {
             // For fixed-size format, split into r and s components
-            let _r_bytes = &bytes[..32];
-            let _s_bytes = &bytes[32..];
-
             // For 64-byte format, parse as r||s components
             use k256::FieldBytes;
+            let mut r_bytes = [0u8; 32];
+            let mut s_bytes = [0u8; 32];
+            r_bytes.copy_from_slice(&bytes[..32]);
+            s_bytes.copy_from_slice(&bytes[32..]);
+
             EcdsaSignature::from_scalars(
-                FieldBytes::clone_from_slice(&bytes[..32]),
-                FieldBytes::clone_from_slice(&bytes[32..]),
+                FieldBytes::from(r_bytes),
+                FieldBytes::from(s_bytes),
             )
             .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))
         } else {
@@ -89,5 +91,101 @@ mod tests {
             signature.to_der().as_bytes(),
             restored_sig.to_der().as_bytes()
         );
+    }
+
+    #[test]
+    fn test_verifying_key_from_bytes() {
+        let signing_key = generate_signing_key();
+        let verifying_key = signing_key.verifying_key();
+        let bytes = verifying_key.to_bytes();
+
+        let restored_key = verifying_key_from_bytes(&bytes).unwrap();
+        assert_eq!(verifying_key.to_bytes(), restored_key.to_bytes());
+    }
+
+    #[test]
+    fn test_signature_from_bytes_der() {
+        let signing_key = generate_signing_key();
+        let message = b"Test message";
+        let signature: EcdsaSignature = signing_key.sign(message);
+        let der_bytes = signature.to_der();
+
+        let restored_sig = signature_from_bytes(der_bytes.as_bytes()).unwrap();
+        assert_eq!(
+            signature.to_der().as_bytes(),
+            restored_sig.to_der().as_bytes()
+        );
+    }
+
+    #[test]
+    fn test_signature_from_bytes_fixed() {
+        let signing_key = generate_signing_key();
+        let message = b"Test message";
+        let signature: EcdsaSignature = signing_key.sign(message);
+
+        // Get r and s components
+        let (r, s) = signature.split_bytes();
+        let mut fixed_bytes = [0u8; 64];
+        fixed_bytes[..32].copy_from_slice(&r);
+        fixed_bytes[32..].copy_from_slice(&s);
+
+        let restored_sig = signature_from_bytes(&fixed_bytes).unwrap();
+        assert_eq!(
+            signature.to_der().as_bytes(),
+            restored_sig.to_der().as_bytes()
+        );
+    }
+
+    #[test]
+    fn test_invalid_private_key() {
+        let invalid_bytes = [0u8; 16]; // Wrong length
+        let result = signing_key_from_bytes(&invalid_bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_public_key() {
+        let invalid_bytes = [0u8; 20]; // Wrong length
+        let result = verifying_key_from_bytes(&invalid_bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_signature() {
+        let invalid_bytes = [0u8; 10]; // Invalid signature
+        let result = signature_from_der(&invalid_bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_signature_from_bytes() {
+        let invalid_bytes = [0u8; 50]; // Wrong length (not 64)
+        let result = signature_from_bytes(&invalid_bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sign_and_verify() {
+        use k256::ecdsa::signature::Verifier;
+
+        let signing_key = generate_signing_key();
+        let verifying_key = signing_key.verifying_key();
+        let message = b"Test message";
+
+        let signature: EcdsaSignature = signing_key.sign(message);
+        assert!(verifying_key.verify(message, &signature).is_ok());
+    }
+
+    #[test]
+    fn test_verify_fails_wrong_message() {
+        use k256::ecdsa::signature::Verifier;
+
+        let signing_key = generate_signing_key();
+        let verifying_key = signing_key.verifying_key();
+        let message = b"Test message";
+        let wrong_message = b"Wrong message";
+
+        let signature: EcdsaSignature = signing_key.sign(message);
+        assert!(verifying_key.verify(wrong_message, &signature).is_err());
     }
 }

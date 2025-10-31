@@ -39,6 +39,8 @@ pub enum WasmKeyType {
     Ed25519 = 0,
     /// Secp256k1 key type for ECDSA signatures
     Secp256k1 = 1,
+    /// P-256 (secp256r1) key type for ECDSA signatures
+    P256 = 2,
 }
 
 impl From<WasmKeyType> for KeyType {
@@ -46,6 +48,7 @@ impl From<WasmKeyType> for KeyType {
         match key_type {
             WasmKeyType::Ed25519 => KeyType::Ed25519,
             WasmKeyType::Secp256k1 => KeyType::Secp256k1,
+            WasmKeyType::P256 => KeyType::P256,
         }
     }
 }
@@ -55,6 +58,7 @@ impl From<KeyType> for WasmKeyType {
         match key_type {
             KeyType::Ed25519 => WasmKeyType::Ed25519,
             KeyType::Secp256k1 => WasmKeyType::Secp256k1,
+            KeyType::P256 => WasmKeyType::P256,
         }
     }
 }
