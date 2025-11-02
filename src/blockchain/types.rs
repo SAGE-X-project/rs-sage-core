@@ -15,6 +15,11 @@ pub enum Chain {
     Ethereum,
     /// Solana blockchain
     Solana,
+    /// Key-based DID (did:sage:key:...)
+    Key,
+    /// Chain-based DID (did:sage:chain:...)
+    #[serde(rename = "chain")]
+    ChainMethod,
 }
 
 impl fmt::Display for Chain {
@@ -22,6 +27,8 @@ impl fmt::Display for Chain {
         match self {
             Chain::Ethereum => write!(f, "ethereum"),
             Chain::Solana => write!(f, "solana"),
+            Chain::Key => write!(f, "key"),
+            Chain::ChainMethod => write!(f, "chain"),
         }
     }
 }
@@ -33,6 +40,8 @@ impl std::str::FromStr for Chain {
         match s.to_lowercase().as_str() {
             "ethereum" => Ok(Chain::Ethereum),
             "solana" => Ok(Chain::Solana),
+            "key" => Ok(Chain::Key),
+            "chain" => Ok(Chain::ChainMethod),
             _ => Err(Error::InvalidInput(format!("Unknown chain: {}", s))),
         }
     }
@@ -347,6 +356,12 @@ fn validate_address(chain: Chain, address: &str) -> Result<()> {
                 return Err(Error::InvalidInput(
                     "Invalid Solana address (not valid base58)".into(),
                 ));
+            }
+        }
+        Chain::Key | Chain::ChainMethod => {
+            // Key-based and chain-method DIDs don't have address validation
+            if address.is_empty() {
+                return Err(Error::InvalidInput("Identifier cannot be empty".into()));
             }
         }
     }

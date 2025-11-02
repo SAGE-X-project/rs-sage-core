@@ -7,6 +7,8 @@ use crate::core::{Message, VerificationOptions, VerificationResult};
 use crate::crypto::keys::PublicKey;
 use crate::error::{Error, Result};
 use crate::rfc9421::HttpVerifier;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 // DEPRECATED: Old blockchain imports
 // #[cfg(feature = "blockchain")]
@@ -16,11 +18,67 @@ use crate::rfc9421::HttpVerifier;
 // #[cfg(feature = "blockchain")]
 // use std::sync::Arc;
 
-/// Service for verifying SAGE messages
-pub struct VerificationService;
+/// Simple in-memory nonce store for replay protection
+#[derive(Debug, Clone)]
+struct NonceStore {
+    used_nonces: Arc<Mutex<HashSet<String>>>,
+}
 
-// DEPRECATED: Old blockchain struct using ethers
-// TODO: Rewrite based on sage (Go) v1.3.1 + alloy
+impl NonceStore {
+    fn new() -> Self {
+        Self {
+            used_nonces: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
+    fn check_and_store(&self, nonce: &str) -> bool {
+        let mut nonces = self.used_nonces.lock().unwrap();
+        if nonces.contains(nonce) {
+            false // Nonce already used
+        } else {
+            nonces.insert(nonce.to_string());
+            true // Nonce is new
+        }
+    }
+}
+
+/// Message order tracker for ensuring message sequence
+#[derive(Debug, Clone)]
+struct OrderTracker {
+    /// Maps agent DID to last seen timestamp
+    last_timestamps: Arc<Mutex<HashMap<String, i64>>>,
+}
+
+impl OrderTracker {
+    fn new() -> Self {
+        Self {
+            last_timestamps: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn check_and_update(&self, agent_did: &str, timestamp: i64) -> bool {
+        let mut timestamps = self.last_timestamps.lock().unwrap();
+
+        if let Some(&last_ts) = timestamps.get(agent_did) {
+            // Message must have a newer timestamp than the last one
+            if timestamp <= last_ts {
+                return false; // Out of order
+            }
+        }
+
+        // Update the last timestamp for this agent
+        timestamps.insert(agent_did.to_string(), timestamp);
+        true
+    }
+}
+
+/// Service for verifying SAGE messages
+pub struct VerificationService {
+    nonce_store: NonceStore,
+    order_tracker: OrderTracker,
+}
+
+// DEPRECATED: Old blockchain struct using ethers (replaced with alloy)
 // /// Service for verifying SAGE messages with blockchain support
 // #[cfg(feature = "blockchain")]
 // pub struct VerificationService<M: ethers::providers::Middleware> {
@@ -31,13 +89,14 @@ pub struct VerificationService;
 impl VerificationService {
     /// Creates a new VerificationService
     pub fn new() -> Self {
-        Self
+        Self {
+            nonce_store: NonceStore::new(),
+            order_tracker: OrderTracker::new(),
+        }
     }
 }
 
-// DEPRECATED: Old blockchain impl using ethers
-// TODO: Rewrite based on sage (Go) v1.3.1 + alloy
-// #[cfg(feature = "blockchain")]
+// DEPRECATED: Old blockchain impl using ethers (replaced with alloy)
 // impl<M: ethers::providers::Middleware + 'static> VerificationService<M> {
 //     /// Creates a new VerificationService without nonce tracking
 //     pub fn new() -> Self {
@@ -208,16 +267,19 @@ impl VerificationService {
 
     /// Verifies the nonce is valid and not reused
     fn verify_nonce(&self, message: &Message) -> Result<bool> {
-        // TODO: Implement nonce storage and checking in Phase 3
-        // For now, just check if nonce is not empty
-        Ok(!message.nonce.is_empty())
+        // Check if nonce is not empty
+        if message.nonce.is_empty() {
+            return Ok(false);
+        }
+
+        // Check if nonce has been used before (replay protection)
+        Ok(self.nonce_store.check_and_store(&message.nonce))
     }
 
     /// Verifies message ordering
-    fn verify_order(&self, _message: &Message) -> Result<bool> {
-        // TODO: Implement order checking in Phase 3
-        // For now, just return true
-        Ok(true)
+    fn verify_order(&self, message: &Message) -> Result<bool> {
+        // Check message order based on timestamp per agent DID
+        Ok(self.order_tracker.check_and_update(&message.agent_did, message.timestamp))
     }
 }
 
@@ -227,8 +289,7 @@ impl Default for VerificationService {
     }
 }
 
-// DEPRECATED: Old blockchain implementation using ethers
-// TODO: Rewrite based on sage (Go) v1.3.1 + alloy
+// DEPRECATED: Old blockchain implementation using ethers (replaced with alloy)
 // #[cfg(feature = "blockchain")]
 // impl<M: ethers::providers::Middleware + 'static> Default for VerificationService<M> {
 //     fn default() -> Self {
@@ -237,8 +298,7 @@ impl Default for VerificationService {
 // }
 
 /// Blockchain-enabled verification methods
-// DEPRECATED: Old blockchain implementation using ethers
-// TODO: Rewrite based on sage (Go) v1.3.1 + alloy
+// DEPRECATED: Old blockchain implementation using ethers (replaced with alloy in blockchain module)
 // #[cfg(feature = "blockchain")]
 // impl<M: ethers::providers::Middleware + 'static> VerificationService<M> {
 //     /// Verifies a message with the given public key and options (async version)
@@ -385,10 +445,9 @@ impl Default for VerificationService {
 //             Ok(true)
 //         }
 //     }
-// 
-//     /// Verifies message ordering
+//
+//     /// Verifies message ordering (replaced with OrderTracker implementation above)
 //     fn verify_order(&self, _message: &Message) -> Result<bool> {
-//         // TODO: Implement order checking
 //         Ok(true)
 //     }
 // }

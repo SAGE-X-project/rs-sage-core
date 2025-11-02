@@ -14,6 +14,9 @@ use sage_crypto_core::did::{
 use sage_crypto_core::{KeyPair, KeyType};
 use std::sync::Arc;
 
+#[cfg(not(feature = "blockchain"))]
+use sage_crypto_core::did::DIDExt;
+
 /// Test end-to-end flow with DID integration
 #[test]
 fn test_end_to_end_with_did_ed25519() {
@@ -255,8 +258,12 @@ fn test_did_resolution_not_found() {
     // Try to resolve non-existent DID
     let result = resolver.resolve(&did).unwrap();
     assert!(result.document.is_none());
-    assert!(result.metadata.error.is_some());
-    assert!(result.metadata.error.unwrap().contains("not found"));
+
+    // Check metadata contains error
+    let metadata = result.metadata.unwrap();
+    let error = metadata.get("error").and_then(|v| v.as_str());
+    assert!(error.is_some());
+    assert!(error.unwrap().contains("not found"));
 }
 
 /// Test verification method type correctness

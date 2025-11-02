@@ -59,6 +59,7 @@ impl From<KeyType> for WasmKeyType {
             KeyType::Ed25519 => WasmKeyType::Ed25519,
             KeyType::Secp256k1 => WasmKeyType::Secp256k1,
             KeyType::P256 => WasmKeyType::P256,
+            KeyType::Rsa2048 | KeyType::Rsa4096 => WasmKeyType::Ed25519, // Map RSA to Ed25519 for WASM
         }
     }
 }

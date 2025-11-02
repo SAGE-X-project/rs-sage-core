@@ -38,7 +38,7 @@ pub use types::{
 
 #[cfg(feature = "blockchain")]
 pub use ownership::{
-    recover_public_key, verify_ecdsa_ownership, verify_ownership_signature,
+    keccak256, recover_public_key, verify_ecdsa_ownership, verify_ownership_signature,
 };
 
 #[cfg(feature = "blockchain")]

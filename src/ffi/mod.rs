@@ -59,6 +59,8 @@ impl From<Error> for SageErrorCode {
             Error::ParseError(_) => SageErrorCode::InvalidInput,
             Error::ResolutionError(_) => SageErrorCode::UnknownError,
             Error::ValidationError(_) => SageErrorCode::InvalidInput,
+            Error::NotFound(_) => SageErrorCode::InvalidInput,
+            Error::StorageError(_) => SageErrorCode::UnknownError,
         }
     }
 }
@@ -97,6 +99,8 @@ impl From<KeyType> for SageKeyType {
         match key_type {
             KeyType::Ed25519 => SageKeyType::Ed25519,
             KeyType::Secp256k1 => SageKeyType::Secp256k1,
+            KeyType::P256 => SageKeyType::Secp256k1, // Map P256 to Secp256k1 for FFI
+            KeyType::Rsa2048 | KeyType::Rsa4096 => SageKeyType::Ed25519, // Map RSA to Ed25519 for FFI
         }
     }
 }
@@ -129,11 +133,42 @@ pub extern "C" fn sage_version() -> *const c_char {
     VERSION.as_ptr() as *const c_char
 }
 
+use std::cell::RefCell;
+
+thread_local! {
+    static LAST_ERROR: RefCell<Option<CString>> = RefCell::new(None);
+}
+
+/// Set the thread-local error message
+fn set_last_error(err: Error) {
+    LAST_ERROR.with(|last| {
+        let error_msg = format!("{}", err);
+        *last.borrow_mut() = CString::new(error_msg).ok();
+    });
+}
+
+/// Clear the thread-local error message
+fn clear_last_error() {
+    LAST_ERROR.with(|last| {
+        *last.borrow_mut() = None;
+    });
+}
+
 /// Get the last error message (thread-local)
 #[no_mangle]
 pub extern "C" fn sage_last_error() -> *const c_char {
-    // TODO: Implement thread-local error storage
-    ptr::null()
+    LAST_ERROR.with(|last| {
+        last.borrow()
+            .as_ref()
+            .map(|s| s.as_ptr())
+            .unwrap_or(ptr::null())
+    })
+}
+
+/// Clear the last error message
+#[no_mangle]
+pub extern "C" fn sage_clear_error() {
+    clear_last_error();
 }
 
 #[cfg(test)]
