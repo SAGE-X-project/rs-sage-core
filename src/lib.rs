@@ -14,16 +14,11 @@ pub mod formats;
 pub mod rfc9421;
 
 // Phase 4: HPKE, Handshake, Session Management
-// DEPRECATED: These modules used old DID implementation
-// TODO: Rewrite based on sage (Go) v1.3.1 implementation
-// - session: ChaCha20-Poly1305 based secure sessions (no DID dependency)
-// - hpke/handshake: Need to verify if needed in Go implementation
-// #[cfg(feature = "blockchain")]
-// pub mod hpke;
-// #[cfg(feature = "blockchain")]
-// pub mod handshake;
-// #[cfg(feature = "blockchain")]
-// pub mod session;
+// Re-enabled with blockchain-based DID resolution
+pub mod did;
+pub mod hpke;
+pub mod handshake;
+pub mod session;
 
 // Phase 5.1: Transport Layer
 pub mod transport;
@@ -31,8 +26,7 @@ pub mod transport;
 // Phase 6.3: Input Validation
 pub mod validation;
 
-// Phase 9: Blockchain integration - Re-implemented with alloy crate
-// DID functionality is now in blockchain module (sage Go v1.3.1 based)
+// Phase 9: Blockchain integration - Implemented with alloy crate
 #[cfg(feature = "blockchain")]
 pub mod blockchain;
 

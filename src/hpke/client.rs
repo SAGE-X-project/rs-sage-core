@@ -3,13 +3,11 @@
 //! This module implements the HPKE client side of the handshake.
 
 use crate::crypto::KeyPair;
-// TODO: DID resolver integration will be re-implemented with blockchain module
-// use crate::did::resolver::DIDResolver;
-// use crate::did::DID;
 use crate::error::{Error, Result};
 use crate::hpke::common::{combine_secrets, make_ack_tag, verify_ack_tag};
 use crate::hpke::nonce_store::NonceStore;
 use crate::hpke::types::*;
+pub use crate::hpke::types::{AgentDID as DID, DIDResolver, DIDDocument, DIDResolutionResult, VerificationMethod};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::Rng;
 use std::sync::Arc;
@@ -171,7 +169,11 @@ impl HpkeClient {
 
     /// Resolve peer's X25519 KEM key from DID document
     fn resolve_peer_kem_key(&self, peer_did: &str) -> Result<X25519PublicKey> {
-        let did = DID::parse(peer_did)?;
+        #[cfg(feature = "blockchain")]
+        let did = crate::blockchain::AgentDID::parse(peer_did)?;
+        #[cfg(not(feature = "blockchain"))]
+        let did = peer_did.to_string();
+
         let result = self.resolver.resolve(&did)?;
 
         let did_doc = result
@@ -196,7 +198,7 @@ impl HpkeClient {
     }
 
     /// Extract key bytes from verification method
-    fn extract_key_bytes(&self, vm: &crate::did::document::VerificationMethod) -> Result<Vec<u8>> {
+    fn extract_key_bytes(&self, vm: &VerificationMethod) -> Result<Vec<u8>> {
         // Try publicKeyMultibase
         if let Some(pk_mb) = &vm.public_key_multibase {
             if let Some(stripped) = pk_mb.strip_prefix('z') {

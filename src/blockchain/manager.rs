@@ -347,6 +347,7 @@ impl MultiChainManager {
         match chain {
             Chain::Ethereum => !self.ethereum_clients.is_empty(),
             Chain::Solana => !self.solana_clients.is_empty(),
+            Chain::Key | Chain::ChainMethod => false, // Method-based DIDs don't use blockchain clients
         }
     }
 
@@ -359,6 +360,7 @@ impl MultiChainManager {
         match chain {
             Chain::Ethereum => self.ethereum_clients.clear(),
             Chain::Solana => self.solana_clients.clear(),
+            Chain::Key | Chain::ChainMethod => {} // Method-based DIDs don't have clients to remove
         }
 
         // Update default chain if removed
@@ -381,6 +383,7 @@ impl MultiChainManager {
             Chain::Solana => {
                 self.solana_clients.remove(network_name);
             }
+            Chain::Key | Chain::ChainMethod => {} // Method-based DIDs don't have networks
         }
     }
 

@@ -3,7 +3,16 @@
 //! This module defines the core types, traits, and constants for the HPKE implementation
 //! based on RFC 9180 and sage (Go) v1.0.1.
 
+use crate::error::Result;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+
+#[cfg(feature = "blockchain")]
+pub use crate::blockchain::AgentDID;
+
+// Simple DID type when blockchain feature is not enabled
+#[cfg(not(feature = "blockchain"))]
+pub type AgentDID = String;
 
 /// HPKE suite identifier for X25519 + HKDF-SHA256
 pub const HPKE_SUITE_ID: &str = "hpke-base+x25519+hkdf-sha256";
@@ -123,6 +132,129 @@ pub trait CookieSource: Send + Sync {
     /// # Returns
     /// A tuple of (cookie, success flag)
     fn get_cookie(&self, ctx_id: &str, init_did: &str, resp_did: &str) -> (String, bool);
+}
+
+/// Verification reference in DID document
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum VerificationReference {
+    /// Reference to a verification method by ID
+    Reference(String),
+    /// Embedded verification method
+    Embedded(VerificationMethod),
+}
+
+/// DID Document representation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DIDDocument {
+    /// DID subject
+    #[serde(rename = "@context")]
+    pub context: Vec<String>,
+    pub id: String,
+    /// Verification methods
+    #[serde(rename = "verificationMethod")]
+    pub verification_method: Vec<VerificationMethod>,
+    /// Authentication methods
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub authentication: Vec<VerificationReference>,
+}
+
+impl DIDDocument {
+    /// Create a new DID document
+    pub fn new(did: AgentDID) -> Self {
+        #[cfg(feature = "blockchain")]
+        let id = did.to_string();
+        #[cfg(not(feature = "blockchain"))]
+        let id = did;
+
+        Self {
+            context: vec![
+                "https://www.w3.org/ns/did/v1".to_string(),
+                "https://w3id.org/security/suites/ed25519-2020/v1".to_string(),
+                "https://w3id.org/security/suites/secp256k1-2020/v1".to_string(),
+            ],
+            id,
+            verification_method: Vec::new(),
+            authentication: Vec::new(),
+        }
+    }
+
+    /// Add a verification method
+    pub fn add_verification_method(&mut self, vm: VerificationMethod) {
+        self.verification_method.push(vm);
+    }
+
+    /// Add an authentication reference
+    pub fn add_authentication(&mut self, auth: VerificationReference) {
+        self.authentication.push(auth);
+    }
+}
+
+/// Verification method in DID document
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerificationMethod {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub method_type: String,
+    pub controller: String,
+    #[serde(rename = "publicKeyMultibase", skip_serializing_if = "Option::is_none")]
+    pub public_key_multibase: Option<String>,
+    #[serde(rename = "publicKeyJwk", skip_serializing_if = "Option::is_none")]
+    pub public_key_jwk: Option<JsonValue>,
+}
+
+impl VerificationMethod {
+    /// Create verification method from public key
+    pub fn from_public_key(did: &AgentDID, key_id: &str, public_key: &crate::crypto::PublicKey) -> Self {
+        use crate::crypto::PublicKey;
+
+        #[cfg(feature = "blockchain")]
+        let did_str = did.to_string();
+        #[cfg(not(feature = "blockchain"))]
+        let did_str = did.clone();
+
+        let key_bytes = public_key.to_bytes();
+        let key_multibase = format!("z{}", bs58::encode(&key_bytes).into_string());
+
+        // Determine method type based on key type
+        let method_type = match public_key {
+            PublicKey::Ed25519(_) => "Ed25519VerificationKey2020",
+            PublicKey::P256(_) => "JsonWebKey2020",
+            PublicKey::Secp256k1(_) => "EcdsaSecp256k1VerificationKey2019",
+            PublicKey::Rsa(_, _) => "JsonWebKey2020",
+        };
+
+        Self {
+            id: format!("{}#{}", did_str, key_id),
+            method_type: method_type.to_string(),
+            controller: did_str,
+            public_key_multibase: Some(key_multibase),
+            public_key_jwk: None,
+        }
+    }
+}
+
+/// DID Resolution result
+#[derive(Debug, Clone)]
+pub struct DIDResolutionResult {
+    /// Resolved DID document
+    pub document: Option<DIDDocument>,
+    /// Resolution metadata
+    pub metadata: Option<JsonValue>,
+}
+
+/// DID Resolver trait for resolving DIDs to DID documents
+///
+/// This trait provides blockchain-based DID resolution for HPKE handshakes.
+pub trait DIDResolver: Send + Sync {
+    /// Resolve a DID to its DID document
+    ///
+    /// # Arguments
+    /// * `did` - The DID to resolve
+    ///
+    /// # Returns
+    /// DID resolution result containing the document and metadata
+    fn resolve(&self, did: &AgentDID) -> Result<DIDResolutionResult>;
 }
 
 /// HPKE initialization payload structure

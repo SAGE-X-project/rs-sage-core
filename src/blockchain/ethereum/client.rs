@@ -227,8 +227,9 @@ impl EthereumClient {
         Ok(result._0)
     }
 
-    // TODO: Write operations require signer integration
-    // This will be implemented in a future version with proper alloy signer setup
+    // NOTE: Write operations require signer integration
+    // Future implementation will add: commitRegistration, registerAgentWithParams,
+    // activateAgent, deactivateAgent, addKey methods with proper alloy signer setup
 
     /// Convert contract AgentMetadata to our AgentMetadata type
     fn convert_agent_metadata(

@@ -58,6 +58,11 @@ impl WasmSignature {
                         message: format!("Invalid Secp256k1 signature: {e}"),
                     })?,
             ),
+            WasmKeyType::P256 => {
+                return Err(WasmError {
+                    message: "P256 signature not supported in WASM yet".to_string(),
+                })
+            }
         };
 
         Ok(WasmSignature { inner: signature })
