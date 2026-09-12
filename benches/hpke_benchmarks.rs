@@ -1,6 +1,8 @@
 //! HPKE and Cryptographic Key Derivation Benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use rand::rngs::OsRng;
 use sage_crypto_core::hpke::{combine_secrets, derive_traffic_keys, make_ack_tag, verify_ack_tag};
 use x25519_dalek::{EphemeralSecret, PublicKey};

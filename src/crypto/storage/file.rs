@@ -47,14 +47,19 @@ impl FileKeyStorage {
             pem::parse(pem_data).map_err(|e| Error::Other(format!("Failed to parse PEM: {e}")))?;
 
         // Determine key type from PEM tag
-        let key_type = match pem.tag.as_str() {
+        let key_type = match pem.tag() {
             "PRIVATE KEY" => KeyType::Ed25519,
             "EC PRIVATE KEY" => KeyType::Secp256k1,
-            _ => return Err(Error::InvalidInput(format!("Unknown PEM tag: {}", pem.tag))),
+            _ => {
+                return Err(Error::InvalidInput(format!(
+                    "Unknown PEM tag: {}",
+                    pem.tag()
+                )))
+            }
         };
 
         // Create keypair from private key bytes
-        KeyPair::from_private_key_bytes(key_type, &pem.contents)
+        KeyPair::from_private_key_bytes(key_type, pem.contents())
     }
 
     /// Loads all keys from disk into cache

@@ -105,7 +105,7 @@ fn test_malformed_pem_handling() {
         // At least some of these should fail
         if let Ok(pem_data) = result {
             // Even if parsing succeeds, the key creation should fail
-            assert!(ed25519::verifying_key_from_bytes(&pem_data.contents).is_err());
+            assert!(ed25519::verifying_key_from_bytes(pem_data.contents()).is_err());
         }
     }
 }
