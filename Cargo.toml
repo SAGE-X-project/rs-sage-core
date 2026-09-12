@@ -40,7 +40,7 @@ base64 = "0.21"
 base58 = "0.2"
 bs58 = "0.5"
 hex = "0.4"
-pem = "1.1"
+pem = "4.0"
 
 # Error handling
 thiserror = "1.0"
