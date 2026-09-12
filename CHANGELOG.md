@@ -18,6 +18,19 @@
 - The `jcs` module implements RFC 8785; `tests/spec_vectors.rs` runs the
   sage-spec `jcs` and `crypto` suites (8/8 pass).
 
+### Changed (sage-spec alignment, did:sage and A2A)
+- `did` rewritten to `06-did-sage.md` and `07-a2a.md`: `parse_did` /
+  `parse_chain` / `generate_did` implement `did:sage:<ethereum|solana>:<id>`
+  with the `eth`/`sol` aliases and the rejection rules; `generate_key_pop` /
+  `verify_key_pop` implement the `SAGE-PoP:` proof of possession (Ed25519 and
+  secp256k1 over SHA-256 of the challenge); `A2AAgentCard` carries the wire
+  shape of the agent card with `sign` and `verify_proof` over the JCS form
+  without `proof` (base58 `proofValue`). `generate_did_from_pubkey` now maps
+  secp256k1 keys to their Ethereum address and Ed25519 keys to Solana; the
+  `did:sage:key:` / `did:sage:chain:` forms are gone.
+- `tests/spec_vectors.rs` runs the sage-spec `did` suite (5/5); every suite
+  of the specification now passes (26/26).
+
 ### Changed (sage-spec alignment, HPKE)
 - `hpke` rewritten to `04-hpke.md`: real RFC 9180 base mode through the
   `hpke` crate (DHKEM X25519-HKDF-SHA256, HKDF-SHA256, ChaCha20-Poly1305,

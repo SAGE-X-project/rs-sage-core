@@ -24,7 +24,7 @@ struct Vector {
 }
 
 /// Suites and vectors this crate does not implement yet (F-03 steps 3-7).
-const NOT_YET: &[&str] = &["did"];
+const NOT_YET: &[&str] = &[];
 
 fn vectors_dir() -> PathBuf {
     if let Ok(d) = std::env::var("SAGE_SPEC_VECTORS") {
@@ -623,6 +623,113 @@ fn hpke_suite() {
     assert!(
         failures.is_empty(),
         "hpke vectors failed:\n{}",
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn did_suite() {
+    use sage_crypto_core::crypto::{KeyPair, KeyType};
+    use sage_crypto_core::did::{
+        generate_did, generate_key_pop, parse_chain, parse_did, pop_challenge, verify_key_pop,
+        A2AAgentCard, Chain,
+    };
+    let f = load("did");
+    let mut failures: Vec<String> = Vec::new();
+    for v in &f.vectors {
+        let mut detail: Vec<String> = Vec::new();
+        match v.name.as_str() {
+            "parse" => {
+                for entry in v.output["parsed"].as_array().unwrap() {
+                    match parse_did(str_field(entry, "did")) {
+                        Ok((chain, id)) => {
+                            if chain.as_str() != str_field(entry, "chain")
+                                || id != str_field(entry, "identifier")
+                            {
+                                detail.push(format!("{}: {chain}/{id}", str_field(entry, "did")));
+                            }
+                        }
+                        Err(e) => detail.push(format!("{}: {e}", str_field(entry, "did"))),
+                    }
+                }
+                for bad in v.output["rejected"].as_array().unwrap() {
+                    if parse_did(bad.as_str().unwrap()).is_ok() {
+                        detail.push(format!("accepted {bad}"));
+                    }
+                }
+            }
+            "chain-aliases" => {
+                for (name, want) in v.output["chains"].as_object().unwrap() {
+                    match parse_chain(name) {
+                        Ok(c) if c.as_str() == want.as_str().unwrap() => {}
+                        other => detail.push(format!("{name:?}: {other:?}")),
+                    }
+                }
+                if generate_did(Chain::Ethereum, "0xabc") != str_field(&v.output, "generated") {
+                    detail.push("generated".into());
+                }
+            }
+            "pop-ed25519" | "pop-secp256k1" => {
+                let (kt, label) = if v.name == "pop-ed25519" {
+                    (KeyType::Ed25519, "seed_label")
+                } else {
+                    (KeyType::Secp256k1, "scalar_label")
+                };
+                let kp = KeyPair::from_private_key_bytes(
+                    kt,
+                    &seed_from_label(str_field(&v.input, label)),
+                )
+                .unwrap();
+                let did = str_field(&v.input, "did");
+                if kp.public_key_bytes() != hex_field(&v.output, "key_data") {
+                    detail.push("key_data".into());
+                }
+                if pop_challenge(did, &kp.public_key_bytes()) != str_field(&v.output, "challenge") {
+                    detail.push("challenge".into());
+                }
+                let proof = generate_key_pop(did, &kp).unwrap();
+                if proof != hex_field(&v.output, "proof") {
+                    detail.push(format!("proof {}", hex::encode(&proof)));
+                }
+                if let Err(e) = verify_key_pop(
+                    did,
+                    kt,
+                    &hex_field(&v.output, "key_data"),
+                    &hex_field(&v.output, "proof"),
+                ) {
+                    detail.push(format!("verify Go proof: {e}"));
+                }
+            }
+            "a2a-card-proof-ed25519" => {
+                match A2AAgentCard::from_json(str_field(&v.output, "card_json").as_bytes()) {
+                    Ok(card) => {
+                        if card.id != str_field(&v.input, "did") {
+                            detail.push("id".into());
+                        }
+                        if let Err(e) = card.verify_proof() {
+                            detail.push(format!("verify: {e}"));
+                        }
+                        // tampering must be detected
+                        let mut t = card.clone();
+                        t.name.push('x');
+                        if t.verify_proof().is_ok() {
+                            detail.push("tampered card verified".into());
+                        }
+                    }
+                    Err(e) => detail.push(format!("parse: {e}")),
+                }
+            }
+            other => detail.push(format!("{other}: unknown vector")),
+        }
+        if detail.is_empty() {
+            println!("pass did/{}", v.name);
+        } else {
+            failures.push(format!("{}: {}", v.name, detail.join(", ")));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "did vectors failed:\n{}",
         failures.join("\n")
     );
 }
