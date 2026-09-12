@@ -30,8 +30,7 @@ Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in R
 - **HPKE & Secure Communication (Phase 4)** 🆕
   - HPKE (Hybrid Public Key Encryption) - RFC 9180
   - X25519 key exchange with HKDF
-  - Session management with encryption
-  - Traffic key derivation (C2S, S2C, Channel Binding)
+  - Sessions per sage-spec 05: ChaCha20-Poly1305 records with sequence header, replay window and key rotation; HKDF key schedule; directional keys
   - MAC-authenticated encryption
 
 - **DID (Decentralized Identifiers)**

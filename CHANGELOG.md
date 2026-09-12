@@ -18,6 +18,24 @@
 - The `jcs` module implements RFC 8785; `tests/spec_vectors.rs` runs the
   sage-spec `jcs` and `crypto` suites (8/8 pass).
 
+### Changed (sage-spec alignment, session)
+- `session` rewritten to `05-session.md`: ChaCha20-Poly1305 records
+  `be64(seq) || nonce[12] || ciphertext` with a random nonce and the sequence
+  number authenticated as AAD, a 1024-slot replay window, key rotation every
+  `rekey_interval` records (`sage-session-rekey-v1 || direction || be64(gen)`),
+  the HKDF key schedule (`sage-session-keys-v1`, `sage-directional-keys-v1`,
+  salt = session id), seed and id derivation (`derive_session_seed`,
+  `compute_session_id`), directional and AAD entry points
+  (`encrypt_outbound`, `decrypt_inbound`, `encrypt_with_aad`,
+  `decrypt_with_aad`) and the HMAC path over the signing keys.
+  `SecureSession::new(id, seed, config)` derives the shared keys;
+  `SecureSession::with_role` adds the directional ones. The manager uses the
+  HPKE exporter as the seed and derives the id from it. Default
+  `max_messages` is 1000. `aes-gcm` replaced by `chacha20poly1305`.
+- `tests/spec_vectors.rs` runs the sage-spec `session` suite (3/3): the Go
+  core's records at seq 0 and 256 (rotated key) and the directional/AAD
+  records decrypt here.
+
 ### Changed (sage-spec alignment, RFC 9421)
 - `rfc9421` rewritten to the sage-spec profile: `Signature` members are RFC
   8941 byte sequences (`sig1=:base64:`), any label is accepted (first

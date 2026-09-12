@@ -1,252 +1,449 @@
-//! Secure Session Implementation
+//! Secure session records (sage-spec `05-session.md`).
 //!
-//! This module provides the SecureSession implementation with AES-GCM encryption,
-//! MAC generation, and lifecycle management.
+//! ```text
+//! record = be64(seq) || nonce[12] || ChaCha20-Poly1305(key, nonce, plaintext, aad = be64(seq) || callerAAD)
+//! ```
+//!
+//! Keys come from the session seed with RFC 5869 HKDF-SHA256, salt = the
+//! session id bytes: `sage-session-keys-v1` (shared encrypt and signing
+//! keys), `sage-directional-keys-v1` (c2s and s2c encrypt and signing keys)
+//! and `sage-session-rekey-v1 || direction || be64(generation)` for the
+//! rotated AEAD key of generation `seq / rekey_interval`. Receivers keep a
+//! 1024-slot replay window over the sequence numbers they accepted.
 
 use crate::error::{Error, Result};
-use crate::hpke::derive_traffic_keys;
 use crate::session::types::*;
-use aes_gcm::{
+use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
-    Aes256Gcm, Nonce,
+    ChaCha20Poly1305, Key, Nonce,
 };
 use chrono::{DateTime, Utc};
+use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
-use sha2::{Digest, Sha256};
-use std::sync::{Arc, RwLock};
+use rand::RngCore;
+use sha2::Sha256;
+use std::collections::HashMap;
+use std::sync::{Mutex, RwLock};
 use zeroize::Zeroizing;
 
 type HmacSha256 = Hmac<Sha256>;
+/// Rotated AEAD keys by (direction, generation).
+type GenerationKeys = HashMap<(String, u64), Zeroizing<[u8; 32]>>;
 
-/// Secure session with encryption and authentication
-pub struct SecureSession {
-    /// Session ID
-    id: String,
-    /// Session keys (C2S and S2C)
-    keys: Arc<RwLock<SessionKeys>>,
-    /// Creation timestamp
-    created_at: DateTime<Utc>,
-    /// Last used timestamp
-    last_used_at: Arc<RwLock<DateTime<Utc>>>,
-    /// Message counter
-    message_count: Arc<RwLock<usize>>,
-    /// Session status
-    status: Arc<RwLock<SessionStatus>>,
-    /// Configuration
-    config: SessionConfig,
-    /// Whether this party is the initiator
-    is_initiator: bool,
+/// Size of the sequence header.
+pub const SEQ_SIZE: usize = 8;
+/// Size of the nonce.
+pub const NONCE_SIZE: usize = 12;
+/// Size of the record header (`seq || nonce`).
+pub const HEADER_SIZE: usize = SEQ_SIZE + NONCE_SIZE;
+/// Replay window size in records.
+pub const REPLAY_WINDOW_SIZE: u64 = 1024;
+/// Poly1305 tag size.
+const TAG_SIZE: usize = 16;
+
+const INFO_KEYS: &[u8] = b"sage-session-keys-v1";
+const INFO_DIRECTIONAL: &[u8] = b"sage-directional-keys-v1";
+const INFO_REKEY: &[u8] = b"sage-session-rekey-v1";
+
+/// Sliding replay window over accepted sequence numbers.
+#[derive(Debug, Default)]
+struct ReplayWindow {
+    highest: u64,
+    any: bool,
+    bitmap: [u64; (REPLAY_WINDOW_SIZE / 64) as usize],
 }
 
-/// Session keys derived from combined secret
-struct SessionKeys {
-    /// Client-to-Server key
-    c2s_key: Zeroizing<Vec<u8>>,
-    /// Client-to-Server IV
-    #[allow(dead_code)]
-    c2s_iv: Vec<u8>,
-    /// Server-to-Client key
-    s2c_key: Zeroizing<Vec<u8>>,
-    /// Server-to-Client IV
-    #[allow(dead_code)]
-    s2c_iv: Vec<u8>,
-    /// Channel binding value
-    channel_binding: Vec<u8>,
-}
-
-impl SecureSession {
-    /// Create a new secure session from combined secret
-    pub fn new(
-        session_id: String,
-        combined_secret: &[u8],
-        is_initiator: bool,
-        config: SessionConfig,
-    ) -> Result<Self> {
-        // Derive traffic keys from combined secret
-        let traffic_keys = derive_traffic_keys(combined_secret)?;
-
-        let keys = SessionKeys {
-            c2s_key: Zeroizing::new(traffic_keys.c2s_key.to_vec()),
-            c2s_iv: traffic_keys.c2s_iv.to_vec(),
-            s2c_key: Zeroizing::new(traffic_keys.s2c_key.to_vec()),
-            s2c_iv: traffic_keys.s2c_iv.to_vec(),
-            channel_binding: traffic_keys.channel_binding.to_vec(),
-        };
-
-        let now = Utc::now();
-
-        Ok(Self {
-            id: session_id,
-            keys: Arc::new(RwLock::new(keys)),
-            created_at: now,
-            last_used_at: Arc::new(RwLock::new(now)),
-            message_count: Arc::new(RwLock::new(0)),
-            status: Arc::new(RwLock::new(SessionStatus::Active)),
-            config,
-            is_initiator,
-        })
-    }
-
-    /// Get channel binding value
-    pub fn get_channel_binding(&self) -> Vec<u8> {
-        let keys = self.keys.read().unwrap();
-        keys.channel_binding.clone()
-    }
-
-    /// Check if session should expire based on timestamps
-    fn check_expiration(&self) -> bool {
-        let now = Utc::now();
-        let last_used = *self.last_used_at.read().unwrap();
-
-        // Check absolute expiration
-        if now - self.created_at > self.config.max_age {
-            return true;
+impl ReplayWindow {
+    fn check(&self, seq: u64) -> Result<()> {
+        if !self.any {
+            return Ok(());
         }
-
-        // Check idle timeout
-        if now - last_used > self.config.idle_timeout {
-            return true;
+        if seq > self.highest {
+            return Ok(());
         }
-
-        false
-    }
-
-    /// Increment message counter
-    fn increment_message_count(&self) -> Result<()> {
-        let mut count = self.message_count.write().unwrap();
-        *count += 1;
-
-        if *count > self.config.max_messages {
-            return Err(Error::Other("Message limit exceeded".into()));
+        let diff = self.highest - seq;
+        if diff >= REPLAY_WINDOW_SIZE {
+            return Err(Error::Verification("stale message".into()));
         }
-
+        if self.bit(seq) {
+            return Err(Error::Verification("replayed message".into()));
+        }
         Ok(())
     }
 
-    /// Get encryption key (based on direction)
-    fn get_encryption_key(&self) -> Zeroizing<Vec<u8>> {
-        let keys = self.keys.read().unwrap();
-        if self.is_initiator {
-            keys.c2s_key.clone()
-        } else {
-            keys.s2c_key.clone()
+    fn mark(&mut self, seq: u64) {
+        if !self.any {
+            self.any = true;
+            self.highest = seq;
+            self.bitmap = [0; (REPLAY_WINDOW_SIZE / 64) as usize];
+            self.set(seq);
+            return;
         }
-    }
-
-    /// Get decryption key (based on direction)
-    fn get_decryption_key(&self) -> Zeroizing<Vec<u8>> {
-        let keys = self.keys.read().unwrap();
-        if self.is_initiator {
-            keys.s2c_key.clone()
-        } else {
-            keys.c2s_key.clone()
+        if seq > self.highest {
+            let shift = seq - self.highest;
+            if shift >= REPLAY_WINDOW_SIZE {
+                self.bitmap = [0; (REPLAY_WINDOW_SIZE / 64) as usize];
+            } else {
+                for _ in 0..shift {
+                    self.highest += 1;
+                    self.clear(self.highest);
+                }
+            }
+            self.highest = seq;
         }
+        self.set(seq);
     }
 
-    /// Generate nonce from message counter
-    ///
-    /// Creates a unique 96-bit (12-byte) nonce for each message using the message counter.
-    /// This ensures nonce uniqueness which is critical for AES-GCM security.
-    fn generate_nonce(&self) -> Result<[u8; 12]> {
-        let count = *self.message_count.read().unwrap();
+    fn idx(seq: u64) -> (usize, u64) {
+        let slot = seq % REPLAY_WINDOW_SIZE;
+        ((slot / 64) as usize, slot % 64)
+    }
+    fn bit(&self, seq: u64) -> bool {
+        let (w, b) = Self::idx(seq);
+        self.bitmap[w] & (1u64 << b) != 0
+    }
+    fn set(&mut self, seq: u64) {
+        let (w, b) = Self::idx(seq);
+        self.bitmap[w] |= 1u64 << b;
+    }
+    fn clear(&mut self, seq: u64) {
+        let (w, b) = Self::idx(seq);
+        self.bitmap[w] &= !(1u64 << b);
+    }
+}
 
-        // Use session ID hash + counter for nonce uniqueness
-        let mut nonce = [0u8; 12];
+struct Keys {
+    seed: Zeroizing<Vec<u8>>,
+    encrypt: Zeroizing<[u8; 32]>,
+    sign: Zeroizing<[u8; 32]>,
+    // directional keys (present for role-aware sessions)
+    out_key: Option<Zeroizing<[u8; 32]>>,
+    out_sign: Option<Zeroizing<[u8; 32]>>,
+    in_key: Option<Zeroizing<[u8; 32]>>,
+    in_sign: Option<Zeroizing<[u8; 32]>>,
+}
 
-        // First 4 bytes: session ID hash
-        let id_bytes = self.id.as_bytes();
-        let id_hash = sha2::Sha256::digest(id_bytes);
-        nonce[0..4].copy_from_slice(&id_hash[0..4]);
+/// A secure session bound to a seed and a session id.
+pub struct SecureSession {
+    id: String,
+    keys: Keys,
+    initiator: Option<bool>,
+    config: SessionConfig,
+    created_at: DateTime<Utc>,
+    last_used_at: RwLock<DateTime<Utc>>,
+    status: RwLock<SessionStatus>,
+    message_count: Mutex<usize>,
+    send_seq: Mutex<u64>,
+    recv: Mutex<ReplayWindow>,
+    gen_keys: Mutex<GenerationKeys>,
+}
 
-        // Next 8 bytes: message counter (big-endian)
-        nonce[4..12].copy_from_slice(&(count as u64).to_be_bytes());
+fn hkdf_expand(seed: &[u8], salt: &[u8], info: &[u8], out: &mut [u8]) -> Result<()> {
+    Hkdf::<Sha256>::new(Some(salt), seed)
+        .expand(info, out)
+        .map_err(|e| Error::CryptoError(format!("HKDF expand failed: {e}")))
+}
 
-        Ok(nonce)
+fn key32(bytes: &[u8]) -> Zeroizing<[u8; 32]> {
+    let mut k = [0u8; 32];
+    k.copy_from_slice(bytes);
+    Zeroizing::new(k)
+}
+
+impl SecureSession {
+    /// A session with the shared (non-directional) keys derived from `seed`.
+    pub fn new(session_id: String, seed: &[u8], config: SessionConfig) -> Result<Self> {
+        Self::build(session_id, seed, None, config)
     }
 
-    /// AES-GCM encryption
-    ///
-    /// Uses AES-256-GCM with unique nonce per message.
-    /// The nonce is prepended to the ciphertext for decryption.
-    fn aes_gcm_encrypt(&self, plaintext: &[u8], key: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
-        // Ensure key is 32 bytes for AES-256
-        if key.len() != 32 {
-            return Err(Error::CryptoError(
-                "Invalid key length for AES-256-GCM".into(),
+    /// A role-aware session: the initiator sends on `c2s` and receives on
+    /// `s2c`; the responder the reverse. The shared keys are derived as well.
+    pub fn with_role(
+        session_id: String,
+        seed: &[u8],
+        is_initiator: bool,
+        config: SessionConfig,
+    ) -> Result<Self> {
+        Self::build(session_id, seed, Some(is_initiator), config)
+    }
+
+    /// Alias of [`SecureSession::with_role`] taking the HPKE exporter secret as the seed.
+    pub fn from_exporter_with_role(
+        session_id: String,
+        exporter: &[u8],
+        is_initiator: bool,
+        config: SessionConfig,
+    ) -> Result<Self> {
+        Self::with_role(session_id, exporter, is_initiator, config)
+    }
+
+    fn build(
+        session_id: String,
+        seed: &[u8],
+        initiator: Option<bool>,
+        config: SessionConfig,
+    ) -> Result<Self> {
+        if session_id.is_empty() || seed.is_empty() {
+            return Err(Error::InvalidInput(
+                "session id and seed are required".into(),
             ));
         }
-
-        // Create cipher
-        let cipher = Aes256Gcm::new_from_slice(key)
-            .map_err(|e| Error::CryptoError(format!("Failed to create cipher: {e}")))?;
-
-        // Generate unique nonce
-        let nonce_array = self.generate_nonce()?;
-        let nonce = Nonce::from(nonce_array);
-
-        // Encrypt with AAD
-        let payload = Payload {
-            msg: plaintext,
-            aad,
+        let salt = session_id.as_bytes();
+        let mut shared = [0u8; 64];
+        hkdf_expand(seed, salt, INFO_KEYS, &mut shared)?;
+        let mut keys = Keys {
+            seed: Zeroizing::new(seed.to_vec()),
+            encrypt: key32(&shared[..32]),
+            sign: key32(&shared[32..]),
+            out_key: None,
+            out_sign: None,
+            in_key: None,
+            in_sign: None,
         };
-
-        let ciphertext = cipher
-            .encrypt(&nonce, payload)
-            .map_err(|e| Error::CryptoError(format!("Encryption failed: {e}")))?;
-
-        // Prepend nonce to ciphertext for decryption
-        // Format: [nonce (12 bytes)][ciphertext + tag]
-        let mut result = Vec::with_capacity(12 + ciphertext.len());
-        result.extend_from_slice(&nonce_array);
-        result.extend_from_slice(&ciphertext);
-
-        Ok(result)
+        if let Some(is_initiator) = initiator {
+            let mut d = [0u8; 128];
+            hkdf_expand(seed, salt, INFO_DIRECTIONAL, &mut d)?;
+            let (c2s_enc, c2s_sign, s2c_enc, s2c_sign) =
+                (&d[0..32], &d[32..64], &d[64..96], &d[96..128]);
+            if is_initiator {
+                keys.out_key = Some(key32(c2s_enc));
+                keys.out_sign = Some(key32(c2s_sign));
+                keys.in_key = Some(key32(s2c_enc));
+                keys.in_sign = Some(key32(s2c_sign));
+            } else {
+                keys.out_key = Some(key32(s2c_enc));
+                keys.out_sign = Some(key32(s2c_sign));
+                keys.in_key = Some(key32(c2s_enc));
+                keys.in_sign = Some(key32(c2s_sign));
+            }
+        }
+        let now = Utc::now();
+        Ok(Self {
+            id: session_id,
+            keys,
+            initiator,
+            config,
+            created_at: now,
+            last_used_at: RwLock::new(now),
+            status: RwLock::new(SessionStatus::Active),
+            message_count: Mutex::new(0),
+            send_seq: Mutex::new(0),
+            recv: Mutex::new(ReplayWindow::default()),
+            gen_keys: Mutex::new(HashMap::new()),
+        })
     }
 
-    /// AES-GCM decryption
-    ///
-    /// Extracts nonce from ciphertext and decrypts using AES-256-GCM.
-    fn aes_gcm_decrypt(
+    /// Whether this session was created with a role.
+    pub fn is_initiator(&self) -> Option<bool> {
+        self.initiator
+    }
+
+    fn direction_label(&self, outbound: bool) -> &'static str {
+        match self.initiator {
+            Some(true) => {
+                if outbound {
+                    "c2s"
+                } else {
+                    "s2c"
+                }
+            }
+            Some(false) => {
+                if outbound {
+                    "s2c"
+                } else {
+                    "c2s"
+                }
+            }
+            None => "single",
+        }
+    }
+
+    fn generation(&self, seq: u64) -> u64 {
+        if self.config.rekey_interval == 0 {
+            0
+        } else {
+            seq / self.config.rekey_interval
+        }
+    }
+
+    fn key_for(&self, base: &[u8; 32], direction: &str, seq: u64) -> Result<Zeroizing<[u8; 32]>> {
+        let generation = self.generation(seq);
+        if generation == 0 {
+            return Ok(Zeroizing::new(*base));
+        }
+        let mut cache = self.gen_keys.lock().unwrap();
+        if let Some(k) = cache.get(&(direction.to_string(), generation)) {
+            return Ok(k.clone());
+        }
+        let mut info = Vec::with_capacity(INFO_REKEY.len() + direction.len() + 8);
+        info.extend_from_slice(INFO_REKEY);
+        info.extend_from_slice(direction.as_bytes());
+        info.extend_from_slice(&generation.to_be_bytes());
+        let mut k = [0u8; 32];
+        hkdf_expand(&self.keys.seed, self.id.as_bytes(), &info, &mut k)?;
+        let k = Zeroizing::new(k);
+        cache.insert((direction.to_string(), generation), k.clone());
+        Ok(k)
+    }
+
+    fn check_usable(&self) -> Result<()> {
+        if self.is_expired() {
+            return Err(Error::Other("Session expired".into()));
+        }
+        Ok(())
+    }
+
+    fn count_message(&self) -> Result<()> {
+        let mut count = self.message_count.lock().unwrap();
+        *count += 1;
+        if self.config.max_messages > 0 && *count > self.config.max_messages {
+            *self.status.write().unwrap() = SessionStatus::Expired;
+            return Err(Error::Other("Message limit exceeded".into()));
+        }
+        Ok(())
+    }
+
+    fn touch(&self) {
+        *self.last_used_at.write().unwrap() = Utc::now();
+    }
+
+    fn seal(
         &self,
-        ciphertext_with_nonce: &[u8],
-        key: &[u8],
+        base: &[u8; 32],
+        direction: &str,
+        plaintext: &[u8],
         aad: &[u8],
     ) -> Result<Vec<u8>> {
-        // Ensure key is 32 bytes for AES-256
-        if key.len() != 32 {
-            return Err(Error::CryptoError(
-                "Invalid key length for AES-256-GCM".into(),
-            ));
-        }
-
-        // Check minimum length (nonce + tag)
-        if ciphertext_with_nonce.len() < 28 {
-            // 12 (nonce) + 16 (GCM tag)
-            return Err(Error::CryptoError("Ciphertext too short".into()));
-        }
-
-        // Extract nonce and ciphertext
-        let (nonce_bytes, ciphertext) = ciphertext_with_nonce.split_at(12);
-        let nonce_array: [u8; 12] = nonce_bytes
-            .try_into()
-            .map_err(|_| Error::CryptoError("Invalid nonce length".into()))?;
-        let nonce = Nonce::from(nonce_array);
-
-        // Create cipher
-        let cipher = Aes256Gcm::new_from_slice(key)
-            .map_err(|e| Error::CryptoError(format!("Failed to create cipher: {e}")))?;
-
-        // Decrypt with AAD
-        let payload = Payload {
-            msg: ciphertext,
-            aad,
+        self.check_usable()?;
+        self.count_message()?;
+        let seq = {
+            let mut s = self.send_seq.lock().unwrap();
+            let v = *s;
+            *s += 1;
+            v
         };
+        let key = self.key_for(base, direction, seq)?;
+        let mut out = vec![0u8; HEADER_SIZE];
+        out[..SEQ_SIZE].copy_from_slice(&seq.to_be_bytes());
+        let mut nonce_bytes = [0u8; NONCE_SIZE];
+        rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+        out[SEQ_SIZE..HEADER_SIZE].copy_from_slice(&nonce_bytes);
+        let nonce = Nonce::from(nonce_bytes);
+        let mut bound = Vec::with_capacity(SEQ_SIZE + aad.len());
+        bound.extend_from_slice(&out[..SEQ_SIZE]);
+        bound.extend_from_slice(aad);
+        let cipher = ChaCha20Poly1305::new(&Key::from(*key));
+        let ct = cipher
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: plaintext,
+                    aad: &bound,
+                },
+            )
+            .map_err(|_| Error::CryptoError("encryption failed".into()))?;
+        out.extend_from_slice(&ct);
+        self.touch();
+        Ok(out)
+    }
 
-        let plaintext = cipher
-            .decrypt(&nonce, payload)
-            .map_err(|e| Error::CryptoError(format!("Decryption failed: {e}")))?;
+    fn open(&self, base: &[u8; 32], direction: &str, record: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
+        self.check_usable()?;
+        if record.len() < HEADER_SIZE + TAG_SIZE {
+            return Err(Error::InvalidInput("record too short".into()));
+        }
+        let seq = u64::from_be_bytes(record[..SEQ_SIZE].try_into().unwrap());
+        let mut recv = self.recv.lock().unwrap();
+        recv.check(seq)?;
+        let key = self.key_for(base, direction, seq)?;
+        let nonce_bytes: [u8; NONCE_SIZE] = record[SEQ_SIZE..HEADER_SIZE].try_into().unwrap();
+        let nonce = Nonce::from(nonce_bytes);
+        let mut bound = Vec::with_capacity(SEQ_SIZE + aad.len());
+        bound.extend_from_slice(&record[..SEQ_SIZE]);
+        bound.extend_from_slice(aad);
+        let cipher = ChaCha20Poly1305::new(&Key::from(*key));
+        let pt = cipher
+            .decrypt(
+                &nonce,
+                Payload {
+                    msg: &record[HEADER_SIZE..],
+                    aad: &bound,
+                },
+            )
+            .map_err(|_| Error::CryptoError("decryption failed".into()))?;
+        recv.mark(seq);
+        drop(recv);
+        self.count_message()?;
+        self.touch();
+        Ok(pt)
+    }
 
-        Ok(plaintext)
+    fn out_key(&self) -> Result<&[u8; 32]> {
+        self.keys
+            .out_key
+            .as_deref()
+            .ok_or_else(|| Error::Other("session has no role; use encrypt".into()))
+    }
+
+    fn in_key(&self) -> Result<&[u8; 32]> {
+        self.keys
+            .in_key
+            .as_deref()
+            .ok_or_else(|| Error::Other("session has no role; use decrypt".into()))
+    }
+
+    /// Encrypt with caller AAD. Role-aware sessions use the outbound
+    /// directional key; others the shared key.
+    pub fn encrypt_with_aad(&self, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
+        match self.keys.out_key.as_deref() {
+            Some(k) => self.seal(k, self.direction_label(true), plaintext, aad),
+            None => self.seal(&self.keys.encrypt, "single", plaintext, aad),
+        }
+    }
+
+    /// Decrypt with caller AAD (inbound directional key when the session has a role).
+    pub fn decrypt_with_aad(&self, record: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
+        match self.keys.in_key.as_deref() {
+            Some(k) => self.open(k, self.direction_label(false), record, aad),
+            None => self.open(&self.keys.encrypt, "single", record, aad),
+        }
+    }
+
+    /// Encrypt on the outbound direction (role-aware sessions only).
+    pub fn encrypt_outbound(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
+        let k = self.out_key()?;
+        self.seal(k, self.direction_label(true), plaintext, &[])
+    }
+
+    /// Decrypt a record received on the inbound direction.
+    pub fn decrypt_inbound(&self, record: &[u8]) -> Result<Vec<u8>> {
+        let k = self.in_key()?;
+        self.open(k, self.direction_label(false), record, &[])
+    }
+
+    /// Encrypt on the outbound direction with caller AAD.
+    pub fn encrypt_with_aad_outbound(&self, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
+        let k = self.out_key()?;
+        self.seal(k, self.direction_label(true), plaintext, aad)
+    }
+
+    /// Decrypt an inbound record with caller AAD.
+    pub fn decrypt_with_aad_inbound(&self, record: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
+        let k = self.in_key()?;
+        self.open(k, self.direction_label(false), record, aad)
+    }
+
+    fn sign_with(key: &[u8; 32], covered: &[u8]) -> Vec<u8> {
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(key).expect("HMAC key size");
+        mac.update(covered);
+        mac.finalize().into_bytes().to_vec()
+    }
+
+    fn verify_with(key: &[u8; 32], covered: &[u8], tag: &[u8]) -> Result<()> {
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(key).expect("HMAC key size");
+        mac.update(covered);
+        mac.verify_slice(tag)
+            .map_err(|_| Error::Verification("MAC verification failed".into()))
     }
 }
 
@@ -254,301 +451,192 @@ impl Session for SecureSession {
     fn get_id(&self) -> &str {
         &self.id
     }
-
     fn get_created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
-
     fn get_last_used_at(&self) -> DateTime<Utc> {
         *self.last_used_at.read().unwrap()
     }
-
     fn get_status(&self) -> SessionStatus {
         *self.status.read().unwrap()
     }
-
     fn is_expired(&self) -> bool {
-        if self.check_expiration() {
-            let mut status = self.status.write().unwrap();
-            *status = SessionStatus::Expired;
-            true
-        } else {
-            matches!(
-                self.get_status(),
-                SessionStatus::Expired | SessionStatus::Closed
-            )
+        let status = self.get_status();
+        if status != SessionStatus::Active {
+            return true;
         }
+        let now = Utc::now();
+        let expired = now - self.created_at > self.config.max_age
+            || now - self.get_last_used_at() > self.config.idle_timeout;
+        if expired {
+            *self.status.write().unwrap() = SessionStatus::Expired;
+        }
+        expired
     }
-
     fn update_last_used(&mut self) {
-        let mut last_used = self.last_used_at.write().unwrap();
-        *last_used = Utc::now();
+        self.touch();
     }
-
     fn close(&mut self) -> Result<()> {
-        let mut status = self.status.write().unwrap();
-        *status = SessionStatus::Closed;
+        *self.status.write().unwrap() = SessionStatus::Closed;
         Ok(())
     }
-
     fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
-        if self.is_expired() {
-            return Err(Error::Other("Session expired".into()));
-        }
-
-        self.increment_message_count()?;
-
-        let key = self.get_encryption_key();
-        // Use empty AAD for simple encryption
-        self.aes_gcm_encrypt(plaintext, &key, b"")
+        self.seal(&self.keys.encrypt, "single", plaintext, &[])
     }
-
-    fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
-        if self.is_expired() {
-            return Err(Error::Other("Session expired".into()));
-        }
-
-        self.increment_message_count()?;
-
-        let key = self.get_decryption_key();
-        // Use empty AAD for simple decryption
-        self.aes_gcm_decrypt(ciphertext, &key, b"")
+    fn decrypt(&self, record: &[u8]) -> Result<Vec<u8>> {
+        self.open(&self.keys.encrypt, "single", record, &[])
     }
-
     fn encrypt_and_sign(&self, plaintext: &[u8], covered: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
-        if self.is_expired() {
-            return Err(Error::Other("Session expired".into()));
-        }
-
-        self.increment_message_count()?;
-
-        let key = self.get_encryption_key();
-        // Use covered data as AAD for authenticated encryption
-        // AES-GCM will authenticate both the plaintext and AAD
-        let ciphertext = self.aes_gcm_encrypt(plaintext, &key, covered)?;
-
-        // For backward compatibility, also generate a separate MAC
-        // In production, you could rely solely on AES-GCM's authentication
-        let mac = self.sign_covered(covered);
-
-        Ok((ciphertext, mac))
+        let record = self.encrypt_with_aad(plaintext, covered)?;
+        Ok((record, self.sign_covered(covered)))
     }
-
-    fn decrypt_and_verify(&self, ciphertext: &[u8], covered: &[u8], mac: &[u8]) -> Result<Vec<u8>> {
-        if self.is_expired() {
-            return Err(Error::Other("Session expired".into()));
-        }
-
-        // Verify separate MAC for backward compatibility
+    fn decrypt_and_verify(&self, record: &[u8], covered: &[u8], mac: &[u8]) -> Result<Vec<u8>> {
         self.verify_covered(covered, mac)?;
-
-        self.increment_message_count()?;
-
-        let key = self.get_decryption_key();
-        // AES-GCM will also verify the AAD during decryption
-        self.aes_gcm_decrypt(ciphertext, &key, covered)
+        self.decrypt_with_aad(record, covered)
     }
-
     fn sign_covered(&self, covered: &[u8]) -> Vec<u8> {
-        let key = self.get_encryption_key();
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(&key).expect("HMAC key size");
-        mac.update(covered);
-        mac.finalize().into_bytes().to_vec()
+        let key = self.keys.out_sign.as_deref().unwrap_or(&self.keys.sign);
+        Self::sign_with(key, covered)
     }
-
-    fn verify_covered(&self, covered: &[u8], signature: &[u8]) -> Result<()> {
-        let key = self.get_decryption_key();
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(&key)
-            .map_err(|e| Error::CryptoError(format!("HMAC error: {e}")))?;
-        mac.update(covered);
-
-        mac.verify_slice(signature)
-            .map_err(|_| Error::ValidationError("MAC verification failed".into()))
+    fn verify_covered(&self, covered: &[u8], mac: &[u8]) -> Result<()> {
+        let key = self.keys.in_sign.as_deref().unwrap_or(&self.keys.sign);
+        Self::verify_with(key, covered, mac)
     }
-
     fn get_message_count(&self) -> usize {
-        *self.message_count.read().unwrap()
+        *self.message_count.lock().unwrap()
     }
-
     fn get_config(&self) -> &SessionConfig {
         &self.config
+    }
+}
+
+impl std::fmt::Debug for SecureSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecureSession")
+            .field("id", &self.id)
+            .field("initiator", &self.initiator)
+            .field("status", &self.get_status())
+            .finish()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
 
-    fn create_test_session() -> SecureSession {
-        let combined_secret = vec![0x42u8; 32];
-        let config = SessionConfig {
-            max_age: Duration::seconds(60),
-            idle_timeout: Duration::seconds(30),
-            max_messages: 100,
-        };
-
-        SecureSession::new("test-session".to_string(), &combined_secret, true, config).unwrap()
+    fn seed() -> Vec<u8> {
+        vec![0x42; 32]
     }
 
     #[test]
-    fn test_session_creation() {
-        let session = create_test_session();
-        assert_eq!(session.get_id(), "test-session");
-        assert_eq!(session.get_status(), SessionStatus::Active);
-        assert_eq!(session.get_message_count(), 0);
+    fn record_format_and_roundtrip() {
+        let s = SecureSession::new("sid".into(), &seed(), SessionConfig::default()).unwrap();
+        let r = s.encrypt(b"hello").unwrap();
+        assert_eq!(r.len(), HEADER_SIZE + 5 + TAG_SIZE);
+        assert_eq!(&r[..SEQ_SIZE], &0u64.to_be_bytes());
+        let peer = SecureSession::new("sid".into(), &seed(), SessionConfig::default()).unwrap();
+        assert_eq!(peer.decrypt(&r).unwrap(), b"hello");
+        assert!(
+            matches!(peer.decrypt(&r), Err(Error::Verification(_))),
+            "replay"
+        );
+        let r2 = s.encrypt(b"x").unwrap();
+        assert_eq!(&r2[..SEQ_SIZE], &1u64.to_be_bytes());
+        assert_ne!(
+            &r[SEQ_SIZE..HEADER_SIZE],
+            &r2[SEQ_SIZE..HEADER_SIZE],
+            "random nonce"
+        );
     }
 
     #[test]
-    fn test_encrypt_decrypt() {
-        // Create two sessions with same secret - one initiator, one responder
-        let combined_secret = vec![0x42u8; 32];
-        let config = SessionConfig {
-            max_age: Duration::seconds(60),
-            idle_timeout: Duration::seconds(30),
-            max_messages: 100,
-        };
+    fn different_sessions_do_not_interoperate() {
+        let a = SecureSession::new("sid-a".into(), &seed(), SessionConfig::default()).unwrap();
+        let b = SecureSession::new("sid-b".into(), &seed(), SessionConfig::default()).unwrap();
+        let r = a.encrypt(b"hello").unwrap();
+        assert!(b.decrypt(&r).is_err());
+        let mut tampered = a.encrypt(b"hello").unwrap();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 1;
+        let c = SecureSession::new("sid-a".into(), &seed(), SessionConfig::default()).unwrap();
+        assert!(c.decrypt(&tampered).is_err());
+    }
 
-        let initiator = SecureSession::new(
-            "test-session".to_string(),
-            &combined_secret,
-            true,
-            config.clone(),
+    #[test]
+    fn rekey_by_generation() {
+        let cfg = SessionConfig {
+            rekey_interval: 4,
+            max_messages: 0,
+            ..Default::default()
+        };
+        let s = SecureSession::new("sid".into(), &seed(), cfg.clone()).unwrap();
+        let peer = SecureSession::new("sid".into(), &seed(), cfg).unwrap();
+        let records: Vec<Vec<u8>> = (0..10)
+            .map(|i| s.encrypt(format!("m{i}").as_bytes()).unwrap())
+            .collect();
+        for (i, r) in records.iter().enumerate() {
+            assert_eq!(peer.decrypt(r).unwrap(), format!("m{i}").as_bytes());
+        }
+        // a peer without rotation cannot open generation 1
+        let no_rekey = SecureSession::new(
+            "sid".into(),
+            &seed(),
+            SessionConfig {
+                rekey_interval: 0,
+                ..Default::default()
+            },
         )
         .unwrap();
-
-        let responder =
-            SecureSession::new("test-session".to_string(), &combined_secret, false, config)
-                .unwrap();
-
-        let plaintext = b"Hello, World!";
-
-        // Initiator encrypts
-        let ciphertext = initiator.encrypt(plaintext).unwrap();
-        assert_ne!(ciphertext, plaintext);
-
-        // Responder decrypts
-        let decrypted = responder.decrypt(&ciphertext).unwrap();
-        assert_eq!(decrypted, plaintext);
-
-        // Responder encrypts
-        let ciphertext2 = responder.encrypt(plaintext).unwrap();
-
-        // Initiator decrypts
-        let decrypted2 = initiator.decrypt(&ciphertext2).unwrap();
-        assert_eq!(decrypted2, plaintext);
+        assert!(no_rekey.decrypt(&records[0]).is_ok());
+        assert!(no_rekey.decrypt(&records[5]).is_err());
     }
 
     #[test]
-    fn test_sign_verify() {
-        // Create two sessions - initiator and responder
-        let combined_secret = vec![0x42u8; 32];
-        let config = SessionConfig {
-            max_age: Duration::seconds(60),
-            idle_timeout: Duration::seconds(30),
-            max_messages: 100,
-        };
-
-        let initiator = SecureSession::new(
-            "test-session".to_string(),
-            &combined_secret,
-            true,
-            config.clone(),
-        )
-        .unwrap();
-
-        let responder =
-            SecureSession::new("test-session".to_string(), &combined_secret, false, config)
-                .unwrap();
-
-        let data = b"test data";
-
-        // Initiator signs
-        let signature = initiator.sign_covered(data);
-        assert!(!signature.is_empty());
-
-        // Responder verifies
-        assert!(responder.verify_covered(data, &signature).is_ok());
-
-        // Verify fails with wrong data
-        assert!(responder.verify_covered(b"wrong data", &signature).is_err());
-    }
-
-    #[test]
-    fn test_encrypt_and_sign() {
-        // Create two sessions - initiator and responder
-        let combined_secret = vec![0x42u8; 32];
-        let config = SessionConfig {
-            max_age: Duration::seconds(60),
-            idle_timeout: Duration::seconds(30),
-            max_messages: 100,
-        };
-
-        let initiator = SecureSession::new(
-            "test-session".to_string(),
-            &combined_secret,
-            true,
-            config.clone(),
-        )
-        .unwrap();
-
-        let responder =
-            SecureSession::new("test-session".to_string(), &combined_secret, false, config)
-                .unwrap();
-
-        let plaintext = b"secret message";
-        let covered = b"additional data";
-
-        // Initiator encrypts and signs
-        let (ciphertext, mac) = initiator.encrypt_and_sign(plaintext, covered).unwrap();
-
-        // Responder decrypts and verifies
-        let decrypted = responder
-            .decrypt_and_verify(&ciphertext, covered, &mac)
+    fn directional_and_aad() {
+        let a = SecureSession::with_role("sid".into(), &seed(), true, SessionConfig::default())
             .unwrap();
-        assert_eq!(decrypted, plaintext);
+        let b = SecureSession::with_role("sid".into(), &seed(), false, SessionConfig::default())
+            .unwrap();
+        let r = a.encrypt_outbound(b"to b").unwrap();
+        assert_eq!(b.decrypt_inbound(&r).unwrap(), b"to b");
+        assert!(a.decrypt_inbound(&r).is_err(), "own direction");
+        let r2 = b.encrypt_with_aad(b"to a", b"ctx").unwrap();
+        assert_eq!(a.decrypt_with_aad(&r2, b"ctx").unwrap(), b"to a");
+        let a2 = SecureSession::with_role("sid".into(), &seed(), true, SessionConfig::default())
+            .unwrap();
+        assert!(a2.decrypt_with_aad(&r2, b"other").is_err());
+        let (rec, mac) = a.encrypt_and_sign(b"signed", b"covered").unwrap();
+        assert_eq!(
+            b.decrypt_and_verify(&rec, b"covered", &mac).unwrap(),
+            b"signed"
+        );
+        assert!(b.decrypt_and_verify(&rec, b"covered", &[0u8; 32]).is_err());
     }
 
     #[test]
-    fn test_message_count() {
-        let session = create_test_session();
-        assert_eq!(session.get_message_count(), 0);
-
-        session.encrypt(b"test").unwrap();
-        assert_eq!(session.get_message_count(), 1);
-
-        session.encrypt(b"test2").unwrap();
-        assert_eq!(session.get_message_count(), 2);
+    fn replay_window() {
+        let mut w = ReplayWindow::default();
+        assert!(w.check(5).is_ok());
+        w.mark(5);
+        assert!(w.check(5).is_err());
+        assert!(w.check(4).is_ok());
+        w.mark(4);
+        assert!(w.check(4).is_err());
+        w.mark(5 + REPLAY_WINDOW_SIZE);
+        assert!(w.check(5).is_err(), "stale");
+        assert!(w.check(6 + REPLAY_WINDOW_SIZE).is_ok());
     }
 
     #[test]
-    fn test_session_close() {
-        let mut session = create_test_session();
-        assert_eq!(session.get_status(), SessionStatus::Active);
-
-        session.close().unwrap();
-        assert_eq!(session.get_status(), SessionStatus::Closed);
-
-        // Closed session cannot encrypt
-        assert!(session.encrypt(b"test").is_err());
-    }
-
-    #[test]
-    fn test_channel_binding() {
-        let session = create_test_session();
-        let cb = session.get_channel_binding();
-        assert_eq!(cb.len(), 32);
-    }
-
-    #[test]
-    fn test_update_last_used() {
-        let mut session = create_test_session();
-        let initial = session.get_last_used_at();
-
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        session.update_last_used();
-
-        let updated = session.get_last_used_at();
-        assert!(updated > initial);
+    fn limits() {
+        let cfg = SessionConfig {
+            max_messages: 2,
+            ..Default::default()
+        };
+        let s = SecureSession::new("sid".into(), &seed(), cfg).unwrap();
+        s.encrypt(b"1").unwrap();
+        s.encrypt(b"2").unwrap();
+        assert!(s.encrypt(b"3").is_err());
+        assert!(s.is_expired());
     }
 }

@@ -3,7 +3,7 @@
 //! This module provides the SessionManager for managing multiple secure sessions,
 //! key ID binding, and session lifecycle.
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::session::secure_session::SecureSession;
 use crate::session::types::*;
 use dashmap::DashMap;
@@ -62,17 +62,16 @@ impl SessionManager {
     ) -> Result<(Arc<SecureSession>, String, Vec<u8>)> {
         let opts = opts.unwrap_or_default();
 
-        // Generate session ID if not provided
-        let session_id = opts
-            .session_id
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-
-        // Derive session key from exporter using info as context
-        let session_key = self.derive_session_key(exporter, info)?;
-
-        // Create secure session
+        // The exporter secret is the session seed (sage-spec 05-session.md);
+        // the session id is derived from it with `info` as the label unless
+        // one was given.
+        let session_key = exporter.to_vec();
+        let session_id = match opts.session_id {
+            Some(id) => id,
+            None => crate::session::derive::compute_session_id(exporter, info)?,
+        };
         let session =
-            SecureSession::new(session_id.clone(), &session_key, is_initiator, opts.config)?;
+            SecureSession::with_role(session_id.clone(), &session_key, is_initiator, opts.config)?;
 
         let session = Arc::new(session);
 
@@ -158,19 +157,6 @@ impl SessionManager {
     pub fn clear_all(&self) {
         self.sessions.clear();
         self.key_to_session.clear();
-    }
-
-    /// Derive session key from exporter using HKDF
-    fn derive_session_key(&self, exporter: &[u8], info: &str) -> Result<Vec<u8>> {
-        use hkdf::Hkdf;
-        use sha2::Sha256;
-
-        let hkdf = Hkdf::<Sha256>::new(None, exporter);
-        let mut okm = vec![0u8; 32];
-        hkdf.expand(info.as_bytes(), &mut okm)
-            .map_err(|e| Error::CryptoError(format!("HKDF expand failed: {e}")))?;
-
-        Ok(okm)
     }
 }
 

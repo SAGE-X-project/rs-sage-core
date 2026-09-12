@@ -24,7 +24,7 @@ struct Vector {
 }
 
 /// Suites and vectors this crate does not implement yet (F-03 steps 3-7).
-const NOT_YET: &[&str] = &["hpke", "session", "did"];
+const NOT_YET: &[&str] = &["hpke", "did"];
 
 fn vectors_dir() -> PathBuf {
     if let Ok(d) = std::env::var("SAGE_SPEC_VECTORS") {
@@ -387,6 +387,101 @@ fn rfc9421_suite() {
     assert!(
         failures.is_empty(),
         "rfc9421 vectors failed:\n{}",
+        failures.join("\n")
+    );
+}
+
+fn session_seed_and_id(v: &serde_json::Value) -> (Vec<u8>, String) {
+    use sage_crypto_core::session::{compute_session_id, derive_session_seed, SessionParams};
+    let params = SessionParams {
+        context_id: str_field(v, "context_id").to_string(),
+        self_eph: hex_field(v, "eph_a"),
+        peer_eph: hex_field(v, "eph_b"),
+        label: str_field(v, "label").to_string(),
+    };
+    let seed = derive_session_seed(&hex_field(v, "shared_secret"), &params).unwrap();
+    let sid = compute_session_id(&seed, &params.label).unwrap();
+    (seed, sid)
+}
+
+fn session_config(v: &serde_json::Value) -> sage_crypto_core::session::SessionConfig {
+    sage_crypto_core::session::SessionConfig {
+        rekey_interval: v["rekey_interval"].as_u64().unwrap_or(0),
+        max_messages: 0,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn session_suite() {
+    use sage_crypto_core::session::{SecureSession, Session};
+    let f = load("session");
+    let mut failures: Vec<String> = Vec::new();
+    for v in &f.vectors {
+        let mut detail: Vec<String> = Vec::new();
+        match v.name.as_str() {
+            "seed-and-id" => {
+                let (seed, sid) = session_seed_and_id(&v.input);
+                if hex::encode(&seed) != str_field(&v.output, "seed") {
+                    detail.push("seed".into());
+                }
+                if sid != str_field(&v.output, "session_id") {
+                    detail.push(format!("session_id {sid}"));
+                }
+            }
+            "encrypt-decrypt" => {
+                let (seed, sid) = session_seed_and_id(&v.input);
+                let s = SecureSession::new(sid, &seed, session_config(&v.input)).unwrap();
+                let want = str_field(&v.input, "plaintext").as_bytes();
+                for key in ["seq0", "seq256"] {
+                    match s.decrypt(&hex_field(&v.output, key)) {
+                        Ok(pt) if pt == want => {}
+                        Ok(_) => detail.push(format!("{key}: plaintext mismatch")),
+                        Err(e) => detail.push(format!("{key}: {e}")),
+                    }
+                }
+                if s.decrypt(&hex_field(&v.output, "seq0")).is_ok() {
+                    detail.push("replay of seq0 accepted".into());
+                }
+                // our own records must be readable by a fresh Go-shaped peer
+                let peer =
+                    SecureSession::new(s.get_id().to_string(), &seed, session_config(&v.input))
+                        .unwrap();
+                let own = s.encrypt(want).unwrap();
+                if peer.decrypt(&own).unwrap_or_default() != want {
+                    detail.push("own record".into());
+                }
+            }
+            "directional-with-aad" => {
+                let (seed, sid) = session_seed_and_id(&v.input);
+                let resp =
+                    SecureSession::with_role(sid, &seed, false, session_config(&v.input)).unwrap();
+                let want = str_field(&v.input, "plaintext").as_bytes();
+                match resp.decrypt_inbound(&hex_field(&v.output, "c2s")) {
+                    Ok(pt) if pt == want => {}
+                    Ok(_) => detail.push("c2s: plaintext mismatch".into()),
+                    Err(e) => detail.push(format!("c2s: {e}")),
+                }
+                match resp.decrypt_with_aad(
+                    &hex_field(&v.output, "with_aad"),
+                    str_field(&v.output, "aad").as_bytes(),
+                ) {
+                    Ok(pt) if pt == want => {}
+                    Ok(_) => detail.push("with_aad: plaintext mismatch".into()),
+                    Err(e) => detail.push(format!("with_aad: {e}")),
+                }
+            }
+            other => detail.push(format!("{other}: unknown vector")),
+        }
+        if detail.is_empty() {
+            println!("pass session/{}", v.name);
+        } else {
+            failures.push(format!("{}: {}", v.name, detail.join(", ")));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "session vectors failed:\n{}",
         failures.join("\n")
     );
 }
