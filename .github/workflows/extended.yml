@@ -45,7 +45,7 @@ jobs:
       run: cargo tarpaulin --out xml --all-features --timeout 600
 
     - name: Upload coverage report
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: coverage-cobertura
         path: cobertura.xml
@@ -70,7 +70,7 @@ jobs:
       run: cargo bench --all-features
 
     - name: Upload Criterion reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: criterion-reports
         path: target/criterion
