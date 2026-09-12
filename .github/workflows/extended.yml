@@ -19,10 +19,10 @@ jobs:
     timeout-minutes: 30
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Checkout sage-spec (test vectors)
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         repository: SAGE-X-project/sage-spec
         ref: main
@@ -56,7 +56,7 @@ jobs:
     timeout-minutes: 40
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@master
@@ -87,7 +87,7 @@ jobs:
           - aarch64-unknown-linux-gnu
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@master
@@ -113,7 +113,7 @@ jobs:
     continue-on-error: true
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install Rust nightly with Miri
       uses: dtolnay/rust-toolchain@nightly
