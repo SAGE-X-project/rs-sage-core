@@ -116,7 +116,9 @@ impl HttpSigner {
             crate::crypto::KeyType::Ed25519 => SignatureAlgorithm::Ed25519,
             crate::crypto::KeyType::Secp256k1 => SignatureAlgorithm::EcdsaSecp256k1Sha256,
             crate::crypto::KeyType::P256 => SignatureAlgorithm::EcdsaP256Sha256,
-            crate::crypto::KeyType::Rsa2048 | crate::crypto::KeyType::Rsa4096 => SignatureAlgorithm::RsaPkcs1v15Sha256,
+            crate::crypto::KeyType::Rsa2048 | crate::crypto::KeyType::Rsa4096 => {
+                SignatureAlgorithm::RsaPkcs1v15Sha256
+            }
         };
 
         Ok(SignatureParams {
@@ -539,7 +541,12 @@ mod tests {
 
         // Verify both headers are present
         let signature = signed.headers().get("signature").unwrap().to_str().unwrap();
-        let sig_input = signed.headers().get("signature-input").unwrap().to_str().unwrap();
+        let sig_input = signed
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         // Signature should be base64 encoded with format "sig1=:base64"
         assert!(signature.starts_with("sig1=:"));
@@ -566,7 +573,12 @@ mod tests {
         let signed = signer.sign_response(response).unwrap();
 
         let signature = signed.headers().get("signature").unwrap().to_str().unwrap();
-        let sig_input = signed.headers().get("signature-input").unwrap().to_str().unwrap();
+        let sig_input = signed
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         assert!(signature.starts_with("sig1=:"));
         assert!(sig_input.starts_with("sig1=("));

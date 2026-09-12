@@ -171,7 +171,9 @@ impl SecureSession {
     fn aes_gcm_encrypt(&self, plaintext: &[u8], key: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
         // Ensure key is 32 bytes for AES-256
         if key.len() != 32 {
-            return Err(Error::CryptoError("Invalid key length for AES-256-GCM".into()));
+            return Err(Error::CryptoError(
+                "Invalid key length for AES-256-GCM".into(),
+            ));
         }
 
         // Create cipher
@@ -180,7 +182,7 @@ impl SecureSession {
 
         // Generate unique nonce
         let nonce_array = self.generate_nonce()?;
-        let nonce = Nonce::from_slice(&nonce_array);
+        let nonce = Nonce::from(nonce_array);
 
         // Encrypt with AAD
         let payload = Payload {
@@ -189,7 +191,7 @@ impl SecureSession {
         };
 
         let ciphertext = cipher
-            .encrypt(nonce, payload)
+            .encrypt(&nonce, payload)
             .map_err(|e| Error::CryptoError(format!("Encryption failed: {e}")))?;
 
         // Prepend nonce to ciphertext for decryption
@@ -204,20 +206,31 @@ impl SecureSession {
     /// AES-GCM decryption
     ///
     /// Extracts nonce from ciphertext and decrypts using AES-256-GCM.
-    fn aes_gcm_decrypt(&self, ciphertext_with_nonce: &[u8], key: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
+    fn aes_gcm_decrypt(
+        &self,
+        ciphertext_with_nonce: &[u8],
+        key: &[u8],
+        aad: &[u8],
+    ) -> Result<Vec<u8>> {
         // Ensure key is 32 bytes for AES-256
         if key.len() != 32 {
-            return Err(Error::CryptoError("Invalid key length for AES-256-GCM".into()));
+            return Err(Error::CryptoError(
+                "Invalid key length for AES-256-GCM".into(),
+            ));
         }
 
         // Check minimum length (nonce + tag)
-        if ciphertext_with_nonce.len() < 28 {  // 12 (nonce) + 16 (GCM tag)
+        if ciphertext_with_nonce.len() < 28 {
+            // 12 (nonce) + 16 (GCM tag)
             return Err(Error::CryptoError("Ciphertext too short".into()));
         }
 
         // Extract nonce and ciphertext
         let (nonce_bytes, ciphertext) = ciphertext_with_nonce.split_at(12);
-        let nonce = Nonce::from_slice(nonce_bytes);
+        let nonce_array: [u8; 12] = nonce_bytes
+            .try_into()
+            .map_err(|_| Error::CryptoError("Invalid nonce length".into()))?;
+        let nonce = Nonce::from(nonce_array);
 
         // Create cipher
         let cipher = Aes256Gcm::new_from_slice(key)
@@ -230,7 +243,7 @@ impl SecureSession {
         };
 
         let plaintext = cipher
-            .decrypt(nonce, payload)
+            .decrypt(&nonce, payload)
             .map_err(|e| Error::CryptoError(format!("Decryption failed: {e}")))?;
 
         Ok(plaintext)
@@ -260,7 +273,10 @@ impl Session for SecureSession {
             *status = SessionStatus::Expired;
             true
         } else {
-            matches!(self.get_status(), SessionStatus::Expired | SessionStatus::Closed)
+            matches!(
+                self.get_status(),
+                SessionStatus::Expired | SessionStatus::Closed
+            )
         }
     }
 
@@ -318,12 +334,7 @@ impl Session for SecureSession {
         Ok((ciphertext, mac))
     }
 
-    fn decrypt_and_verify(
-        &self,
-        ciphertext: &[u8],
-        covered: &[u8],
-        mac: &[u8],
-    ) -> Result<Vec<u8>> {
+    fn decrypt_and_verify(&self, ciphertext: &[u8], covered: &[u8], mac: &[u8]) -> Result<Vec<u8>> {
         if self.is_expired() {
             return Err(Error::Other("Session expired".into()));
         }
@@ -406,13 +417,9 @@ mod tests {
         )
         .unwrap();
 
-        let responder = SecureSession::new(
-            "test-session".to_string(),
-            &combined_secret,
-            false,
-            config,
-        )
-        .unwrap();
+        let responder =
+            SecureSession::new("test-session".to_string(), &combined_secret, false, config)
+                .unwrap();
 
         let plaintext = b"Hello, World!";
 
@@ -450,13 +457,9 @@ mod tests {
         )
         .unwrap();
 
-        let responder = SecureSession::new(
-            "test-session".to_string(),
-            &combined_secret,
-            false,
-            config,
-        )
-        .unwrap();
+        let responder =
+            SecureSession::new("test-session".to_string(), &combined_secret, false, config)
+                .unwrap();
 
         let data = b"test data";
 
@@ -489,13 +492,9 @@ mod tests {
         )
         .unwrap();
 
-        let responder = SecureSession::new(
-            "test-session".to_string(),
-            &combined_secret,
-            false,
-            config,
-        )
-        .unwrap();
+        let responder =
+            SecureSession::new("test-session".to_string(), &combined_secret, false, config)
+                .unwrap();
 
         let plaintext = b"secret message";
         let covered = b"additional data";

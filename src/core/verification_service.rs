@@ -229,8 +229,7 @@ impl VerificationService {
 
         // Add RFC 9421 signature headers
         // Format: "sig1=:base64_signature:"
-        let signature_base64 =
-            base64::engine::general_purpose::STANDARD.encode(&message.signature);
+        let signature_base64 = base64::engine::general_purpose::STANDARD.encode(&message.signature);
         let signature_header = format!("sig1=:{signature_base64}");
 
         request_builder = request_builder
@@ -279,7 +278,9 @@ impl VerificationService {
     /// Verifies message ordering
     fn verify_order(&self, message: &Message) -> Result<bool> {
         // Check message order based on timestamp per agent DID
-        Ok(self.order_tracker.check_and_update(&message.agent_did, message.timestamp))
+        Ok(self
+            .order_tracker
+            .check_and_update(&message.agent_did, message.timestamp))
     }
 }
 
@@ -297,7 +298,6 @@ impl Default for VerificationService {
 //     }
 // }
 
-/// Blockchain-enabled verification methods
 // DEPRECATED: Old blockchain implementation using ethers (replaced with alloy in blockchain module)
 // #[cfg(feature = "blockchain")]
 // impl<M: ethers::providers::Middleware + 'static> VerificationService<M> {
@@ -309,7 +309,7 @@ impl Default for VerificationService {
 //         options: &VerificationOptions,
 //     ) -> Result<VerificationResult> {
 //         let mut result = VerificationResult::success();
-// 
+//
 //         // Step 1: Verify signature
 //         result.signature_valid = self.verify_signature(message, public_key)?;
 //         if !result.signature_valid {
@@ -317,7 +317,7 @@ impl Default for VerificationService {
 //             result.error = Some("Invalid signature".to_string());
 //             return Ok(result);
 //         }
-// 
+//
 //         // Step 2: Verify timestamp if requested
 //         if options.check_timestamp {
 //             result.timestamp_valid = self.verify_timestamp(message, options)?;
@@ -327,7 +327,7 @@ impl Default for VerificationService {
 //                 return Ok(result);
 //             }
 //         }
-// 
+//
 //         // Step 3: Verify nonce if requested (with blockchain)
 //         if options.check_nonce {
 //             result.nonce_valid = self.verify_nonce_async(message).await?;
@@ -337,7 +337,7 @@ impl Default for VerificationService {
 //                 return Ok(result);
 //             }
 //         }
-// 
+//
 //         // Step 4: Verify order if requested
 //         if options.check_order {
 //             result.order_valid = self.verify_order(message)?;
@@ -347,24 +347,24 @@ impl Default for VerificationService {
 //                 return Ok(result);
 //             }
 //         }
-// 
+//
 //         result.verified = true;
 //         Ok(result)
 //     }
-// 
+//
 //     /// Verifies the message signature using RFC 9421 HttpVerifier
 //     fn verify_signature(&self, message: &Message, public_key: &PublicKey) -> Result<bool> {
 //         // Check if message is signed
 //         if message.signature.is_empty() || message.signature_input.is_empty() {
 //             return Ok(false);
 //         }
-// 
+//
 //         // Reconstruct HTTP Request from Message
 //         let request = self.reconstruct_http_request(message)?;
-// 
+//
 //         // Create HttpVerifier with public key
 //         let verifier = HttpVerifier::new(public_key.clone());
-// 
+//
 //         // Verify the request signature
 //         match verifier.verify_request(&request) {
 //             Ok(()) => Ok(true),
@@ -374,11 +374,11 @@ impl Default for VerificationService {
 //             }
 //         }
 //     }
-// 
+//
 //     /// Reconstructs an HTTP Request from a Message for verification
 //     fn reconstruct_http_request(&self, message: &Message) -> Result<http::Request<Vec<u8>>> {
 //         use base64::Engine;
-// 
+//
 //         let mut request_builder = http::Request::builder()
 //             .method("POST")
 //             .uri("/message")
@@ -387,56 +387,56 @@ impl Default for VerificationService {
 //             .header("x-sage-message-id", &message.message_id)
 //             .header("x-sage-timestamp", message.timestamp.to_string())
 //             .header("x-sage-nonce", &message.nonce);
-// 
+//
 //         for (key, value) in &message.headers {
 //             request_builder = request_builder.header(key, value);
 //         }
-// 
+//
 //         let signature_base64 =
 //             base64::engine::general_purpose::STANDARD.encode(&message.signature);
 //         let signature_header = format!("sig1=:{signature_base64}");
-// 
+//
 //         request_builder = request_builder
 //             .header("signature", signature_header)
 //             .header("signature-input", &message.signature_input);
-// 
+//
 //         request_builder
 //             .body(message.body.clone())
 //             .map_err(|e| Error::Other(format!("Failed to reconstruct HTTP request: {e}")))
 //     }
-// 
+//
 //     /// Verifies the message timestamp
 //     fn verify_timestamp(&self, message: &Message, options: &VerificationOptions) -> Result<bool> {
 //         let now = chrono::Utc::now().timestamp();
 //         let message_time = message.timestamp;
-// 
+//
 //         if message_time > now + 60 {
 //             return Ok(false);
 //         }
-// 
+//
 //         if let Some(max_age) = options.max_age_secs {
 //             let age = now - message_time;
 //             if age > max_age as i64 {
 //                 return Ok(false);
 //             }
 //         }
-// 
+//
 //         Ok(true)
 //     }
-// 
+//
 //     /// Verifies the nonce is valid and not reused (async with blockchain)
 //     async fn verify_nonce_async(&self, message: &Message) -> Result<bool> {
 //         // Check if nonce is not empty
 //         if message.nonce.is_empty() {
 //             return Ok(false);
 //         }
-// 
+//
 //         // If nonce tracker is available, check on-chain
 //         if let Some(tracker) = &self.nonce_tracker {
 //             // Parse DID from message
 //             let did = DID::parse(&message.agent_did)
 //                 .map_err(|e| Error::Other(format!("Invalid DID: {}", e)))?;
-// 
+//
 //             // Validate nonce (checks if it's NOT used)
 //             tracker.validate_nonce(&did, &message.nonce).await?;
 //             Ok(true)
@@ -614,10 +614,7 @@ mod tests {
     fn test_verify_nonce_empty() {
         let service = VerificationService::new();
 
-        let msg = MessageBuilder::new()
-            .nonce("")
-            .build()
-            .unwrap();
+        let msg = MessageBuilder::new().nonce("").build().unwrap();
 
         let is_valid = service.verify_nonce(&msg).unwrap();
         assert!(!is_valid);
@@ -629,10 +626,7 @@ mod tests {
     fn test_verify_order() {
         let service = VerificationService::new();
 
-        let msg = MessageBuilder::new()
-            .nonce("test-nonce")
-            .build()
-            .unwrap();
+        let msg = MessageBuilder::new().nonce("test-nonce").build().unwrap();
 
         // Currently returns true (stub implementation)
         let is_valid = service.verify_order(&msg).unwrap();
@@ -674,7 +668,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let is_valid = service.verify_signature(&msg, keypair.public_key()).unwrap();
+        let is_valid = service
+            .verify_signature(&msg, keypair.public_key())
+            .unwrap();
         assert!(!is_valid);
     }
 
@@ -693,7 +689,9 @@ mod tests {
         msg.signature = vec![1, 2, 3, 4]; // Some signature
         msg.signature_input = String::new(); // Empty input
 
-        let is_valid = service.verify_signature(&msg, keypair.public_key()).unwrap();
+        let is_valid = service
+            .verify_signature(&msg, keypair.public_key())
+            .unwrap();
         assert!(!is_valid);
     }
 
@@ -718,7 +716,8 @@ mod tests {
         msg.signature_input = "(@method @path);created=123".to_string();
 
         // Add custom header
-        msg.headers.insert("x-custom".to_string(), "value".to_string());
+        msg.headers
+            .insert("x-custom".to_string(), "value".to_string());
 
         let request = service.reconstruct_http_request(&msg).unwrap();
 
@@ -741,14 +740,8 @@ mod tests {
             request.headers().get("x-sage-timestamp").unwrap(),
             &now.to_string()
         );
-        assert_eq!(
-            request.headers().get("x-sage-nonce").unwrap(),
-            "nonce-456"
-        );
-        assert_eq!(
-            request.headers().get("x-custom").unwrap(),
-            "value"
-        );
+        assert_eq!(request.headers().get("x-sage-nonce").unwrap(), "nonce-456");
+        assert_eq!(request.headers().get("x-custom").unwrap(), "value");
         assert!(request.headers().contains_key("signature"));
         assert!(request.headers().contains_key("signature-input"));
         assert_eq!(request.body(), b"test body");
@@ -770,7 +763,12 @@ mod tests {
         let request = service.reconstruct_http_request(&msg).unwrap();
 
         // Verify signature is base64 encoded
-        let signature_header = request.headers().get("signature").unwrap().to_str().unwrap();
+        let signature_header = request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert!(signature_header.starts_with("sig1=:"));
         assert!(signature_header.contains("AQIDBA")); // Base64 of [1,2,3,4]
     }
@@ -796,7 +794,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
 
         // Should fail due to empty signature
         assert!(!result.verified);
@@ -822,7 +822,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&old_msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&old_msg, keypair.public_key(), &options)
+            .unwrap();
 
         // Should fail due to expired timestamp (signature check happens first but we test flow)
         assert!(!result.verified);
@@ -850,7 +852,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
 
         // Will fail at signature verification first
         assert!(!result.verified);
@@ -873,7 +877,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
 
         // Will fail at signature verification
         assert!(!result.verified);
@@ -894,7 +900,9 @@ mod tests {
             .unwrap();
 
         let options = VerificationOptions::default();
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
 
         assert!(!result.verified);
         assert_eq!(result.error, Some("Invalid signature".to_string()));
@@ -919,7 +927,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&old_msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&old_msg, keypair.public_key(), &options)
+            .unwrap();
 
         assert!(!result.verified);
         // Will fail at signature first, but structure is correct
@@ -939,7 +949,9 @@ mod tests {
             .unwrap();
 
         // Empty signature should fail
-        let is_valid = service.verify_signature(&msg, keypair.public_key()).unwrap();
+        let is_valid = service
+            .verify_signature(&msg, keypair.public_key())
+            .unwrap();
         assert!(!is_valid);
     }
 
@@ -955,7 +967,9 @@ mod tests {
             .unwrap();
 
         // Empty signature should fail
-        let is_valid = service.verify_signature(&msg, keypair.public_key()).unwrap();
+        let is_valid = service
+            .verify_signature(&msg, keypair.public_key())
+            .unwrap();
         assert!(!is_valid);
     }
 
@@ -971,7 +985,9 @@ mod tests {
             .unwrap();
 
         // Empty signature should fail
-        let is_valid = service.verify_signature(&msg, keypair.public_key()).unwrap();
+        let is_valid = service
+            .verify_signature(&msg, keypair.public_key())
+            .unwrap();
         assert!(!is_valid);
     }
 
@@ -987,7 +1003,9 @@ mod tests {
             .unwrap();
 
         // Empty signature should fail
-        let is_valid = service.verify_signature(&msg, keypair.public_key()).unwrap();
+        let is_valid = service
+            .verify_signature(&msg, keypair.public_key())
+            .unwrap();
         assert!(!is_valid);
     }
 
@@ -1007,9 +1025,12 @@ mod tests {
         msg.signature_input = "test".to_string();
 
         // Add multiple custom headers
-        msg.headers.insert("x-header-1".to_string(), "value1".to_string());
-        msg.headers.insert("x-header-2".to_string(), "value2".to_string());
-        msg.headers.insert("x-header-3".to_string(), "value3".to_string());
+        msg.headers
+            .insert("x-header-1".to_string(), "value1".to_string());
+        msg.headers
+            .insert("x-header-2".to_string(), "value2".to_string());
+        msg.headers
+            .insert("x-header-3".to_string(), "value3".to_string());
 
         let request = service.reconstruct_http_request(&msg).unwrap();
 
@@ -1140,7 +1161,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
 
         // Will fail due to empty signature
         assert!(!result.verified);
@@ -1165,7 +1188,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
 
         // Will fail due to empty signature
         assert!(!result.verified);
@@ -1191,7 +1216,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
 
         // Will fail due to empty signature
         assert!(!result.verified);
@@ -1216,10 +1243,7 @@ mod tests {
         assert!(service.verify_nonce(&msg2).unwrap());
 
         // Base64 format
-        let msg3 = MessageBuilder::new()
-            .nonce("YWJjZGVm")
-            .build()
-            .unwrap();
+        let msg3 = MessageBuilder::new().nonce("YWJjZGVm").build().unwrap();
         assert!(service.verify_nonce(&msg3).unwrap());
     }
 
@@ -1238,7 +1262,9 @@ mod tests {
         msg.signature = vec![1, 2, 3, 4];
         msg.signature_input = String::new();
 
-        let is_valid = service.verify_signature(&msg, keypair.public_key()).unwrap();
+        let is_valid = service
+            .verify_signature(&msg, keypair.public_key())
+            .unwrap();
         assert!(!is_valid);
     }
 
@@ -1257,7 +1283,9 @@ mod tests {
         msg.signature = vec![];
         msg.signature_input = "(@method);created=123".to_string();
 
-        let is_valid = service.verify_signature(&msg, keypair.public_key()).unwrap();
+        let is_valid = service
+            .verify_signature(&msg, keypair.public_key())
+            .unwrap();
         assert!(!is_valid);
     }
 
@@ -1375,17 +1403,29 @@ mod tests {
         let signed_request = signer.sign_request(request).unwrap();
 
         // Extract signature from signed request
-        let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-        let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+        let signature_header = signed_request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let signature_input = signed_request
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         // Extract base64 signature (format: "sig1=:base64" or "sig1=:base64:")
         let sig_start = signature_header.find(':').unwrap() + 1;
         let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len()-1]
+            &signature_header[sig_start..signature_header.len() - 1]
         } else {
             &signature_header[sig_start..]
         };
-        msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+        msg.signature = base64::engine::general_purpose::STANDARD
+            .decode(sig_base64)
+            .unwrap();
         msg.signature_input = signature_input.to_string();
 
         // Verify with all options disabled except signature
@@ -1396,7 +1436,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
         assert!(result.verified);
         assert!(result.signature_valid);
     }
@@ -1423,16 +1465,28 @@ mod tests {
         let request = service.reconstruct_http_request(&msg).unwrap();
         let signed_request = signer.sign_request(request).unwrap();
 
-        let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-        let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+        let signature_header = signed_request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let signature_input = signed_request
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         let sig_start = signature_header.find(':').unwrap() + 1;
         let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len()-1]
+            &signature_header[sig_start..signature_header.len() - 1]
         } else {
             &signature_header[sig_start..]
         };
-        msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+        msg.signature = base64::engine::general_purpose::STANDARD
+            .decode(sig_base64)
+            .unwrap();
         msg.signature_input = signature_input.to_string();
 
         // Verify with timestamp check enabled
@@ -1444,7 +1498,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
         assert!(result.verified);
         assert!(result.signature_valid);
         assert!(result.timestamp_valid);
@@ -1473,16 +1529,28 @@ mod tests {
         let request = service.reconstruct_http_request(&msg).unwrap();
         let signed_request = signer.sign_request(request).unwrap();
 
-        let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-        let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+        let signature_header = signed_request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let signature_input = signed_request
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         let sig_start = signature_header.find(':').unwrap() + 1;
         let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len()-1]
+            &signature_header[sig_start..signature_header.len() - 1]
         } else {
             &signature_header[sig_start..]
         };
-        msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+        msg.signature = base64::engine::general_purpose::STANDARD
+            .decode(sig_base64)
+            .unwrap();
         msg.signature_input = signature_input.to_string();
 
         // Verify with timestamp check (max_age = 1 hour)
@@ -1492,11 +1560,16 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
         assert!(!result.verified);
         assert!(result.signature_valid); // Signature is valid
         assert!(!result.timestamp_valid); // But timestamp is expired
-        assert_eq!(result.error, Some("Invalid or expired timestamp".to_string()));
+        assert_eq!(
+            result.error,
+            Some("Invalid or expired timestamp".to_string())
+        );
     }
 
     #[test]
@@ -1521,16 +1594,28 @@ mod tests {
         let request = service.reconstruct_http_request(&msg).unwrap();
         let signed_request = signer.sign_request(request).unwrap();
 
-        let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-        let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+        let signature_header = signed_request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let signature_input = signed_request
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         let sig_start = signature_header.find(':').unwrap() + 1;
         let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len()-1]
+            &signature_header[sig_start..signature_header.len() - 1]
         } else {
             &signature_header[sig_start..]
         };
-        msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+        msg.signature = base64::engine::general_purpose::STANDARD
+            .decode(sig_base64)
+            .unwrap();
         msg.signature_input = signature_input.to_string();
 
         // Verify with nonce check enabled
@@ -1541,7 +1626,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
         assert!(!result.verified);
         assert!(result.signature_valid);
         assert!(!result.nonce_valid);
@@ -1570,16 +1657,28 @@ mod tests {
         let request = service.reconstruct_http_request(&msg).unwrap();
         let signed_request = signer.sign_request(request).unwrap();
 
-        let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-        let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+        let signature_header = signed_request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let signature_input = signed_request
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         let sig_start = signature_header.find(':').unwrap() + 1;
         let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len()-1]
+            &signature_header[sig_start..signature_header.len() - 1]
         } else {
             &signature_header[sig_start..]
         };
-        msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+        msg.signature = base64::engine::general_purpose::STANDARD
+            .decode(sig_base64)
+            .unwrap();
         msg.signature_input = signature_input.to_string();
 
         // Verify with all checks enabled
@@ -1591,7 +1690,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
         assert!(result.verified);
         assert!(result.signature_valid);
         assert!(result.timestamp_valid);
@@ -1622,21 +1723,35 @@ mod tests {
         let request = service.reconstruct_http_request(&msg).unwrap();
         let signed_request = signer.sign_request(request).unwrap();
 
-        let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-        let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+        let signature_header = signed_request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let signature_input = signed_request
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         let sig_start = signature_header.find(':').unwrap() + 1;
         let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len()-1]
+            &signature_header[sig_start..signature_header.len() - 1]
         } else {
             &signature_header[sig_start..]
         };
-        msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+        msg.signature = base64::engine::general_purpose::STANDARD
+            .decode(sig_base64)
+            .unwrap();
         msg.signature_input = signature_input.to_string();
 
         // Verify with keypair2 (wrong key)
         let options = VerificationOptions::default();
-        let result = service.verify(&msg, keypair2.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair2.public_key(), &options)
+            .unwrap();
 
         assert!(!result.verified);
         assert!(!result.signature_valid);
@@ -1672,22 +1787,36 @@ mod tests {
             let request = service.reconstruct_http_request(&msg).unwrap();
             let signed_request = signer.sign_request(request).unwrap();
 
-            let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-            let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+            let signature_header = signed_request
+                .headers()
+                .get("signature")
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let signature_input = signed_request
+                .headers()
+                .get("signature-input")
+                .unwrap()
+                .to_str()
+                .unwrap();
 
             let sig_start = signature_header.find(':').unwrap() + 1;
             let sig_base64 = if signature_header.ends_with(':') {
-                &signature_header[sig_start..signature_header.len()-1]
+                &signature_header[sig_start..signature_header.len() - 1]
             } else {
                 &signature_header[sig_start..]
             };
-            msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+            msg.signature = base64::engine::general_purpose::STANDARD
+                .decode(sig_base64)
+                .unwrap();
             msg.signature_input = signature_input.to_string();
 
             let options = VerificationOptions::default();
-            let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+            let result = service
+                .verify(&msg, keypair.public_key(), &options)
+                .unwrap();
 
-            assert!(result.verified, "Failed to verify with {:?}", algo);
+            assert!(result.verified, "Failed to verify with {algo:?}");
             assert!(result.signature_valid);
         }
     }
@@ -1714,16 +1843,28 @@ mod tests {
         let request = service.reconstruct_http_request(&msg).unwrap();
         let signed_request = signer.sign_request(request).unwrap();
 
-        let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-        let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+        let signature_header = signed_request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let signature_input = signed_request
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         let sig_start = signature_header.find(':').unwrap() + 1;
         let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len()-1]
+            &signature_header[sig_start..signature_header.len() - 1]
         } else {
             &signature_header[sig_start..]
         };
-        msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+        msg.signature = base64::engine::general_purpose::STANDARD
+            .decode(sig_base64)
+            .unwrap();
         msg.signature_input = signature_input.to_string();
 
         let options = VerificationOptions {
@@ -1732,7 +1873,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
         assert!(result.verified); // Should be valid at boundary
         assert!(result.timestamp_valid);
     }
@@ -1759,16 +1902,28 @@ mod tests {
         let request = service.reconstruct_http_request(&msg).unwrap();
         let signed_request = signer.sign_request(request).unwrap();
 
-        let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-        let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+        let signature_header = signed_request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let signature_input = signed_request
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         let sig_start = signature_header.find(':').unwrap() + 1;
         let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len()-1]
+            &signature_header[sig_start..signature_header.len() - 1]
         } else {
             &signature_header[sig_start..]
         };
-        msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+        msg.signature = base64::engine::general_purpose::STANDARD
+            .decode(sig_base64)
+            .unwrap();
         msg.signature_input = signature_input.to_string();
 
         let options = VerificationOptions {
@@ -1777,10 +1932,15 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
         assert!(!result.verified); // Should fail
         assert!(!result.timestamp_valid);
-        assert_eq!(result.error, Some("Invalid or expired timestamp".to_string()));
+        assert_eq!(
+            result.error,
+            Some("Invalid or expired timestamp".to_string())
+        );
     }
 
     #[test]
@@ -1800,28 +1960,44 @@ mod tests {
             .unwrap();
 
         // Add custom headers
-        msg.headers.insert("x-custom-1".to_string(), "value1".to_string());
-        msg.headers.insert("x-custom-2".to_string(), "value2".to_string());
+        msg.headers
+            .insert("x-custom-1".to_string(), "value1".to_string());
+        msg.headers
+            .insert("x-custom-2".to_string(), "value2".to_string());
 
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
         let signed_request = signer.sign_request(request).unwrap();
 
-        let signature_header = signed_request.headers().get("signature").unwrap().to_str().unwrap();
-        let signature_input = signed_request.headers().get("signature-input").unwrap().to_str().unwrap();
+        let signature_header = signed_request
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let signature_input = signed_request
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         let sig_start = signature_header.find(':').unwrap() + 1;
         let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len()-1]
+            &signature_header[sig_start..signature_header.len() - 1]
         } else {
             &signature_header[sig_start..]
         };
-        msg.signature = base64::engine::general_purpose::STANDARD.decode(sig_base64).unwrap();
+        msg.signature = base64::engine::general_purpose::STANDARD
+            .decode(sig_base64)
+            .unwrap();
         msg.signature_input = signature_input.to_string();
 
         let options = VerificationOptions::default();
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
 
         assert!(result.verified);
         assert!(result.signature_valid);
@@ -1847,7 +2023,9 @@ mod tests {
             ..Default::default()
         };
 
-        let result = service.verify(&msg, keypair.public_key(), &options).unwrap();
+        let result = service
+            .verify(&msg, keypair.public_key(), &options)
+            .unwrap();
 
         // Verify all fields are set correctly on signature failure
         assert!(!result.verified);
@@ -1873,7 +2051,9 @@ mod tests {
         msg.signature = vec![1, 2, 3, 4, 5];
         msg.signature_input = "sig1=(@method);created=123".to_string();
 
-        let is_valid = service.verify_signature(&msg, keypair.public_key()).unwrap();
+        let is_valid = service
+            .verify_signature(&msg, keypair.public_key())
+            .unwrap();
         assert!(!is_valid);
     }
 }

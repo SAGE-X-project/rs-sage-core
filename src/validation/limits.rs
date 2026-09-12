@@ -52,56 +52,56 @@ pub struct ValidationLimits {
 
 /// Default validation limits (balanced for security and usability)
 pub const DEFAULT_LIMITS: ValidationLimits = ValidationLimits {
-    max_message_size: 1024 * 1024,           // 1MB
-    max_payload_size: 512 * 1024,            // 512KB
-    max_metadata_size: 64 * 1024,            // 64KB
-    max_signature_size: 256,                 // 256 bytes
-    max_did_length: 1024,                    // 1024 chars
-    max_key_id_length: 256,                  // 256 chars
-    max_nonce_length: 128,                   // 128 chars
-    max_timestamp_skew_secs: 300,            // 5 minutes
-    max_signature_headers: 100,              // 100 headers
-    max_header_name_length: 256,             // 256 chars
-    max_header_value_length: 8 * 1024,       // 8KB
-    max_verification_methods: 50,            // 50 methods
-    max_sessions_per_pool: 10000,            // 10k sessions
-    max_messages_per_session: 1000,          // 1k messages
+    max_message_size: 1024 * 1024,     // 1MB
+    max_payload_size: 512 * 1024,      // 512KB
+    max_metadata_size: 64 * 1024,      // 64KB
+    max_signature_size: 256,           // 256 bytes
+    max_did_length: 1024,              // 1024 chars
+    max_key_id_length: 256,            // 256 chars
+    max_nonce_length: 128,             // 128 chars
+    max_timestamp_skew_secs: 300,      // 5 minutes
+    max_signature_headers: 100,        // 100 headers
+    max_header_name_length: 256,       // 256 chars
+    max_header_value_length: 8 * 1024, // 8KB
+    max_verification_methods: 50,      // 50 methods
+    max_sessions_per_pool: 10000,      // 10k sessions
+    max_messages_per_session: 1000,    // 1k messages
 };
 
 /// Strict validation limits (for high-security environments)
 pub const STRICT_LIMITS: ValidationLimits = ValidationLimits {
-    max_message_size: 256 * 1024,            // 256KB
-    max_payload_size: 128 * 1024,            // 128KB
-    max_metadata_size: 16 * 1024,            // 16KB
-    max_signature_size: 128,                 // 128 bytes
-    max_did_length: 512,                     // 512 chars
-    max_key_id_length: 128,                  // 128 chars
-    max_nonce_length: 64,                    // 64 chars
-    max_timestamp_skew_secs: 60,             // 1 minute
-    max_signature_headers: 20,               // 20 headers
-    max_header_name_length: 128,             // 128 chars
-    max_header_value_length: 2 * 1024,       // 2KB
-    max_verification_methods: 10,            // 10 methods
-    max_sessions_per_pool: 1000,             // 1k sessions
-    max_messages_per_session: 100,           // 100 messages
+    max_message_size: 256 * 1024,      // 256KB
+    max_payload_size: 128 * 1024,      // 128KB
+    max_metadata_size: 16 * 1024,      // 16KB
+    max_signature_size: 128,           // 128 bytes
+    max_did_length: 512,               // 512 chars
+    max_key_id_length: 128,            // 128 chars
+    max_nonce_length: 64,              // 64 chars
+    max_timestamp_skew_secs: 60,       // 1 minute
+    max_signature_headers: 20,         // 20 headers
+    max_header_name_length: 128,       // 128 chars
+    max_header_value_length: 2 * 1024, // 2KB
+    max_verification_methods: 10,      // 10 methods
+    max_sessions_per_pool: 1000,       // 1k sessions
+    max_messages_per_session: 100,     // 100 messages
 };
 
 /// Permissive validation limits (for development/testing)
 pub const PERMISSIVE_LIMITS: ValidationLimits = ValidationLimits {
-    max_message_size: 10 * 1024 * 1024,      // 10MB
-    max_payload_size: 5 * 1024 * 1024,       // 5MB
-    max_metadata_size: 256 * 1024,           // 256KB
-    max_signature_size: 512,                 // 512 bytes
-    max_did_length: 4096,                    // 4096 chars
-    max_key_id_length: 1024,                 // 1024 chars
-    max_nonce_length: 256,                   // 256 chars
-    max_timestamp_skew_secs: 3600,           // 1 hour
-    max_signature_headers: 500,              // 500 headers
-    max_header_name_length: 512,             // 512 chars
-    max_header_value_length: 32 * 1024,      // 32KB
-    max_verification_methods: 200,           // 200 methods
-    max_sessions_per_pool: 100000,           // 100k sessions
-    max_messages_per_session: 10000,         // 10k messages
+    max_message_size: 10 * 1024 * 1024, // 10MB
+    max_payload_size: 5 * 1024 * 1024,  // 5MB
+    max_metadata_size: 256 * 1024,      // 256KB
+    max_signature_size: 512,            // 512 bytes
+    max_did_length: 4096,               // 4096 chars
+    max_key_id_length: 1024,            // 1024 chars
+    max_nonce_length: 256,              // 256 chars
+    max_timestamp_skew_secs: 3600,      // 1 hour
+    max_signature_headers: 500,         // 500 headers
+    max_header_name_length: 512,        // 512 chars
+    max_header_value_length: 32 * 1024, // 32KB
+    max_verification_methods: 200,      // 200 methods
+    max_sessions_per_pool: 100000,      // 100k sessions
+    max_messages_per_session: 10000,    // 10k messages
 };
 
 impl Default for ValidationLimits {

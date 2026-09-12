@@ -7,11 +7,7 @@ use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-#[cfg(feature = "blockchain")]
-pub use crate::blockchain::AgentDID;
-
-// Simple DID type when blockchain feature is not enabled
-#[cfg(not(feature = "blockchain"))]
+/// Agent DID as a string (`did:sage:<chain>:<identifier>`).
 pub type AgentDID = String;
 
 /// HPKE suite identifier for X25519 + HKDF-SHA256
@@ -76,10 +72,8 @@ impl InfoBuilder for DefaultInfoBuilder {
     }
 
     fn build_export_context(&self, ctx_id: &str) -> Vec<u8> {
-        format!(
-            "sage/hpke-export|v1|suite={HPKE_SUITE_ID}|combiner={COMBINER_ID}|ctx={ctx_id}"
-        )
-        .into_bytes()
+        format!("sage/hpke-export|v1|suite={HPKE_SUITE_ID}|combiner={COMBINER_ID}|ctx={ctx_id}")
+            .into_bytes()
     }
 }
 
@@ -150,6 +144,7 @@ pub struct DIDDocument {
     /// DID subject
     #[serde(rename = "@context")]
     pub context: Vec<String>,
+    /// DID of the subject
     pub id: String,
     /// Verification methods
     #[serde(rename = "verificationMethod")]
@@ -162,9 +157,6 @@ pub struct DIDDocument {
 impl DIDDocument {
     /// Create a new DID document
     pub fn new(did: AgentDID) -> Self {
-        #[cfg(feature = "blockchain")]
-        let id = did.to_string();
-        #[cfg(not(feature = "blockchain"))]
         let id = did;
 
         Self {
@@ -193,24 +185,30 @@ impl DIDDocument {
 /// Verification method in DID document
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationMethod {
+    /// Verification method id (`<did>#<fragment>`)
     pub id: String,
+    /// Verification method type (for example `Ed25519VerificationKey2020`)
     #[serde(rename = "type")]
     pub method_type: String,
+    /// Controller DID
     pub controller: String,
+    /// Public key in multibase encoding
     #[serde(rename = "publicKeyMultibase", skip_serializing_if = "Option::is_none")]
     pub public_key_multibase: Option<String>,
+    /// Public key as a JWK
     #[serde(rename = "publicKeyJwk", skip_serializing_if = "Option::is_none")]
     pub public_key_jwk: Option<JsonValue>,
 }
 
 impl VerificationMethod {
     /// Create verification method from public key
-    pub fn from_public_key(did: &AgentDID, key_id: &str, public_key: &crate::crypto::PublicKey) -> Self {
+    pub fn from_public_key(
+        did: &AgentDID,
+        key_id: &str,
+        public_key: &crate::crypto::PublicKey,
+    ) -> Self {
         use crate::crypto::PublicKey;
 
-        #[cfg(feature = "blockchain")]
-        let did_str = did.to_string();
-        #[cfg(not(feature = "blockchain"))]
         let did_str = did.clone();
 
         let key_bytes = public_key.to_bytes();
@@ -225,7 +223,7 @@ impl VerificationMethod {
         };
 
         Self {
-            id: format!("{}#{}", did_str, key_id),
+            id: format!("{did_str}#{key_id}"),
             method_type: method_type.to_string(),
             controller: did_str,
             public_key_multibase: Some(key_multibase),

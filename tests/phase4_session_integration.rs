@@ -9,7 +9,9 @@
 //! Note: Encryption/decryption functionality is tested in unit tests
 
 use sage_crypto_core::hpke::common::derive_traffic_keys;
-use sage_crypto_core::session::{Session, SessionConfig, SessionManager, SessionManagerConfig, SessionOpts};
+use sage_crypto_core::session::{
+    Session, SessionConfig, SessionManager, SessionManagerConfig, SessionOpts,
+};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,8 +40,9 @@ fn test_session_manager_key_binding() {
     let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
 
-    let (_, session_id, _) =
-        manager.ensure_session_from_exporter_with_role(&exporter, "test", true, None).unwrap();
+    let (_, session_id, _) = manager
+        .ensure_session_from_exporter_with_role(&exporter, "test", true, None)
+        .unwrap();
 
     // Bind key ID to session
     let key_id = "test-key-123";
@@ -66,9 +69,9 @@ fn test_multiple_sessions() {
     let mut session_ids = Vec::new();
     for i in 0..10 {
         let exporter = vec![i as u8; 32];
-        let (_, session_id, _) =
-            manager.ensure_session_from_exporter_with_role(&exporter, &format!("test-{}", i), true, None)
-                .unwrap();
+        let (_, session_id, _) = manager
+            .ensure_session_from_exporter_with_role(&exporter, &format!("test-{i}"), true, None)
+            .unwrap();
         session_ids.push(session_id);
     }
 
@@ -82,13 +85,12 @@ fn test_multiple_sessions() {
     }
 
     // Remove some sessions
-    for i in 0..5 {
-        manager.remove_session(&session_ids[i]);
+    for session_id in session_ids.iter().take(5) {
+        manager.remove_session(session_id);
     }
 
     assert_eq!(manager.session_count(), 5);
 }
-
 
 /// Test session with custom ID
 #[test]
@@ -103,8 +105,9 @@ fn test_session_custom_id() {
         metadata: std::collections::HashMap::new(),
     };
 
-    let (session, session_id, _) =
-        manager.ensure_session_from_exporter_with_role(&exporter, "test", true, Some(opts)).unwrap();
+    let (session, session_id, _) = manager
+        .ensure_session_from_exporter_with_role(&exporter, "test", true, Some(opts))
+        .unwrap();
 
     assert_eq!(session_id, custom_id);
     assert_eq!(session.get_id(), custom_id);
@@ -118,10 +121,10 @@ fn test_session_clear_all() {
     // Create multiple sessions with key bindings
     for i in 0..5 {
         let exporter = vec![i as u8; 32];
-        let (_, session_id, _) =
-            manager.ensure_session_from_exporter_with_role(&exporter, &format!("test-{}", i), true, None)
-                .unwrap();
-        manager.bind_key_id(&format!("key-{}", i), &session_id);
+        let (_, session_id, _) = manager
+            .ensure_session_from_exporter_with_role(&exporter, &format!("test-{i}"), true, None)
+            .unwrap();
+        manager.bind_key_id(&format!("key-{i}"), &session_id);
     }
 
     assert_eq!(manager.session_count(), 5);
@@ -140,8 +143,9 @@ fn test_concurrent_session_access() {
     let manager = Arc::new(SessionManager::new(SessionManagerConfig::default()));
     let exporter = vec![0x42u8; 32];
 
-    let (_, session_id, _) =
-        manager.ensure_session_from_exporter_with_role(&exporter, "test", true, None).unwrap();
+    let (_, session_id, _) = manager
+        .ensure_session_from_exporter_with_role(&exporter, "test", true, None)
+        .unwrap();
 
     // Spawn multiple threads accessing the same session
     let mut handles = vec![];
@@ -175,8 +179,9 @@ fn test_remove_session_with_key_binding() {
     let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
 
-    let (_, session_id, _) =
-        manager.ensure_session_from_exporter_with_role(&exporter, "test", true, None).unwrap();
+    let (_, session_id, _) = manager
+        .ensure_session_from_exporter_with_role(&exporter, "test", true, None)
+        .unwrap();
 
     let key_id = "test-key";
     manager.bind_key_id(key_id, &session_id);
@@ -219,18 +224,19 @@ fn test_session_roles() {
     let exporter = vec![0x42u8; 32];
 
     // Create initiator session
-    let (initiator_session, _, _) =
-        manager.ensure_session_from_exporter_with_role(&exporter, "test-initiator", true, None).unwrap();
+    let (initiator_session, _, _) = manager
+        .ensure_session_from_exporter_with_role(&exporter, "test-initiator", true, None)
+        .unwrap();
 
     // Create responder session
-    let (responder_session, _, _) =
-        manager.ensure_session_from_exporter_with_role(&exporter, "test-responder", false, None).unwrap();
+    let (responder_session, _, _) = manager
+        .ensure_session_from_exporter_with_role(&exporter, "test-responder", false, None)
+        .unwrap();
 
     // Both should be created successfully
     assert!(!initiator_session.is_expired());
     assert!(!responder_session.is_expired());
 }
-
 
 /// Test multiple key bindings to same session
 #[test]
@@ -238,8 +244,9 @@ fn test_multiple_key_bindings_same_session() {
     let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
 
-    let (_, session_id, _) =
-        manager.ensure_session_from_exporter_with_role(&exporter, "test", true, None).unwrap();
+    let (_, session_id, _) = manager
+        .ensure_session_from_exporter_with_role(&exporter, "test", true, None)
+        .unwrap();
 
     // Bind multiple keys to same session
     manager.bind_key_id("key1", &session_id);
@@ -261,15 +268,18 @@ fn test_multiple_key_bindings_same_session() {
 /// Test session manager with custom config
 #[test]
 fn test_session_manager_custom_config() {
-    let mut config = SessionManagerConfig::default();
-    config.cleanup_interval = Duration::from_secs(120);
+    let mut config = SessionManagerConfig {
+        cleanup_interval: Duration::from_secs(120),
+        ..Default::default()
+    };
     config.default_session_config.max_age = chrono::Duration::hours(1);
 
     let manager = SessionManager::new(config);
     let exporter = vec![0x42u8; 32];
 
-    let (session, _, _) =
-        manager.ensure_session_from_exporter_with_role(&exporter, "test", true, None).unwrap();
+    let (session, _, _) = manager
+        .ensure_session_from_exporter_with_role(&exporter, "test", true, None)
+        .unwrap();
 
     // Session should not be expired with 1 hour TTL
     assert!(!session.is_expired());
@@ -281,8 +291,9 @@ fn test_session_removal() {
     let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
 
-    let (_, session_id, _) =
-        manager.ensure_session_from_exporter_with_role(&exporter, "test", true, None).unwrap();
+    let (_, session_id, _) = manager
+        .ensure_session_from_exporter_with_role(&exporter, "test", true, None)
+        .unwrap();
 
     assert_eq!(manager.session_count(), 1);
 

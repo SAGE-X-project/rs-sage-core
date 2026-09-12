@@ -1,0 +1,3 @@
+[advisories]
+# rsa 0.9 Marvin side channel (no fix); RSA is optional per sage-spec and slated for removal.
+ignore = ["RUSTSEC-2023-0071"]

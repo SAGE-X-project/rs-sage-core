@@ -133,7 +133,10 @@ mod tests {
 
     #[test]
     fn test_component_identifier_request_target() {
-        assert_eq!(SignatureComponent::RequestTarget.identifier(), "@request-target");
+        assert_eq!(
+            SignatureComponent::RequestTarget.identifier(),
+            "@request-target"
+        );
     }
 
     #[test]
@@ -249,7 +252,7 @@ mod tests {
     #[test]
     fn test_component_debug() {
         let component = SignatureComponent::Method;
-        let debug_str = format!("{:?}", component);
+        let debug_str = format!("{component:?}");
         assert!(debug_str.contains("Method"));
     }
 
@@ -400,7 +403,7 @@ mod tests {
             tag: None,
         };
 
-        let debug_str = format!("{:?}", params);
+        let debug_str = format!("{params:?}");
         assert!(debug_str.contains("SignatureParams"));
     }
 }

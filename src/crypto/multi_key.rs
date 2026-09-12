@@ -142,13 +142,12 @@ impl MultiKeyManager {
         let current_count = self.count_keys(agent_id)?;
         if current_count >= MAX_KEYS_PER_AGENT {
             return Err(Error::InvalidInput(format!(
-                "Agent {} already has maximum {} keys",
-                agent_id, MAX_KEYS_PER_AGENT
+                "Agent {agent_id} already has maximum {MAX_KEYS_PER_AGENT} keys"
             )));
         }
 
         // Generate storage ID: {agent_id}/key/{index}
-        let storage_id = format!("{}/key/{}", agent_id, current_count);
+        let storage_id = format!("{agent_id}/key/{current_count}");
 
         // Store the key
         self.storage.store(&storage_id, key)?;
@@ -173,7 +172,7 @@ impl MultiKeyManager {
     /// println!("Agent has {} keys", keys.len());
     /// ```
     pub fn get_all_keys(&self, agent_id: &str) -> Result<Vec<KeyPair>> {
-        let prefix = format!("{}/key/", agent_id);
+        let prefix = format!("{agent_id}/key/");
         let mut keys = Vec::new();
 
         // List all keys with the agent prefix
@@ -295,7 +294,7 @@ impl MultiKeyManager {
     /// }
     /// ```
     pub fn remove_key(&self, agent_id: &str, key_id: &str) -> Result<()> {
-        let prefix = format!("{}/key/", agent_id);
+        let prefix = format!("{agent_id}/key/");
         let all_keys = self.storage.list()?;
 
         // Find the storage ID that contains this key
@@ -310,8 +309,7 @@ impl MultiKeyManager {
         }
 
         Err(Error::NotFound(format!(
-            "Key {} not found for agent {}",
-            key_id, agent_id
+            "Key {key_id} not found for agent {agent_id}"
         )))
     }
 
@@ -332,7 +330,7 @@ impl MultiKeyManager {
     /// println!("Agent has {} keys", count);
     /// ```
     pub fn count_keys(&self, agent_id: &str) -> Result<usize> {
-        let prefix = format!("{}/key/", agent_id);
+        let prefix = format!("{agent_id}/key/");
         let all_keys = self.storage.list()?;
 
         let count = all_keys
@@ -360,15 +358,13 @@ impl MultiKeyManager {
     /// println!("Removed {} keys", removed);
     /// ```
     pub fn remove_all_keys(&self, agent_id: &str) -> Result<usize> {
-        let prefix = format!("{}/key/", agent_id);
+        let prefix = format!("{agent_id}/key/");
         let all_keys = self.storage.list()?;
         let mut removed = 0;
 
         for key_id in all_keys {
-            if key_id.starts_with(&prefix) {
-                if self.storage.delete(&key_id).is_ok() {
-                    removed += 1;
-                }
+            if key_id.starts_with(&prefix) && self.storage.delete(&key_id).is_ok() {
+                removed += 1;
             }
         }
 
@@ -464,8 +460,12 @@ mod tests {
         manager.add_key("agent-1", &p256_key).unwrap();
 
         // Get by type
-        let ed_keys = manager.get_keys_by_type("agent-1", KeyType::Ed25519).unwrap();
-        let secp_keys = manager.get_keys_by_type("agent-1", KeyType::Secp256k1).unwrap();
+        let ed_keys = manager
+            .get_keys_by_type("agent-1", KeyType::Ed25519)
+            .unwrap();
+        let secp_keys = manager
+            .get_keys_by_type("agent-1", KeyType::Secp256k1)
+            .unwrap();
         let p256_keys = manager.get_keys_by_type("agent-1", KeyType::P256).unwrap();
 
         assert_eq!(ed_keys.len(), 1);
@@ -534,7 +534,9 @@ mod tests {
         manager.add_key("agent-1", &secp_key).unwrap();
 
         // Try to get Solana key (needs Ed25519) - should return None
-        let sol_key = manager.get_protocol_key("agent-1", Protocol::Solana).unwrap();
+        let sol_key = manager
+            .get_protocol_key("agent-1", Protocol::Solana)
+            .unwrap();
         assert!(sol_key.is_none());
     }
 

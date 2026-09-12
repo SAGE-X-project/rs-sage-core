@@ -126,7 +126,8 @@ impl AlgorithmRegistry {
                 ethereum_compatible: true,
                 solana_compatible: true,
                 fips_compliant: false,
-                description: "Ed25519 signature algorithm (EdDSA). Fast, secure, and widely supported.",
+                description:
+                    "Ed25519 signature algorithm (EdDSA). Fast, secure, and widely supported.",
             },
 
             Algorithm::Secp256k1 => AlgorithmMetadata {
@@ -140,7 +141,8 @@ impl AlgorithmRegistry {
                 ethereum_compatible: true,
                 solana_compatible: false,
                 fips_compliant: false,
-                description: "Secp256k1 ECDSA (Bitcoin/Ethereum). RFC 6979 deterministic signatures.",
+                description:
+                    "Secp256k1 ECDSA (Bitcoin/Ethereum). RFC 6979 deterministic signatures.",
             },
 
             Algorithm::P256 => AlgorithmMetadata {
@@ -154,7 +156,8 @@ impl AlgorithmRegistry {
                 ethereum_compatible: true,
                 solana_compatible: false,
                 fips_compliant: true,
-                description: "NIST P-256 ECDSA (secp256r1). FIPS 186-4 compliant, enterprise-grade.",
+                description:
+                    "NIST P-256 ECDSA (secp256r1). FIPS 186-4 compliant, enterprise-grade.",
             },
 
             Algorithm::Rsa2048 => AlgorithmMetadata {
@@ -168,7 +171,8 @@ impl AlgorithmRegistry {
                 ethereum_compatible: false,
                 solana_compatible: false,
                 fips_compliant: true,
-                description: "RSA-2048 with PKCS#1 v1.5 or PSS. FIPS 186-4 compliant, legacy support.",
+                description:
+                    "RSA-2048 with PKCS#1 v1.5 or PSS. FIPS 186-4 compliant, legacy support.",
             },
 
             Algorithm::Rsa4096 => AlgorithmMetadata {

@@ -31,11 +31,11 @@
 
 use crate::error::{Error, Result};
 use rand::rngs::OsRng;
-use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::pkcs1v15::{SigningKey, VerifyingKey};
-use rsa::signature::{RandomizedSigner, SignatureEncoding, Verifier as RsaVerifier};
 use rsa::sha2::Sha256;
+use rsa::signature::{RandomizedSigner, SignatureEncoding, Verifier as RsaVerifier};
 use rsa::traits::PublicKeyParts;
+use rsa::{RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 
 /// RSA key sizes
@@ -118,7 +118,7 @@ impl RsaKeyPair {
         let bits = key_size.bits();
 
         let private_key = RsaPrivateKey::new(&mut rng, bits)
-            .map_err(|e| Error::CryptoError(format!("RSA key generation failed: {}", e)))?;
+            .map_err(|e| Error::CryptoError(format!("RSA key generation failed: {e}")))?;
 
         let public_key = private_key.to_public_key();
 
@@ -182,9 +182,7 @@ impl RsaKeyPair {
         let signing_key = SigningKey::<Sha256>::new(self.private_key.clone());
         let mut rng = OsRng;
 
-        let signature = signing_key
-            .sign_with_rng(&mut rng, message)
-            .to_vec();
+        let signature = signing_key.sign_with_rng(&mut rng, message).to_vec();
 
         Ok(signature)
     }
@@ -210,7 +208,7 @@ impl RsaKeyPair {
 
         // Convert signature bytes to Signature type
         let sig = rsa::pkcs1v15::Signature::try_from(signature)
-            .map_err(|e| Error::Verification(format!("Invalid signature format: {}", e)))?;
+            .map_err(|e| Error::Verification(format!("Invalid signature format: {e}")))?;
 
         match verifying_key.verify(message, &sig) {
             Ok(_) => Ok(true),
@@ -240,8 +238,7 @@ impl RsaKeyPair {
         let mut rng = OsRng;
         let signing_key = BlindedSigningKey::<Sha256>::new(self.private_key.clone());
 
-        let signature: Signature = signing_key
-            .sign_with_rng(&mut rng, message);
+        let signature: Signature = signing_key.sign_with_rng(&mut rng, message);
 
         Ok(signature.to_vec())
     }
@@ -268,7 +265,7 @@ impl RsaKeyPair {
         let verifying_key = VerifyingKey::<Sha256>::new(self.public_key.clone());
 
         let sig = rsa::pss::Signature::try_from(signature)
-            .map_err(|e| Error::Verification(format!("Invalid PSS signature format: {}", e)))?;
+            .map_err(|e| Error::Verification(format!("Invalid PSS signature format: {e}")))?;
 
         match verifying_key.verify(message, &sig) {
             Ok(_) => Ok(true),
@@ -322,7 +319,7 @@ impl RsaKeyPair {
         self.public_key
             .to_pkcs1_der()
             .map(|der| der.to_vec())
-            .map_err(|e| Error::Serialization(format!("Failed to encode public key: {}", e)))
+            .map_err(|e| Error::Serialization(format!("Failed to encode public key: {e}")))
     }
 
     /// Decode public key from DER format (PKCS#1)
@@ -339,7 +336,7 @@ impl RsaKeyPair {
         use rsa::pkcs1::DecodeRsaPublicKey;
 
         RsaPublicKey::from_pkcs1_der(der)
-            .map_err(|e| Error::Serialization(format!("Failed to decode public key: {}", e)))
+            .map_err(|e| Error::Serialization(format!("Failed to decode public key: {e}")))
     }
 
     /// Encode private key to DER format (PKCS#1)
@@ -353,7 +350,7 @@ impl RsaKeyPair {
         self.private_key
             .to_pkcs1_der()
             .map(|der| der.as_bytes().to_vec())
-            .map_err(|e| Error::Serialization(format!("Failed to encode private key: {}", e)))
+            .map_err(|e| Error::Serialization(format!("Failed to encode private key: {e}")))
     }
 
     /// Decode private key from DER format (PKCS#1)
@@ -370,7 +367,7 @@ impl RsaKeyPair {
         use rsa::pkcs1::DecodeRsaPrivateKey;
 
         let private_key = RsaPrivateKey::from_pkcs1_der(der)
-            .map_err(|e| Error::Serialization(format!("Failed to decode private key: {}", e)))?;
+            .map_err(|e| Error::Serialization(format!("Failed to decode private key: {e}")))?;
 
         Ok(Self::from_private_key(private_key, key_size))
     }
@@ -386,7 +383,7 @@ impl RsaKeyPair {
         self.public_key
             .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
             .map(|pem| pem.to_string())
-            .map_err(|e| Error::Serialization(format!("Failed to encode public key to PEM: {}", e)))
+            .map_err(|e| Error::Serialization(format!("Failed to encode public key to PEM: {e}")))
     }
 
     /// Decode public key from PEM format
@@ -403,7 +400,7 @@ impl RsaKeyPair {
         use rsa::pkcs1::DecodeRsaPublicKey;
 
         RsaPublicKey::from_pkcs1_pem(pem)
-            .map_err(|e| Error::Serialization(format!("Failed to decode public key from PEM: {}", e)))
+            .map_err(|e| Error::Serialization(format!("Failed to decode public key from PEM: {e}")))
     }
 
     /// Encode private key to PEM format
@@ -417,7 +414,7 @@ impl RsaKeyPair {
         self.private_key
             .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
             .map(|pem| pem.to_string())
-            .map_err(|e| Error::Serialization(format!("Failed to encode private key to PEM: {}", e)))
+            .map_err(|e| Error::Serialization(format!("Failed to encode private key to PEM: {e}")))
     }
 
     /// Decode private key from PEM format
@@ -433,8 +430,9 @@ impl RsaKeyPair {
     pub fn private_key_from_pem(pem: &str, key_size: RsaKeySize) -> Result<Self> {
         use rsa::pkcs1::DecodeRsaPrivateKey;
 
-        let private_key = RsaPrivateKey::from_pkcs1_pem(pem)
-            .map_err(|e| Error::Serialization(format!("Failed to decode private key from PEM: {}", e)))?;
+        let private_key = RsaPrivateKey::from_pkcs1_pem(pem).map_err(|e| {
+            Error::Serialization(format!("Failed to decode private key from PEM: {e}"))
+        })?;
 
         Ok(Self::from_private_key(private_key, key_size))
     }
@@ -509,15 +507,23 @@ mod tests {
 
         // Test PKCS#1 v1.5
         let sig_pkcs = keypair.sign(message, PaddingScheme::Pkcs1v15).unwrap();
-        assert!(keypair.verify(message, &sig_pkcs, PaddingScheme::Pkcs1v15).unwrap());
+        assert!(keypair
+            .verify(message, &sig_pkcs, PaddingScheme::Pkcs1v15)
+            .unwrap());
 
         // Test PSS
         let sig_pss = keypair.sign(message, PaddingScheme::Pss).unwrap();
-        assert!(keypair.verify(message, &sig_pss, PaddingScheme::Pss).unwrap());
+        assert!(keypair
+            .verify(message, &sig_pss, PaddingScheme::Pss)
+            .unwrap());
 
         // Cross-scheme verification should fail
-        assert!(!keypair.verify(message, &sig_pkcs, PaddingScheme::Pss).unwrap());
-        assert!(!keypair.verify(message, &sig_pss, PaddingScheme::Pkcs1v15).unwrap());
+        assert!(!keypair
+            .verify(message, &sig_pkcs, PaddingScheme::Pss)
+            .unwrap());
+        assert!(!keypair
+            .verify(message, &sig_pss, PaddingScheme::Pkcs1v15)
+            .unwrap());
     }
 
     #[test]
@@ -531,7 +537,8 @@ mod tests {
         let message = b"Test message";
         let signature = keypair.sign_pkcs1v15(message).unwrap();
 
-        let keypair2 = RsaKeyPair::from_private_key(keypair.private_key().clone(), RsaKeySize::Rsa2048);
+        let keypair2 =
+            RsaKeyPair::from_private_key(keypair.private_key().clone(), RsaKeySize::Rsa2048);
         assert!(keypair2.verify_pkcs1v15(message, &signature).unwrap());
     }
 
@@ -565,7 +572,8 @@ mod tests {
         let message = b"Test PEM";
         let signature = keypair.sign_pkcs1v15(message).unwrap();
 
-        let keypair2 = RsaKeyPair::from_private_key(keypair.private_key().clone(), RsaKeySize::Rsa2048);
+        let keypair2 =
+            RsaKeyPair::from_private_key(keypair.private_key().clone(), RsaKeySize::Rsa2048);
         assert!(keypair2.verify_pkcs1v15(message, &signature).unwrap());
     }
 

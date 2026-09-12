@@ -19,8 +19,8 @@
 //! let bob = X25519KeyPair::generate();
 //!
 //! // Compute shared secrets
-//! let alice_shared = alice.diffie_hellman(bob.public_key_bytes());
-//! let bob_shared = bob.diffie_hellman(alice.public_key_bytes());
+//! let alice_shared = alice.diffie_hellman(bob.public_key_bytes()).unwrap();
+//! let bob_shared = bob.diffie_hellman(alice.public_key_bytes()).unwrap();
 //!
 //! // Shared secrets should be equal
 //! assert_eq!(alice_shared, bob_shared);
@@ -186,7 +186,7 @@ impl X25519KeyPair {
 
         // Create verifying key from bytes
         let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&key_bytes)
-            .map_err(|e| Error::InvalidInput(format!("Invalid Ed25519 public key: {}", e)))?;
+            .map_err(|e| Error::InvalidInput(format!("Invalid Ed25519 public key: {e}")))?;
 
         // Convert to Montgomery (X25519) format
         let montgomery_bytes = verifying_key.to_montgomery().to_bytes();
@@ -220,10 +220,10 @@ impl X25519KeyPair {
     /// let bob = X25519KeyPair::generate();
     ///
     /// // Alice computes shared secret with Bob's public key
-    /// let alice_shared = alice.diffie_hellman(bob.public_key_bytes());
+    /// let alice_shared = alice.diffie_hellman(bob.public_key_bytes()).unwrap();
     ///
     /// // Bob computes shared secret with Alice's public key
-    /// let bob_shared = bob.diffie_hellman(alice.public_key_bytes());
+    /// let bob_shared = bob.diffie_hellman(alice.public_key_bytes()).unwrap();
     ///
     /// // Both should get the same shared secret
     /// assert_eq!(alice_shared, bob_shared);
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn test_debug_format() {
         let keypair = X25519KeyPair::generate();
-        let debug_str = format!("{:?}", keypair);
+        let debug_str = format!("{keypair:?}");
 
         // Should not contain actual private key
         assert!(debug_str.contains("***REDACTED***"));

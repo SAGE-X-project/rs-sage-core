@@ -71,12 +71,8 @@ impl SessionManager {
         let session_key = self.derive_session_key(exporter, info)?;
 
         // Create secure session
-        let session = SecureSession::new(
-            session_id.clone(),
-            &session_key,
-            is_initiator,
-            opts.config,
-        )?;
+        let session =
+            SecureSession::new(session_id.clone(), &session_key, is_initiator, opts.config)?;
 
         let session = Arc::new(session);
 
@@ -201,12 +197,8 @@ mod tests {
         let manager = SessionManager::new(SessionManagerConfig::default());
         let exporter = vec![0x42u8; 32];
 
-        let result = manager.ensure_session_from_exporter_with_role(
-            &exporter,
-            "test-context",
-            true,
-            None,
-        );
+        let result =
+            manager.ensure_session_from_exporter_with_role(&exporter, "test-context", true, None);
 
         assert!(result.is_ok());
         let (session, session_id, key) = result.unwrap();
@@ -293,9 +285,9 @@ mod tests {
         // Create multiple sessions
         for i in 0..3 {
             let (_, session_id, _) = manager
-                .ensure_session_from_exporter_with_role(&exporter, &format!("test-{}", i), true, None)
+                .ensure_session_from_exporter_with_role(&exporter, &format!("test-{i}"), true, None)
                 .unwrap();
-            manager.bind_key_id(&format!("key-{}", i), &session_id);
+            manager.bind_key_id(&format!("key-{i}"), &session_id);
         }
 
         assert_eq!(manager.session_count(), 3);

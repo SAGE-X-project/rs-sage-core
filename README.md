@@ -30,23 +30,15 @@ Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in R
 - **HPKE & Secure Communication (Phase 4)** 🆕
   - HPKE (Hybrid Public Key Encryption) - RFC 9180
   - X25519 key exchange with HKDF
-  - Bidirectional handshake protocol
   - Session management with encryption
   - Traffic key derivation (C2S, S2C, Channel Binding)
   - MAC-authenticated encryption
-
-- **Transport Layer (Phase 5.1)** 🆕
-  - Pluggable transport abstraction
-  - MockTransport for testing
-  - HTTP transport with retry logic
-  - Transport manager with automatic routing
-  - Message envelopes with metadata
 
 - **DID (Decentralized Identifiers)**
   - DID parsing and validation
   - DID Document support
   - DID Resolution
-  - Integration with blockchain registries
+  - Registry-backed resolution is provided by the Go core and gateway, not by this crate
 
 
 - **Key Formats & Serialization**
@@ -290,19 +282,12 @@ Run with `cargo run --example <name>`:
   - MAC-authenticated encryption
   - Session pool management
 
-- **transport_demo**: Transport layer usage
-  - MockTransport with message inspection
-  - TransportManager for routing
-  - Message envelopes with metadata
-  - Automatic transport selection
-
 ### Platform Integration Examples
 
 - **FFI Example**: `examples/ffi/basic.c` - Complete C integration example
 - **WASM Example**: `examples/wasm/index.html` - Browser-based cryptographic operations
 - **Advanced WASM**: `examples/wasm/advanced.html` - HTTP signing and advanced features
 - **Python Integration**: `examples/python/basic_usage.py` - Python FFI bindings
-- **Blockchain Integration**: `examples/blockchain_integration.rs` - DID registry interaction
 
 ## Performance
 
@@ -324,7 +309,6 @@ Detailed performance benchmarks:
 | HPKE Handshake | ~119 µs | Full handshake |
 | Session Create | ~6.9 µs | From exporter secret |
 | AES-256-GCM Encrypt | ~1-2 µs | Hardware accelerated |
-| Transport (Mock) | ~2.8 µs | In-memory |
 
 Run benchmarks: `cargo bench`
 
@@ -338,23 +322,16 @@ Please review our [Security Policy](SECURITY.md) for:
 - Security best practices
 - Supported versions
 
-### ✅ Recent Security Updates
+### Scope (2026-09)
 
-**v0.3.0**: Blockchain feature removed to fix RUSTSEC-2025-0009
-
-The optional `blockchain` feature was **removed** in v0.3.0 to address critical security vulnerabilities in the `ethers` dependency chain.
-
-- **Fixed**: RUSTSEC-2025-0009 (`ring` v0.16.20 AES panic vulnerability)
-- **Action**: Removed `ethers`, `futures`, and all blockchain dependencies
-- **Impact**: ✅ All core functionality intact, all 260 tests passing
-
-**Future**: Blockchain integration will be re-implemented using `alloy` crate in Phase 7+.
-
-```toml
-# v0.3.0+: No blockchain feature (secure)
-[dependencies]
-sage_crypto_core = "0.3"
-```
+The `handshake` (four-phase), `transport` (reqwest) and `blockchain`
+(alloy / solana) modules were removed in the alignment to
+[sage-spec](https://github.com/SAGE-X-project/sage-spec): the handshake is
+superseded by the HPKE profile, transport belongs to the gateway, and
+on-chain resolution is done by the Go core. Removing them also dropped the
+`reqwest`/`h2`/`rustls` advisory chain. The remaining acknowledged advisory
+is RUSTSEC-2023-0071 (`rsa`), which goes away when RSA support is removed
+in the crypto alignment step.
 
 ### Security Audit
 

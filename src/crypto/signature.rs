@@ -167,7 +167,7 @@ mod tests {
         let message = b"test message";
         let signature = keypair.sign(message).unwrap();
 
-        let debug_str = format!("{:?}", signature);
+        let debug_str = format!("{signature:?}");
         assert!(debug_str.contains("Ed25519"));
     }
 }

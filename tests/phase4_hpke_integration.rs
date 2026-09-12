@@ -157,9 +157,9 @@ fn test_info_builder() {
     assert!(info_str.contains("v1"));
     assert!(info_str.contains("suite=hpke-base+x25519+hkdf-sha256"));
     assert!(info_str.contains("combiner=e2e-x25519-hkdf-v1"));
-    assert!(info_str.contains(&format!("ctx={}", ctx_id)));
-    assert!(info_str.contains(&format!("init={}", init_did)));
-    assert!(info_str.contains(&format!("resp={}", resp_did)));
+    assert!(info_str.contains(&format!("ctx={ctx_id}")));
+    assert!(info_str.contains(&format!("init={init_did}")));
+    assert!(info_str.contains(&format!("resp={resp_did}")));
 
     // Different DIDs should produce different info
     let info2 = builder.build_info(ctx_id, "did:sage:charlie", resp_did);
@@ -171,7 +171,7 @@ fn test_info_builder() {
 
     assert!(export_str.contains("sage/hpke-export"));
     assert!(export_str.contains("v1"));
-    assert!(export_str.contains(&format!("ctx={}", ctx_id)));
+    assert!(export_str.contains(&format!("ctx={ctx_id}")));
 
     // Different context should produce different export context
     let export_ctx2 = builder.build_export_context("different-ctx");

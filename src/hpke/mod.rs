@@ -48,8 +48,8 @@ pub use common::{
 pub use nonce_store::NonceStore;
 pub use types::{
     CookieSource, CookieVerifier, DefaultInfoBuilder, HpkeInitPayload, InfoBuilder, KeyIDBinder,
-    ServerSigEnvelope, TrafficKeys, ACK_KEY_LABEL, ACK_MSG_LABEL, CB_LABEL, COMBINER_ID,
-    COMBINER_LABEL, C2S_IV_LABEL, C2S_KEY_LABEL, HPKE_SUITE_ID, S2C_IV_LABEL, S2C_KEY_LABEL,
+    ServerSigEnvelope, TrafficKeys, ACK_KEY_LABEL, ACK_MSG_LABEL, C2S_IV_LABEL, C2S_KEY_LABEL,
+    CB_LABEL, COMBINER_ID, COMBINER_LABEL, HPKE_SUITE_ID, S2C_IV_LABEL, S2C_KEY_LABEL,
 };
 
 pub use client::{HpkeClient, HpkeClientConfig, ServerResponse};

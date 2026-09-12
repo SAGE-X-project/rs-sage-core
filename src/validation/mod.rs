@@ -245,10 +245,10 @@ mod tests {
         let ctx = ValidationContext::default();
 
         // Ed25519: 64 bytes
-        assert!(ctx.validate_signature(&vec![0u8; 64]).is_ok());
+        assert!(ctx.validate_signature(&[0u8; 64]).is_ok());
 
         // ECDSA: ~71-72 bytes DER
-        assert!(ctx.validate_signature(&vec![0u8; 72]).is_ok());
+        assert!(ctx.validate_signature(&[0u8; 72]).is_ok());
 
         // RSA: ~256 bytes
         assert!(ctx.validate_signature(&vec![0u8; 256]).is_ok());

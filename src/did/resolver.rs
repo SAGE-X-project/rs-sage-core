@@ -3,38 +3,21 @@
 //! This module provides DID resolution functionality integrating with blockchain.
 
 use crate::error::{Error, Result};
-use crate::hpke::types::{DIDDocument, DIDResolutionResult, VerificationMethod};
 pub use crate::hpke::types::{AgentDID, DIDResolver};
+use crate::hpke::types::{DIDDocument, DIDResolutionResult, VerificationMethod};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-#[cfg(feature = "blockchain")]
-use crate::blockchain::{Chain, ethereum::EthereumClient};
-
 /// Blockchain-based DID Resolver
 ///
 /// Resolves DIDs by querying blockchain registries (Ethereum, Solana, etc.)
-pub struct BlockchainDIDResolver {
-    #[cfg(feature = "blockchain")]
-    ethereum_client: Option<Arc<EthereumClient>>,
-}
+pub struct BlockchainDIDResolver {}
 
 impl BlockchainDIDResolver {
     /// Create a new blockchain DID resolver
     pub fn new() -> Self {
-        Self {
-            #[cfg(feature = "blockchain")]
-            ethereum_client: None,
-        }
-    }
-
-    /// Create a new resolver with Ethereum client
-    #[cfg(feature = "blockchain")]
-    pub fn with_ethereum(ethereum_client: Arc<EthereumClient>) -> Self {
-        Self {
-            ethereum_client: Some(ethereum_client),
-        }
+        Self {}
     }
 }
 
@@ -46,39 +29,8 @@ impl Default for BlockchainDIDResolver {
 
 impl DIDResolver for BlockchainDIDResolver {
     fn resolve(&self, _did: &AgentDID) -> Result<DIDResolutionResult> {
-        #[cfg(feature = "blockchain")]
         {
-            let chain = _did.chain()?;
-            match chain {
-                Chain::Ethereum => {
-                    if let Some(_client) = &self.ethereum_client {
-                        // Query blockchain for agent metadata
-                        // This would be async in practice, but for now we'll return a mock
-                        return Err(Error::Unsupported(
-                            "Async Ethereum resolution not yet implemented in sync context".into(),
-                        ));
-                    }
-
-                    // Fallback to mock resolution
-                    Err(Error::ResolutionError(format!(
-                        "No Ethereum client configured for DID resolution: {}",
-                        _did
-                    )))
-                }
-                Chain::Solana => Err(Error::Unsupported(
-                    "Solana DID resolution not yet implemented".into(),
-                )),
-                Chain::Key | Chain::ChainMethod => Err(Error::ResolutionError(
-                    "Key-based and chain-method DIDs should use MemoryDIDResolver".into(),
-                )),
-            }
-        }
-
-        #[cfg(not(feature = "blockchain"))]
-        {
-            Err(Error::Unsupported(
-                "Blockchain feature not enabled".into(),
-            ))
+            Err(Error::Unsupported("Blockchain feature not enabled".into()))
         }
     }
 }
@@ -101,9 +53,6 @@ impl MemoryDIDResolver {
 
     /// Register a DID document
     pub fn register(&self, did: AgentDID, document: DIDDocument) -> Result<()> {
-        #[cfg(feature = "blockchain")]
-        let key = did.to_string();
-        #[cfg(not(feature = "blockchain"))]
         let key = did;
 
         let mut docs = self.documents.write().unwrap();
@@ -130,9 +79,6 @@ impl Default for MemoryDIDResolver {
 
 impl DIDResolver for MemoryDIDResolver {
     fn resolve(&self, did: &AgentDID) -> Result<DIDResolutionResult> {
-        #[cfg(feature = "blockchain")]
-        let key = did.to_string();
-        #[cfg(not(feature = "blockchain"))]
         let key = did.clone();
 
         let docs = self.documents.read().unwrap();
@@ -182,7 +128,7 @@ impl MockDIDResolver {
         let key_multibase = format!("z{}", bs58::encode(public_key).into_string());
 
         let verification_method = VerificationMethod {
-            id: format!("{}#key-1", did),
+            id: format!("{did}#key-1"),
             method_type: "X25519KeyAgreementKey2020".to_string(),
             controller: did.to_string(),
             public_key_multibase: Some(key_multibase),
@@ -211,9 +157,6 @@ impl Default for MockDIDResolver {
 
 impl DIDResolver for MockDIDResolver {
     fn resolve(&self, did: &AgentDID) -> Result<DIDResolutionResult> {
-        #[cfg(feature = "blockchain")]
-        let did_str = did.to_string();
-        #[cfg(not(feature = "blockchain"))]
         let did_str = did.clone();
 
         if let Some(doc) = &self.document {
@@ -230,7 +173,7 @@ impl DIDResolver for MockDIDResolver {
         let key_multibase = format!("z{}", bs58::encode(&dummy_key).into_string());
 
         let verification_method = VerificationMethod {
-            id: format!("{}#key-1", did_str),
+            id: format!("{did_str}#key-1"),
             method_type: "X25519KeyAgreementKey2020".to_string(),
             controller: did_str.clone(),
             public_key_multibase: Some(key_multibase),
@@ -266,20 +209,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "blockchain")]
-    fn test_mock_resolver_resolve() {
-        let resolver = MockDIDResolver::new();
-        let did = crate::blockchain::AgentDID::parse("did:sage:ethereum:0x1234567890123456789012345678901234567890").unwrap();
-        let result = resolver.resolve(&did).unwrap();
-
-        assert!(result.document.is_some());
-        let doc = result.document.unwrap();
-        assert_eq!(doc.id, did.to_string());
-        assert!(!doc.verification_method.is_empty());
-    }
-
-    #[test]
-    #[cfg(not(feature = "blockchain"))]
     fn test_mock_resolver_resolve() {
         let resolver = MockDIDResolver::new();
         let did = "did:sage:ethereum:0x1234567890123456789012345678901234567890".to_string();
@@ -292,23 +221,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "blockchain")]
-    fn test_mock_resolver_with_x25519_key() {
-        let did = "did:sage:ethereum:0x1234567890123456789012345678901234567890";
-        let public_key = [1u8; 32];
-        let resolver = MockDIDResolver::with_x25519_key(did, &public_key);
-
-        let did_obj = crate::blockchain::AgentDID::parse(did).unwrap();
-        let result = resolver.resolve(&did_obj).unwrap();
-
-        assert!(result.document.is_some());
-        let doc = result.document.unwrap();
-        assert_eq!(doc.verification_method.len(), 1);
-        assert!(doc.verification_method[0].method_type.contains("X25519"));
-    }
-
-    #[test]
-    #[cfg(not(feature = "blockchain"))]
     fn test_mock_resolver_with_x25519_key() {
         let did = "did:sage:ethereum:0x1234567890123456789012345678901234567890";
         let public_key = [1u8; 32];
