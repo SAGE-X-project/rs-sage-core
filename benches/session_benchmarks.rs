@@ -1,6 +1,8 @@
 //! Session Management Benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use sage_crypto_core::session::{Session, SessionManager, SessionManagerConfig};
 
 /// Benchmarks encrypt far more messages than a session normally carries.

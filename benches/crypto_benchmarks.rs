@@ -1,6 +1,8 @@
 //! Cryptographic operation benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion};
 use http::Request;
 use sage_crypto_core::crypto::{Signer, Verifier};
 use sage_crypto_core::rfc9421::{HttpSigner, SignatureComponent};

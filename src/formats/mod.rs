@@ -214,24 +214,15 @@ impl KeyExporter for PublicKey {
     fn to_pem(&self) -> Result<String> {
         match self {
             PublicKey::Ed25519(key_bytes) => {
-                let pem = pem::Pem {
-                    tag: "PUBLIC KEY".to_string(),
-                    contents: key_bytes.to_vec(),
-                };
+                let pem = pem::Pem::new("PUBLIC KEY", key_bytes.to_vec());
                 Ok(pem::encode(&pem))
             }
             PublicKey::Secp256k1(key_bytes) => {
-                let pem = pem::Pem {
-                    tag: "PUBLIC KEY".to_string(),
-                    contents: key_bytes.to_vec(),
-                };
+                let pem = pem::Pem::new("PUBLIC KEY", key_bytes.to_vec());
                 Ok(pem::encode(&pem))
             }
             PublicKey::P256(key_bytes) => {
-                let pem = pem::Pem {
-                    tag: "PUBLIC KEY".to_string(),
-                    contents: key_bytes.to_vec(),
-                };
+                let pem = pem::Pem::new("PUBLIC KEY", key_bytes.to_vec());
                 Ok(pem::encode(&pem))
             }
         }
@@ -397,24 +388,15 @@ impl KeyExporter for PrivateKey {
     fn to_pem(&self) -> Result<String> {
         match self {
             PrivateKey::Ed25519(key_bytes) => {
-                let pem = pem::Pem {
-                    tag: "PRIVATE KEY".to_string(),
-                    contents: key_bytes.to_vec(),
-                };
+                let pem = pem::Pem::new("PRIVATE KEY", key_bytes.to_vec());
                 Ok(pem::encode(&pem))
             }
             PrivateKey::Secp256k1(key_bytes) => {
-                let pem = pem::Pem {
-                    tag: "EC PRIVATE KEY".to_string(),
-                    contents: key_bytes.to_vec(),
-                };
+                let pem = pem::Pem::new("EC PRIVATE KEY", key_bytes.to_vec());
                 Ok(pem::encode(&pem))
             }
             PrivateKey::P256(key_bytes) => {
-                let pem = pem::Pem {
-                    tag: "EC PRIVATE KEY".to_string(),
-                    contents: key_bytes.to_vec(),
-                };
+                let pem = pem::Pem::new("EC PRIVATE KEY", key_bytes.to_vec());
                 Ok(pem::encode(&pem))
             }
         }
