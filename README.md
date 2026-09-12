@@ -22,11 +22,10 @@ Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in R
   - Secure key generation using OS random
   - Key derivation and management
 
-- **RFC 9421 HTTP Message Signatures**
-  - HTTP request and response signing
-  - Signature component canonicalization
-  - Derived components support
-  - Multiple signature algorithms
+- **RFC 9421 HTTP Message Signatures** (sage-spec profile)
+  - Request signing with `Content-Digest`, `nonce` and DID `keyid`; response signing bound to the request (`;req`)
+  - Verification policies (`VerifyOptions::strict_request` / `strict_response`), replay guard, freshness window
+  - Derived components including `@query-param`; identifiers `ed25519`, `es256k`, `ecdsa-p256-sha256`
 
 - **HPKE & Secure Communication (Phase 4)** 🆕
   - HPKE (Hybrid Public Key Encryption) - RFC 9180

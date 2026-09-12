@@ -26,7 +26,7 @@ fn test_rfc9421_signature_components() {
         .body(b"test".to_vec())
         .unwrap();
 
-    let signed = signer.sign_request(request).unwrap();
+    let signed = signer.sign_request(request, None).unwrap();
 
     // Check signature-input contains expected components
     let sig_input = signed
@@ -64,28 +64,28 @@ fn test_derived_components() {
     let result = canonicalize_request(&request, &components).unwrap();
 
     // Verify each component
-    assert_eq!(result[0].0, "@method");
+    assert_eq!(result[0].0, "\"@method\"");
     assert_eq!(result[0].1, "GET");
 
-    assert_eq!(result[1].0, "@target-uri");
+    assert_eq!(result[1].0, "\"@target-uri\"");
     assert_eq!(
         result[1].1,
         "https://example.com:8080/path/to/resource?foo=bar&baz=qux"
     );
 
-    assert_eq!(result[2].0, "@authority");
+    assert_eq!(result[2].0, "\"@authority\"");
     assert_eq!(result[2].1, "example.com:8080");
 
-    assert_eq!(result[3].0, "@scheme");
+    assert_eq!(result[3].0, "\"@scheme\"");
     assert_eq!(result[3].1, "https");
 
-    assert_eq!(result[4].0, "@request-target");
+    assert_eq!(result[4].0, "\"@request-target\"");
     assert_eq!(result[4].1, "/path/to/resource?foo=bar&baz=qux");
 
-    assert_eq!(result[5].0, "@path");
+    assert_eq!(result[5].0, "\"@path\"");
     assert_eq!(result[5].1, "/path/to/resource");
 
-    assert_eq!(result[6].0, "@query");
+    assert_eq!(result[6].0, "\"@query\"");
     assert_eq!(result[6].1, "?foo=bar&baz=qux");
 }
 
@@ -125,7 +125,7 @@ fn test_multiple_signatures() {
 
     // Sign with first key
     let signer1 = HttpSigner::new(keypair1.clone());
-    let signed1 = signer1.sign_request(request).unwrap();
+    let signed1 = signer1.sign_request(request, None).unwrap();
 
     // The signature headers should be present
     assert!(signed1.headers().contains_key("signature"));
@@ -134,7 +134,7 @@ fn test_multiple_signatures() {
     // In a real implementation, we would support multiple signatures
     // For now, verify that the second signature would overwrite
     let signer2 = HttpSigner::new(keypair2.clone());
-    let signed2 = signer2.sign_request(signed1).unwrap();
+    let signed2 = signer2.sign_request(signed1, None).unwrap();
 
     // Should still have signature headers
     assert!(signed2.headers().contains_key("signature"));
@@ -153,7 +153,14 @@ fn test_response_signing_and_verification() {
         .body(b"{\"id\": 123}".to_vec())
         .unwrap();
 
-    let signed = signer.sign_response(response).unwrap();
+    let bound_request = http::Request::builder()
+        .method("GET")
+        .uri("https://example.com/")
+        .body(())
+        .unwrap();
+    let signed = signer
+        .sign_response(response, &bound_request, None)
+        .unwrap();
 
     // Verify signature was added
     let sig_header = signed.headers().get("signature").unwrap();
@@ -161,12 +168,26 @@ fn test_response_signing_and_verification() {
 
     // Verify with correct key
     let verifier = HttpVerifier::new(keypair.public_key().clone());
-    assert!(verifier.verify_response(&signed).is_ok());
+    assert!(verifier
+        .verify_response(
+            &signed,
+            &bound_request,
+            None,
+            &sage_crypto_core::rfc9421::VerifyOptions::default()
+        )
+        .is_ok());
 
     // Verification with wrong key should fail
     let wrong_keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
     let wrong_verifier = HttpVerifier::new(wrong_keypair.public_key().clone());
-    assert!(wrong_verifier.verify_response(&signed).is_err());
+    assert!(wrong_verifier
+        .verify_response(
+            &signed,
+            &bound_request,
+            None,
+            &sage_crypto_core::rfc9421::VerifyOptions::default()
+        )
+        .is_err());
 }
 
 #[test]
@@ -179,9 +200,9 @@ fn test_canonicalization_edge_cases() {
     let components = vec![SignatureComponent::Path, SignatureComponent::Method];
     let result = canonicalize_request(&request, &components).unwrap();
 
-    assert_eq!(result[0].0, "@path");
+    assert_eq!(result[0].0, "\"@path\"");
     assert_eq!(result[0].1, "/");
-    assert_eq!(result[1].0, "@method");
+    assert_eq!(result[1].0, "\"@method\"");
     assert_eq!(result[1].1, "GET");
 
     // Test with missing components should error

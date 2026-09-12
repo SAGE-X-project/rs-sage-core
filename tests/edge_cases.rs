@@ -173,7 +173,7 @@ fn test_max_size_limits() {
     // Test very long header names
     let long_header_name = "x-".repeat(1000) + "header";
     let component = SignatureComponent::Header(long_header_name.clone());
-    assert_eq!(component.identifier(), long_header_name.to_lowercase());
+    assert_eq!(component.name(), long_header_name.to_lowercase());
 
     // Test signature parameters with extreme values
     use sage_crypto_core::rfc9421::SignatureParams;

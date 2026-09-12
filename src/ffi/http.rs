@@ -142,7 +142,12 @@ pub unsafe extern "C" fn sage_http_signer_sign_request(
     };
 
     // Sign the request
-    match signer.sign_request(http_request) {
+    let body_for_digest = if http_request.body().is_empty() {
+        None
+    } else {
+        Some(http_request.body().clone())
+    };
+    match signer.sign_request(http_request, body_for_digest.as_deref()) {
         Ok(signed_request) => {
             // Extract signature headers
             let headers = signed_request.headers();

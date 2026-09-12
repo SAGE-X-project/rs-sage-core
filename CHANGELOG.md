@@ -18,6 +18,21 @@
 - The `jcs` module implements RFC 8785; `tests/spec_vectors.rs` runs the
   sage-spec `jcs` and `crypto` suites (8/8 pass).
 
+### Changed (sage-spec alignment, RFC 9421)
+- `rfc9421` rewritten to the sage-spec profile: `Signature` members are RFC
+  8941 byte sequences (`sig1=:base64:`), any label is accepted (first
+  lexicographically by default), `Content-Digest` (`sha-256=:…:`) is added
+  when a body is given and checked on verify, every request carries a `nonce`
+  and verifiers keep a per-`keyid` replay guard, `created` is bounded by a
+  freshness window, `keyid` carries the agent DID (`HttpSigner::with_key_id`,
+  `VerifyOptions::expected_did`, `X-SAGE-DID` consistency), responses bind
+  the request with `;req` components (`sign_response`, `verify_response`),
+  `@query-param` is supported, and `alg` must match the key type.
+  `VerifyOptions::strict_request` / `strict_response` mirror the Go core.
+  `HttpSigner::sign_request` now takes the body; `sign_response` and
+  `verify_response` take the request.
+- `tests/spec_vectors.rs` runs the sage-spec `rfc9421` suite (4/4).
+
 ### Removed
 - RSA support (`rsa` module, `KeyType::Rsa2048/Rsa4096`, RSA formats and
   RFC 9421 identifiers): optional in sage-spec, not covered by vectors, and

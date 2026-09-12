@@ -1,209 +1,373 @@
-//! HTTP message signature verification for RFC 9421
+//! HTTP message signature verification for RFC 9421 (sage-spec
+//! `03-rfc9421.md` §5).
 
 use crate::crypto::{PublicKey, Signature, Verifier as CryptoVerifier};
 use crate::error::{Error, Result};
-use crate::rfc9421::{SignatureComponent, SignatureParams};
-use base64::{engine::general_purpose, Engine as _};
+use crate::rfc9421::canonicalize::{
+    build_signature_base, canonicalize_request, canonicalize_response, verify_content_digest,
+};
+use crate::rfc9421::dictionary::{
+    parse_signature_header, parse_signature_input, SignatureInputMember,
+};
+use crate::rfc9421::replay::{MemoryReplayGuard, ReplayGuard};
+use crate::rfc9421::{algorithm_for, SignatureComponent, SignatureParams};
 use http::{HeaderMap, Request, Response};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// HTTP message signature verifier
+/// Default freshness window and clock skew (5 minutes).
+pub const DEFAULT_MAX_AGE: Duration = Duration::from_secs(300);
+
+/// Verification policy, mirroring the Go core's `HTTPVerificationOptions`.
+#[derive(Debug, Clone)]
+pub struct VerifyOptions {
+    /// Signature label to verify; `None` selects the lexicographically first.
+    pub label: Option<String>,
+    /// Maximum age of `created`; `None` disables the age check (archived
+    /// messages and test vectors).
+    pub max_age: Option<Duration>,
+    /// How far in the future `created` may be.
+    pub max_clock_skew: Duration,
+    /// Components that must be covered (identifiers such as `"@method"`).
+    pub required_components: Vec<SignatureComponent>,
+    /// Require `content-digest` to be covered when the message has a body.
+    pub require_content_digest: bool,
+    /// Require a `nonce` parameter.
+    pub require_nonce: bool,
+    /// Skip the replay check even when a guard is configured.
+    pub disable_replay_check: bool,
+    /// The DID the `keyid` must carry (`did` or `did#fragment`).
+    pub expected_did: Option<String>,
+    /// The exact `keyid` expected.
+    pub expected_key_id: Option<String>,
+    /// `@authority` must be covered and equal one of these.
+    pub expected_authorities: Vec<String>,
+    /// Responses must cover at least one `;req` component.
+    pub require_request_binding: bool,
+}
+
+impl Default for VerifyOptions {
+    fn default() -> Self {
+        Self {
+            label: None,
+            max_age: Some(DEFAULT_MAX_AGE),
+            max_clock_skew: DEFAULT_MAX_AGE,
+            required_components: Vec::new(),
+            require_content_digest: false,
+            require_nonce: false,
+            disable_replay_check: false,
+            expected_did: None,
+            expected_key_id: None,
+            expected_authorities: Vec::new(),
+            require_request_binding: false,
+        }
+    }
+}
+
+impl VerifyOptions {
+    /// Strict request policy: `@method`, `@target-uri`, `@authority`
+    /// covered, `content-digest` covered when there is a body, nonce
+    /// required.
+    pub fn strict_request() -> Self {
+        Self {
+            required_components: vec![
+                SignatureComponent::Method,
+                SignatureComponent::TargetUri,
+                SignatureComponent::Authority,
+            ],
+            require_content_digest: true,
+            require_nonce: true,
+            ..Default::default()
+        }
+    }
+
+    /// Strict response policy: `@status` covered, `content-digest` covered
+    /// when there is a body, bound to the request.
+    pub fn strict_response() -> Self {
+        Self {
+            required_components: vec![SignatureComponent::Status],
+            require_content_digest: true,
+            require_request_binding: true,
+            ..Default::default()
+        }
+    }
+
+    /// Bind the signer's DID.
+    pub fn expected_did(mut self, did: impl Into<String>) -> Self {
+        self.expected_did = Some(did.into());
+        self
+    }
+
+    /// Disable the age check.
+    pub fn without_age_check(mut self) -> Self {
+        self.max_age = None;
+        self.max_clock_skew = Duration::from_secs(100 * 365 * 24 * 3600);
+        self
+    }
+}
+
+/// Verifies HTTP requests and responses against one public key.
 pub struct HttpVerifier {
     public_key: PublicKey,
+    replay: Option<Arc<dyn ReplayGuard>>,
 }
 
 impl HttpVerifier {
-    /// Create a new HTTP verifier with a public key
+    /// A verifier with an in-memory replay guard sized to the default age.
     pub fn new(public_key: PublicKey) -> Self {
-        Self { public_key }
-    }
-
-    /// Parse signature bytes into a Signature enum based on the public key type
-    fn parse_signature(&self, signature_bytes: &[u8]) -> Result<Signature> {
-        Signature::from_bytes(self.public_key.key_type(), signature_bytes)
-    }
-
-    /// Verify an HTTP request signature
-    pub fn verify_request<B>(&self, request: &Request<B>) -> Result<()> {
-        // Extract signature and signature-input headers
-        let (sig_value, sig_input) = extract_signature_headers(request.headers())?;
-
-        // Parse signature input to get components and parameters
-        let (components, params) = parse_signature_input(&sig_input)?;
-
-        // Verify signature parameters
-        verify_signature_params(&params, &self.public_key)?;
-
-        // Canonicalize the request
-        let canonical_values = super::canonicalize::canonicalize_request(request, &components)?;
-
-        // Build signature base
-        let signature_base =
-            super::canonicalize::build_signature_base(&canonical_values, &sig_input);
-
-        // Decode and verify signature
-        let signature_bytes = general_purpose::STANDARD
-            .decode(&sig_value)
-            .map_err(|_| Error::InvalidInput("Invalid base64 signature".to_string()))?;
-
-        let signature = self.parse_signature(&signature_bytes)?;
-
-        self.public_key
-            .verify(signature_base.as_bytes(), &signature)?;
-
-        Ok(())
-    }
-
-    /// Verify an HTTP response signature
-    pub fn verify_response<B>(&self, response: &Response<B>) -> Result<()> {
-        // Extract signature and signature-input headers
-        let (sig_value, sig_input) = extract_signature_headers(response.headers())?;
-
-        // Parse signature input to get components and parameters
-        let (components, params) = parse_signature_input(&sig_input)?;
-
-        // Verify signature parameters
-        verify_signature_params(&params, &self.public_key)?;
-
-        // Canonicalize the response
-        let canonical_values = super::canonicalize::canonicalize_response(response, &components)?;
-
-        // Build signature base
-        let signature_base =
-            super::canonicalize::build_signature_base(&canonical_values, &sig_input);
-
-        // Decode and verify signature
-        let signature_bytes = general_purpose::STANDARD
-            .decode(&sig_value)
-            .map_err(|_| Error::InvalidInput("Invalid base64 signature".to_string()))?;
-
-        let signature = self.parse_signature(&signature_bytes)?;
-
-        self.public_key
-            .verify(signature_base.as_bytes(), &signature)?;
-
-        Ok(())
-    }
-}
-
-/// Extract signature headers from HTTP headers
-fn extract_signature_headers(headers: &HeaderMap) -> Result<(String, String)> {
-    let sig_header = headers
-        .get("signature")
-        .ok_or_else(|| Error::InvalidInput("Missing signature header".to_string()))?
-        .to_str()
-        .map_err(|_| Error::InvalidInput("Invalid signature header encoding".to_string()))?;
-
-    let sig_input_header = headers
-        .get("signature-input")
-        .ok_or_else(|| Error::InvalidInput("Missing signature-input header".to_string()))?
-        .to_str()
-        .map_err(|_| Error::InvalidInput("Invalid signature-input header encoding".to_string()))?;
-
-    // Extract sig1 value from headers (simplified - real implementation would handle multiple signatures)
-    let sig_value = sig_header
-        .strip_prefix("sig1=:")
-        .ok_or_else(|| Error::InvalidInput("Invalid signature header format".to_string()))?
-        .to_string();
-
-    let sig_input = sig_input_header
-        .strip_prefix("sig1=")
-        .ok_or_else(|| Error::InvalidInput("Invalid signature-input header format".to_string()))?
-        .to_string();
-
-    Ok((sig_value, sig_input))
-}
-
-/// Parse signature input to extract components and parameters
-fn parse_signature_input(input: &str) -> Result<(Vec<SignatureComponent>, SignatureParams)> {
-    // This is a simplified parser - a real implementation would be more robust
-    let parts: Vec<&str> = input.splitn(2, ')').collect();
-    if parts.len() != 2 {
-        return Err(Error::InvalidInput(
-            "Invalid signature input format".to_string(),
-        ));
-    }
-
-    let components_str = parts[0].trim_start_matches('(');
-    let params_str = parts[1];
-
-    // Parse components
-    let components: Result<Vec<SignatureComponent>> = components_str
-        .split_whitespace()
-        .map(|s| {
-            let component_id = s.trim_matches('"');
-            match component_id {
-                "@method" => Ok(SignatureComponent::Method),
-                "@target-uri" => Ok(SignatureComponent::TargetUri),
-                "@authority" => Ok(SignatureComponent::Authority),
-                "@scheme" => Ok(SignatureComponent::Scheme),
-                "@request-target" => Ok(SignatureComponent::RequestTarget),
-                "@path" => Ok(SignatureComponent::Path),
-                "@query" => Ok(SignatureComponent::Query),
-                "@status" => Ok(SignatureComponent::Status),
-                _ if component_id.starts_with('@') => Err(Error::Unsupported(format!(
-                    "Unsupported derived component: {component_id}"
-                ))),
-                _ => Ok(SignatureComponent::Header(component_id.to_string())),
-            }
-        })
-        .collect();
-
-    let components = components?;
-
-    // Parse parameters (simplified)
-    let mut params = SignatureParams::default();
-    for param in params_str.split(';') {
-        let param = param.trim();
-        if let Some(stripped) = param.strip_prefix("keyid=") {
-            params.key_id = Some(stripped.trim_matches('"').to_string());
-        } else if let Some(stripped) = param.strip_prefix("alg=") {
-            params.alg = Some(stripped.trim_matches('"').to_string());
-        } else if let Some(stripped) = param.strip_prefix("created=") {
-            params.created = stripped.parse().ok();
-        } else if let Some(stripped) = param.strip_prefix("expires=") {
-            params.expires = stripped.parse().ok();
+        Self {
+            public_key,
+            replay: Some(Arc::new(MemoryReplayGuard::new(DEFAULT_MAX_AGE))),
         }
     }
 
-    Ok((components, params))
+    /// A verifier with a shared replay guard, or none (`None` disables
+    /// replay detection).
+    pub fn with_replay_guard(public_key: PublicKey, guard: Option<Arc<dyn ReplayGuard>>) -> Self {
+        Self {
+            public_key,
+            replay: guard,
+        }
+    }
+
+    /// The key this verifier checks against.
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
+    }
+
+    /// Verify a request with the default options and no body.
+    pub fn verify_request<B>(&self, request: &Request<B>) -> Result<()> {
+        self.verify_request_with(request, None, &VerifyOptions::default())
+    }
+
+    /// Verify a request; `body` enables the `Content-Digest` check.
+    pub fn verify_request_with<B>(
+        &self,
+        request: &Request<B>,
+        body: Option<&[u8]>,
+        opts: &VerifyOptions,
+    ) -> Result<()> {
+        let (label, member, signature) =
+            select(request.headers(), opts, self.public_key.key_type())?;
+        if member.components.iter().any(SignatureComponent::is_req) {
+            return Err(Error::Verification(
+                "the req parameter is only valid in response signatures".into(),
+            ));
+        }
+        check_policy(&member, body, opts)?;
+        check_params(&member.params, opts, &self.public_key)?;
+        if let Some(did) = request
+            .headers()
+            .get("x-sage-did")
+            .and_then(|v| v.to_str().ok())
+        {
+            if member.params.key_id_did() != Some(did) {
+                return Err(Error::Verification(
+                    "X-SAGE-DID does not match keyid".into(),
+                ));
+            }
+        }
+        if !opts.expected_authorities.is_empty() {
+            let covered = member.components.contains(&SignatureComponent::Authority);
+            let authority = request
+                .uri()
+                .authority()
+                .map(|a| a.to_string().to_lowercase())
+                .unwrap_or_default();
+            if !covered
+                || !opts
+                    .expected_authorities
+                    .iter()
+                    .any(|a| a.eq_ignore_ascii_case(&authority))
+            {
+                return Err(Error::Verification(
+                    "authority is not covered or not expected".into(),
+                ));
+            }
+        }
+        let values = canonicalize_request(request, &member.components)?;
+        let base = build_signature_base(&values, &member.raw);
+        self.public_key.verify(base.as_bytes(), &signature)?;
+        if let Some(body) = body {
+            if member
+                .components
+                .contains(&SignatureComponent::Header("content-digest".into()))
+            {
+                let header = request
+                    .headers()
+                    .get("content-digest")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| Error::Verification("content-digest header missing".into()))?;
+                verify_content_digest(header, body)?;
+            }
+        }
+        self.check_replay(&label, &member.params, opts)
+    }
+
+    /// Verify a response bound to its request.
+    pub fn verify_response<B, R>(
+        &self,
+        response: &Response<B>,
+        request: &Request<R>,
+        body: Option<&[u8]>,
+        opts: &VerifyOptions,
+    ) -> Result<()> {
+        let (label, member, signature) =
+            select(response.headers(), opts, self.public_key.key_type())?;
+        if opts.require_request_binding && !member.components.iter().any(SignatureComponent::is_req)
+        {
+            return Err(Error::Verification(
+                "response signature is not bound to the request".into(),
+            ));
+        }
+        check_policy(&member, body, opts)?;
+        check_params(&member.params, opts, &self.public_key)?;
+        let values = canonicalize_response(response, Some(request), &member.components)?;
+        let base = build_signature_base(&values, &member.raw);
+        self.public_key.verify(base.as_bytes(), &signature)?;
+        if let Some(body) = body {
+            if member
+                .components
+                .contains(&SignatureComponent::Header("content-digest".into()))
+            {
+                let header = response
+                    .headers()
+                    .get("content-digest")
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| Error::Verification("content-digest header missing".into()))?;
+                verify_content_digest(header, body)?;
+            }
+        }
+        self.check_replay(&label, &member.params, opts)
+    }
+
+    fn check_replay(
+        &self,
+        _label: &str,
+        params: &SignatureParams,
+        opts: &VerifyOptions,
+    ) -> Result<()> {
+        if opts.disable_replay_check {
+            return Ok(());
+        }
+        if let (Some(guard), Some(nonce)) = (&self.replay, &params.nonce) {
+            let scope = params.key_id.clone().unwrap_or_default();
+            if !guard.check_and_mark(&scope, nonce) {
+                return Err(Error::Verification("nonce already used".into()));
+            }
+        }
+        Ok(())
+    }
 }
 
-/// Verify signature parameters
-fn verify_signature_params(params: &SignatureParams, public_key: &PublicKey) -> Result<()> {
-    // Verify timestamp if present
-    if let Some(created) = params.created {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| Error::Other("System time error".to_string()))?
-            .as_secs() as i64;
+fn select(
+    headers: &HeaderMap,
+    opts: &VerifyOptions,
+    key_type: crate::crypto::KeyType,
+) -> Result<(String, SignatureInputMember, Signature)> {
+    let sig_input = headers
+        .get("signature-input")
+        .ok_or_else(|| Error::InvalidInput("missing signature-input header".into()))?
+        .to_str()
+        .map_err(|_| Error::InvalidInput("invalid signature-input header".into()))?;
+    let sig_header = headers
+        .get("signature")
+        .ok_or_else(|| Error::InvalidInput("missing signature header".into()))?
+        .to_str()
+        .map_err(|_| Error::InvalidInput("invalid signature header".into()))?;
+    let inputs = parse_signature_input(sig_input)?;
+    let signatures = parse_signature_header(sig_header)?;
+    let label = match &opts.label {
+        Some(l) => l.clone(),
+        None => inputs.keys().next().cloned().unwrap(),
+    };
+    let member = inputs
+        .get(&label)
+        .cloned()
+        .ok_or_else(|| Error::InvalidInput(format!("signature {label} not in Signature-Input")))?;
+    let bytes = signatures
+        .get(&label)
+        .ok_or_else(|| Error::InvalidInput(format!("signature {label} not in Signature")))?;
+    Ok((label, member, Signature::from_bytes(key_type, bytes)?))
+}
 
-        // Allow some clock skew (5 minutes)
-        if created > now + 300 {
+fn check_policy(
+    member: &SignatureInputMember,
+    body: Option<&[u8]>,
+    opts: &VerifyOptions,
+) -> Result<()> {
+    for required in &opts.required_components {
+        if !member
+            .components
+            .iter()
+            .any(|c| c.name() == required.name())
+        {
+            return Err(Error::Verification(format!(
+                "required component {} is not covered",
+                required.identifier()
+            )));
+        }
+    }
+    if opts.require_content_digest && body.is_some_and(|b| !b.is_empty()) {
+        let covered = member
+            .components
+            .iter()
+            .any(|c| matches!(c, SignatureComponent::Header(h) if h == "content-digest"));
+        if !covered {
+            return Err(Error::Verification("content-digest is not covered".into()));
+        }
+    }
+    if opts.require_nonce && member.params.nonce.as_deref().unwrap_or("").is_empty() {
+        return Err(Error::Verification("nonce is required".into()));
+    }
+    Ok(())
+}
+
+fn check_params(
+    params: &SignatureParams,
+    opts: &VerifyOptions,
+    public_key: &PublicKey,
+) -> Result<()> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| Error::Other("system time error".into()))?
+        .as_secs() as i64;
+    if let Some(created) = params.created {
+        if let Some(max_age) = opts.max_age {
+            if now - created > max_age.as_secs() as i64 {
+                return Err(Error::Verification("signature expired".into()));
+            }
+        }
+        if created > now + opts.max_clock_skew.as_secs() as i64 {
             return Err(Error::Verification(
-                "Signature created in the future".to_string(),
+                "signature created in the future".into(),
             ));
         }
     }
-
     if let Some(expires) = params.expires {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| Error::Other("System time error".to_string()))?
-            .as_secs() as i64;
-
-        if expires < now {
-            return Err(Error::Verification("Signature expired".to_string()));
+        if now > expires {
+            return Err(Error::Verification("signature expired".into()));
         }
     }
-
-    // Verify key ID matches
-    if let Some(ref key_id) = params.key_id {
-        if key_id != &public_key.key_id() {
-            return Err(Error::Verification("Key ID mismatch".to_string()));
+    if let Some(alg) = &params.alg {
+        if alg != algorithm_for(public_key.key_type()).identifier() {
+            return Err(Error::Verification(format!(
+                "alg {alg} does not match the key type"
+            )));
         }
     }
-
+    if let Some(expected) = &opts.expected_key_id {
+        if params.key_id.as_deref() != Some(expected.as_str()) {
+            return Err(Error::Verification("keyid mismatch".into()));
+        }
+    }
+    if let Some(did) = &opts.expected_did {
+        if params.key_id_did() != Some(did.as_str()) {
+            return Err(Error::Verification(
+                "keyid does not carry the expected DID".into(),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -211,721 +375,121 @@ fn verify_signature_params(params: &SignatureParams, public_key: &PublicKey) -> 
 mod tests {
     use super::*;
     use crate::crypto::{KeyPair, KeyType};
-    use http::HeaderValue;
+    use crate::rfc9421::HttpSigner;
 
-    #[test]
-    fn test_verifier_creation() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        assert_eq!(verifier.public_key.key_id(), keypair.public_key().key_id());
-    }
-
-    #[test]
-    fn test_parse_signature_ed25519() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        // Create a valid 64-byte Ed25519 signature
-        let sig_bytes = [0u8; 64];
-        let result = verifier.parse_signature(&sig_bytes);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_parse_signature_ed25519_invalid_length() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        // Invalid length
-        let sig_bytes = [0u8; 32];
-        let result = verifier.parse_signature(&sig_bytes);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_signature_secp256k1() {
-        let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        // Create a valid 64-byte fixed-format signature
-        let sig_bytes = [0u8; 64];
-        // Note: This might fail with invalid signature, but tests the parsing path
-        let _ = verifier.parse_signature(&sig_bytes);
-    }
-
-    #[test]
-    fn test_parse_signature_p256() {
-        let keypair = KeyPair::generate(KeyType::P256).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        // Create a valid 64-byte fixed-format signature
-        let sig_bytes = [0u8; 64];
-        // Note: This might fail with invalid signature, but tests the parsing path
-        let _ = verifier.parse_signature(&sig_bytes);
-    }
-
-    #[test]
-    fn test_extract_signature_headers_missing_signature() {
-        let headers = HeaderMap::new();
-        let result = extract_signature_headers(&headers);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_extract_signature_headers_missing_input() {
-        let mut headers = HeaderMap::new();
-        headers.insert("signature", HeaderValue::from_static("sig1=:abc:"));
-        let result = extract_signature_headers(&headers);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_extract_signature_headers_valid() {
-        let mut headers = HeaderMap::new();
-        headers.insert("signature", HeaderValue::from_static("sig1=:YWJj:"));
-        headers.insert(
-            "signature-input",
-            HeaderValue::from_static("sig1=(\"@method\" \"@path\");created=1234567890"),
-        );
-
-        let result = extract_signature_headers(&headers);
-        assert!(result.is_ok());
-        let (sig, input) = result.unwrap();
-        assert_eq!(sig, "YWJj:");
-        assert!(input.contains("@method"));
-    }
-
-    #[test]
-    fn test_extract_signature_headers_invalid_format() {
-        let mut headers = HeaderMap::new();
-        headers.insert("signature", HeaderValue::from_static("invalid"));
-        headers.insert(
-            "signature-input",
-            HeaderValue::from_static("sig1=(\"@method\")"),
-        );
-
-        let result = extract_signature_headers(&headers);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_signature_input_method() {
-        let input = "(\"@method\" \"@path\");created=1234567890";
-        let result = parse_signature_input(input);
-        assert!(result.is_ok());
-
-        let (components, params) = result.unwrap();
-        assert_eq!(components.len(), 2);
-        assert_eq!(params.created, Some(1234567890));
-    }
-
-    #[test]
-    fn test_parse_signature_input_with_keyid() {
-        let input = "(\"@method\");keyid=\"test-key\";alg=\"ed25519\"";
-        let result = parse_signature_input(input);
-        assert!(result.is_ok());
-
-        let (components, params) = result.unwrap();
-        assert_eq!(components.len(), 1);
-        assert_eq!(params.key_id, Some("test-key".to_string()));
-        assert_eq!(params.alg, Some("ed25519".to_string()));
-    }
-
-    #[test]
-    fn test_parse_signature_input_with_expires() {
-        let input = "(\"@authority\");created=1000;expires=2000";
-        let result = parse_signature_input(input);
-        assert!(result.is_ok());
-
-        let (_, params) = result.unwrap();
-        assert_eq!(params.created, Some(1000));
-        assert_eq!(params.expires, Some(2000));
-    }
-
-    #[test]
-    fn test_parse_signature_input_invalid_format() {
-        let input = "invalid format";
-        let result = parse_signature_input(input);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_signature_input_header_component() {
-        let input = "(\"content-type\" \"host\");created=123";
-        let result = parse_signature_input(input);
-        assert!(result.is_ok());
-
-        let (components, _) = result.unwrap();
-        assert_eq!(components.len(), 2);
-        match &components[0] {
-            SignatureComponent::Header(name) => assert_eq!(name, "content-type"),
-            _ => panic!("Expected Header component"),
-        }
-    }
-
-    #[test]
-    fn test_verify_signature_params_future_timestamp() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let public_key = keypair.public_key().clone();
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
+    fn request() -> Request<()> {
+        Request::builder()
+            .method("POST")
+            .uri("https://agent-b.example/mcp")
+            .header("content-type", "application/json")
+            .header("x-sage-did", "did:sage:ethereum:0xabc")
+            .header("date", "Tue, 01 Sep 2026 12:00:00 GMT")
+            .body(())
             .unwrap()
-            .as_secs() as i64;
-
-        let params = SignatureParams {
-            created: Some(now + 1000),
-            ..Default::default()
-        }; // Future timestamp
-
-        let result = verify_signature_params(&params, &public_key);
-        assert!(result.is_err());
     }
 
     #[test]
-    fn test_verify_signature_params_expired() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let public_key = keypair.public_key().clone();
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        let params = SignatureParams {
-            expires: Some(now - 1000),
-            ..Default::default()
-        }; // Expired
-
-        let result = verify_signature_params(&params, &public_key);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_signature_params_key_id_mismatch() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let public_key = keypair.public_key().clone();
-
-        let params = SignatureParams {
-            key_id: Some("wrong-key-id".to_string()),
-            ..Default::default()
-        };
-
-        let result = verify_signature_params(&params, &public_key);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_signature_params_valid() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let public_key = keypair.public_key().clone();
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        let params = SignatureParams {
-            created: Some(now - 100),
-            expires: Some(now + 1000),
-            key_id: Some(public_key.key_id()),
-            ..Default::default()
-        };
-
-        let result = verify_signature_params(&params, &public_key);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_parse_signature_input_all_components() {
-        let input = "(\"@method\" \"@target-uri\" \"@authority\" \"@scheme\" \"@request-target\" \"@path\" \"@query\");created=123";
-        let result = parse_signature_input(input);
-        assert!(result.is_ok());
-
-        let (components, _) = result.unwrap();
-        assert_eq!(components.len(), 7);
-    }
-
-    #[test]
-    fn test_parse_signature_input_status_component() {
-        let input = "(\"@status\");created=123";
-        let result = parse_signature_input(input);
-        assert!(result.is_ok());
-
-        let (components, _) = result.unwrap();
-        assert_eq!(components.len(), 1);
-        matches!(components[0], SignatureComponent::Status);
-    }
-
-    // ===== End-to-End Verification Tests =====
-
-    #[test]
-    fn test_verify_request_ed25519_valid() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("POST")
-            .uri("https://example.com/foo")
-            .header("content-type", "application/json")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_request_secp256k1_valid() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("GET")
-            .uri("https://example.com/api")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_request_p256_valid() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::P256).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("PUT")
-            .uri("https://example.com/resource")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_request_wrong_key() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair1 = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let keypair2 = KeyPair::generate(KeyType::Ed25519).unwrap();
-
-        let signer = HttpSigner::new(keypair1.clone());
-
-        let request = Request::builder()
-            .method("POST")
-            .uri("https://example.com/foo")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        // Try to verify with different key
-        let verifier = HttpVerifier::new(keypair2.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_request_missing_headers() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        let request = Request::builder()
-            .method("GET")
-            .uri("https://example.com/")
-            .body(())
-            .unwrap();
-
-        let result = verifier.verify_request(&request);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_request_invalid_signature_base64() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        let request = Request::builder()
-            .method("GET")
-            .uri("https://example.com/")
-            .header("signature", "sig1=:invalid-base64!!!")
-            .header("signature-input", "sig1=(\"@method\");created=123")
-            .body(())
-            .unwrap();
-
-        let result = verifier.verify_request(&request);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_request_modified_content() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("POST")
-            .uri("https://example.com/foo")
-            .body(())
-            .unwrap();
-
-        let mut signed_request = signer.sign_request(request).unwrap();
-
-        // Modify the request after signing
-        *signed_request.method_mut() = http::Method::GET;
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_response_ed25519_valid() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let response = Response::builder()
-            .status(200)
-            .header("content-type", "application/json")
-            .body(())
-            .unwrap();
-
-        let signed_response = signer.sign_response(response).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_response(&signed_response);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_response_secp256k1_valid() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let response = Response::builder()
-            .status(201)
-            .header("content-type", "application/json")
-            .body(())
-            .unwrap();
-
-        let signed_response = signer.sign_response(response).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_response(&signed_response);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_response_p256_valid() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::P256).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let response = Response::builder()
-            .status(404)
-            .header("content-type", "application/json")
-            .body(())
-            .unwrap();
-
-        let signed_response = signer.sign_response(response).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_response(&signed_response);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_response_wrong_key() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair1 = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let keypair2 = KeyPair::generate(KeyType::Ed25519).unwrap();
-
-        let signer = HttpSigner::new(keypair1.clone());
-
-        let response = Response::builder()
-            .status(200)
-            .header("content-type", "application/json")
-            .body(())
-            .unwrap();
-
-        let signed_response = signer.sign_response(response).unwrap();
-
-        // Try to verify with different key
-        let verifier = HttpVerifier::new(keypair2.public_key().clone());
-        let result = verifier.verify_response(&signed_response);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_response_missing_headers() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        let response = Response::builder().status(200).body(()).unwrap();
-
-        let result = verifier.verify_response(&response);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_response_modified_status() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let response = Response::builder()
-            .status(200)
-            .header("content-type", "application/json")
-            .body(())
-            .unwrap();
-
-        let mut signed_response = signer.sign_response(response).unwrap();
-
-        // Modify the response after signing
-        *signed_response.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_response(&signed_response);
-        assert!(result.is_err());
-    }
-
-    // ===== Error Case Tests =====
-
-    #[test]
-    fn test_extract_signature_headers_invalid_prefix() {
-        let mut headers = HeaderMap::new();
-        headers.insert("signature", HeaderValue::from_static("wrong-prefix:abc:"));
-        headers.insert(
-            "signature-input",
-            HeaderValue::from_static("sig1=(\"@method\")"),
-        );
-
-        let result = extract_signature_headers(&headers);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_signature_input_unsupported_component() {
-        let input = "(\"@unsupported-component\");created=123";
-        let result = parse_signature_input(input);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_signature_secp256k1_invalid_length() {
-        let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        // Invalid length (not 64 and not valid DER)
-        let sig_bytes = [0u8; 32];
-        let result = verifier.parse_signature(&sig_bytes);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_signature_p256_invalid_length() {
-        let keypair = KeyPair::generate(KeyType::P256).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        // Invalid length (not 64 and not valid DER)
-        let sig_bytes = [0u8; 48];
-        let result = verifier.parse_signature(&sig_bytes);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_signature_input_empty_components() {
-        let input = "();created=123";
-        let result = parse_signature_input(input);
-        assert!(result.is_ok());
-
-        let (components, _) = result.unwrap();
-        assert_eq!(components.len(), 0);
-    }
-
-    #[test]
-    fn test_verify_signature_params_no_params() {
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let public_key = keypair.public_key().clone();
-
-        let params = SignatureParams::default();
-        let result = verify_signature_params(&params, &public_key);
-        // Should be ok with no params
-        assert!(result.is_ok());
-    }
-
-    // ===== RSA Key Type Integration Tests =====
-
-    // ===== Signature Tampering Tests with Different Key Types =====
-
-    #[test]
-    fn test_verify_request_secp256k1_tampered_method() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("GET")
-            .uri("https://example.com/api")
-            .body(())
-            .unwrap();
-
-        let mut signed_request = signer.sign_request(request).unwrap();
-
-        // Tamper with method after signing
-        *signed_request.method_mut() = http::Method::POST;
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_request_p256_tampered_uri_path() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::P256).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("GET")
-            .uri("https://example.com/api/data")
-            .body(())
-            .unwrap();
-
-        let mut signed_request = signer.sign_request(request).unwrap();
-
-        // Tamper with URI after signing
-        *signed_request.uri_mut() = "https://example.com/api/other".parse().unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_err());
-    }
-
-    // ===== Cross-Key-Type Tests =====
-
-    #[test]
-    fn test_verify_request_ed25519_with_secp256k1_key() {
-        use crate::rfc9421::HttpSigner;
-
-        let ed25519_keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let secp256k1_keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
-
-        let signer = HttpSigner::new(ed25519_keypair.clone());
-
-        let request = Request::builder()
-            .method("POST")
-            .uri("https://example.com/api")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        // Try to verify with different key type
-        let verifier = HttpVerifier::new(secp256k1_keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_err());
-    }
-
-    // ===== Component-Specific Verification Tests =====
-
-    #[test]
-    fn test_verify_request_with_query_params() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("GET")
-            .uri("https://api.example.com/search?q=test&limit=10&offset=0")
-            .header("accept", "application/json")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_request_with_multiple_headers() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("POST")
-            .uri("https://example.com/api/upload")
-            .header("content-type", "multipart/form-data")
-            .header("content-length", "1024")
-            .header("x-api-key", "secret-key-123")
-            .header("x-request-id", "req-abc-123")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_response_various_status_codes() {
-        use crate::rfc9421::HttpSigner;
-
-        let test_statuses = vec![200, 201, 204, 301, 302, 400, 401, 403, 404, 500, 502, 503];
-
-        for status in test_statuses {
-            let keypair = KeyPair::generate(KeyType::P256).unwrap();
-            let signer = HttpSigner::new(keypair.clone());
-
-            let response = Response::builder()
-                .status(status)
-                .header("content-type", "application/json")
-                .body(())
+    fn strict_round_trip_and_replay() {
+        for kt in [KeyType::Ed25519, KeyType::Secp256k1, KeyType::P256] {
+            let kp = KeyPair::generate(kt).unwrap();
+            let signer = HttpSigner::new(kp.clone()).with_key_id("did:sage:ethereum:0xabc#key-1");
+            let signed = signer.sign_request(request(), Some(b"{}")).unwrap();
+            let verifier = HttpVerifier::new(kp.public_key().clone());
+            let opts = VerifyOptions::strict_request().expected_did("did:sage:ethereum:0xabc");
+            verifier
+                .verify_request_with(&signed, Some(b"{}"), &opts)
                 .unwrap();
-
-            let signed_response = signer.sign_response(response).unwrap();
-
-            let verifier = HttpVerifier::new(keypair.public_key().clone());
-            let result = verifier.verify_response(&signed_response);
-            assert!(
-                result.is_ok(),
-                "Failed to verify response with status {status}"
-            );
+            // same nonce again: replay
+            assert!(verifier
+                .verify_request_with(&signed, Some(b"{}"), &opts)
+                .is_err());
+            // tampered body
+            let v2 = HttpVerifier::new(kp.public_key().clone());
+            assert!(v2
+                .verify_request_with(&signed, Some(b"{ }"), &opts)
+                .is_err());
+            // wrong DID expectation
+            let v3 = HttpVerifier::new(kp.public_key().clone());
+            assert!(v3
+                .verify_request_with(
+                    &signed,
+                    Some(b"{}"),
+                    &VerifyOptions::strict_request().expected_did("did:sage:ethereum:0xdef")
+                )
+                .is_err());
         }
+    }
+
+    #[test]
+    fn response_bound_to_request() {
+        let a = KeyPair::generate(KeyType::Ed25519).unwrap();
+        let b = KeyPair::generate(KeyType::Ed25519).unwrap();
+        let req = HttpSigner::new(a.clone())
+            .with_key_id("did:sage:ethereum:0xaaa")
+            .sign_request(request(), Some(b"{}"))
+            .unwrap();
+        let resp = Response::builder()
+            .status(200)
+            .header("content-type", "application/json")
+            .body(())
+            .unwrap();
+        let body = br#"{"ok":true}"#;
+        let signed = HttpSigner::new(b.clone())
+            .with_key_id("did:sage:ethereum:0xbbb#key-1")
+            .sign_response(resp, &req, Some(body))
+            .unwrap();
+        let input = signed.headers()["signature-input"].to_str().unwrap();
+        assert!(input.contains("\"@method\";req") && input.contains("\"signature\";req"));
+        let verifier = HttpVerifier::new(b.public_key().clone());
+        verifier
+            .verify_response(
+                &signed,
+                &req,
+                Some(body),
+                &VerifyOptions::strict_response().expected_did("did:sage:ethereum:0xbbb"),
+            )
+            .unwrap();
+        // a different request does not verify
+        let other = request();
+        assert!(verifier
+            .verify_response(
+                &signed,
+                &other,
+                Some(body),
+                &VerifyOptions::strict_response()
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn rejects_missing_nonce_and_wrong_alg() {
+        let kp = KeyPair::generate(KeyType::Ed25519).unwrap();
+        let signer = HttpSigner::new(kp.clone());
+        let params = SignatureParams {
+            key_id: Some("did:sage:ethereum:0xabc".into()),
+            alg: Some("es256k".into()),
+            created: Some(1_788_609_600),
+            ..Default::default()
+        };
+        let signed = signer
+            .sign_request_with(
+                request(),
+                Some(b"{}"),
+                &crate::rfc9421::default_request_components(),
+                &params,
+            )
+            .unwrap();
+        let verifier = HttpVerifier::new(kp.public_key().clone());
+        let lenient = VerifyOptions::default().without_age_check();
+        assert!(verifier
+            .verify_request_with(&signed, Some(b"{}"), &lenient)
+            .is_err()); // alg mismatch
+        assert!(verifier
+            .verify_request_with(
+                &signed,
+                Some(b"{}"),
+                &VerifyOptions::strict_request().without_age_check()
+            )
+            .is_err()); // nonce missing
     }
 }
