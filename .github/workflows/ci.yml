@@ -125,6 +125,8 @@ jobs:
   cross-compile:
     name: Cross Compilation
     runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: stable
     strategy:
       matrix:
         target:
@@ -138,9 +140,8 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: "1.88.0"
         targets: ${{ matrix.target }}
 
     - name: Configure Rust cache
@@ -166,14 +167,15 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: "1.88.0"
 
     - name: Configure Rust cache
       uses: Swatinem/rust-cache@v2
