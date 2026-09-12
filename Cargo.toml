@@ -47,7 +47,7 @@ thiserror = "1.0"
 anyhow = "1.0"
 
 # HTTP message signatures (RFC 9421)
-http = "0.2"
+http = "1.5"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Concurrency and storage
