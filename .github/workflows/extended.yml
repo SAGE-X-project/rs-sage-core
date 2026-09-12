@@ -1,0 +1,129 @@
+name: Extended checks
+
+# Slow or informational checks that do not gate pull requests: coverage,
+# benchmarks, cross-compilation for release targets and Miri. They run
+# weekly and on demand.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'  # Weekly on Monday
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Checkout sage-spec (test vectors)
+      uses: actions/checkout@v4
+      with:
+        repository: SAGE-X-project/sage-spec
+        ref: main
+        path: .sage-spec
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.88.0"
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install cargo-tarpaulin
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-tarpaulin
+
+    - name: Generate coverage report
+      run: cargo tarpaulin --out xml --all-features --timeout 600
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-cobertura
+        path: cobertura.xml
+
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.88.0"
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Run benchmarks
+      run: cargo bench --all-features
+
+    - name: Upload Criterion reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: criterion-reports
+        path: target/criterion
+
+  cross-compile:
+    name: Cross Compilation (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-gnu
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.88.0"
+        targets: ${{ matrix.target }}
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install cross
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cross
+
+    - name: Build the FFI library
+      run: cross build --release --target ${{ matrix.target }} --features ffi
+
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust nightly with Miri
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Run Miri on the library tests
+      run: |
+        cargo miri setup
+        cargo miri test --lib
