@@ -18,6 +18,38 @@
 - The `jcs` module implements RFC 8785; `tests/spec_vectors.rs` runs the
   sage-spec `jcs` and `crypto` suites (8/8 pass).
 
+### Changed (sage-spec alignment, did:sage and A2A)
+- `did` rewritten to `06-did-sage.md` and `07-a2a.md`: `parse_did` /
+  `parse_chain` / `generate_did` implement `did:sage:<ethereum|solana>:<id>`
+  with the `eth`/`sol` aliases and the rejection rules; `generate_key_pop` /
+  `verify_key_pop` implement the `SAGE-PoP:` proof of possession (Ed25519 and
+  secp256k1 over SHA-256 of the challenge); `A2AAgentCard` carries the wire
+  shape of the agent card with `sign` and `verify_proof` over the JCS form
+  without `proof` (base58 `proofValue`). `generate_did_from_pubkey` now maps
+  secp256k1 keys to their Ethereum address and Ed25519 keys to Solana; the
+  `did:sage:key:` / `did:sage:chain:` forms are gone.
+- `tests/spec_vectors.rs` runs the sage-spec `did` suite (5/5); every suite
+  of the specification now passes (26/26).
+
+### Changed (sage-spec alignment, HPKE)
+- `hpke` rewritten to `04-hpke.md`: real RFC 9180 base mode through the
+  `hpke` crate (DHKEM X25519-HKDF-SHA256, HKDF-SHA256, ChaCha20-Poly1305,
+  export only) instead of the hand-rolled X25519+HKDF; traffic keys and the
+  ACK key use the HMAC counter expansion; the init payload carries `initDid`,
+  `respDid`, `info`, `exportCtx`, `nonce`, `ts`, `enc`, `ephC` with the Go
+  core's encodings; the responder answers with a `ServerSigEnvelope` signed
+  over its JCS form (`sigB64`), hashes base64url; the ACK transcript binds
+  `info, exportCtx, enc, ephC, ephS, initDID, respDID`; the responder checks
+  the signer DID, its own DID, a ±2 min `ts` window, per-context nonce replay
+  (10 min), the recomputed `info`/`exportCtx` and the suite, and answers every
+  rejection with a generic error (`handle_init_detailed` gives the reason).
+  New `KemKeyResolver` / `SigningKeyResolver` traits with `MemoryKeyResolver`
+  and a DID-document adapter; `HpkeClient::{initialize, complete}`,
+  `HpkeServer::{new, handle_init}` return the session seed, key id and
+  session id (`sage/hpke+e2e v1`).
+- `tests/spec_vectors.rs` runs the sage-spec `hpke` suite (6/6, including
+  the exporter round trip of the Go core's encapsulation).
+
 ### Changed (sage-spec alignment, session)
 - `session` rewritten to `05-session.md`: ChaCha20-Poly1305 records
   `be64(seq) || nonce[12] || ciphertext` with a random nonce and the sequence
