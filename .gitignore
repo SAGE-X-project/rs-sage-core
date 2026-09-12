@@ -62,3 +62,4 @@ target/criterion/
 
 # FFI generated files
 include/sage_crypto.h
+.sage-spec/
