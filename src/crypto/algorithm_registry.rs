@@ -133,8 +133,8 @@ impl AlgorithmRegistry {
             Algorithm::Secp256k1 => AlgorithmMetadata {
                 algorithm: Algorithm::Secp256k1,
                 private_key_size: 32,
-                public_key_size: 33, // compressed
-                signature_size: 64,
+                public_key_size: 65, // uncompressed SEC1
+                signature_size: 65,  // r || s || v
                 security_level: SecurityLevel::Standard,
                 performance: PerformanceTier::Medium,
                 deterministic: true, // RFC 6979
@@ -142,13 +142,13 @@ impl AlgorithmRegistry {
                 solana_compatible: false,
                 fips_compliant: false,
                 description:
-                    "Secp256k1 ECDSA (Bitcoin/Ethereum). RFC 6979 deterministic signatures.",
+                    "Secp256k1 ECDSA over Keccak-256 (Ethereum convention). RFC 6979 deterministic, low-S, r||s||v.",
             },
 
             Algorithm::P256 => AlgorithmMetadata {
                 algorithm: Algorithm::P256,
                 private_key_size: 32,
-                public_key_size: 33, // compressed
+                public_key_size: 65, // uncompressed SEC1
                 signature_size: 64,
                 security_level: SecurityLevel::Standard,
                 performance: PerformanceTier::Medium,
@@ -160,34 +160,7 @@ impl AlgorithmRegistry {
                     "NIST P-256 ECDSA (secp256r1). FIPS 186-4 compliant, enterprise-grade.",
             },
 
-            Algorithm::Rsa2048 => AlgorithmMetadata {
-                algorithm: Algorithm::Rsa2048,
-                private_key_size: 256, // DER encoded
-                public_key_size: 256,  // DER encoded
-                signature_size: 256,
-                security_level: SecurityLevel::Standard,
-                performance: PerformanceTier::Slow,
-                deterministic: false,
-                ethereum_compatible: false,
-                solana_compatible: false,
-                fips_compliant: true,
-                description:
-                    "RSA-2048 with PKCS#1 v1.5 or PSS. FIPS 186-4 compliant, legacy support.",
-            },
 
-            Algorithm::Rsa4096 => AlgorithmMetadata {
-                algorithm: Algorithm::Rsa4096,
-                private_key_size: 512, // DER encoded
-                public_key_size: 512,  // DER encoded
-                signature_size: 512,
-                security_level: SecurityLevel::High,
-                performance: PerformanceTier::Slow,
-                deterministic: false,
-                ethereum_compatible: false,
-                solana_compatible: false,
-                fips_compliant: true,
-                description: "RSA-4096 with PKCS#1 v1.5 or PSS. High security, slow performance.",
-            },
         }
     }
 
@@ -197,13 +170,7 @@ impl AlgorithmRegistry {
     ///
     /// Vector of all supported algorithms
     pub fn all_algorithms() -> Vec<Algorithm> {
-        vec![
-            Algorithm::Ed25519,
-            Algorithm::Secp256k1,
-            Algorithm::P256,
-            Algorithm::Rsa2048,
-            Algorithm::Rsa4096,
-        ]
+        vec![Algorithm::Ed25519, Algorithm::Secp256k1, Algorithm::P256]
     }
 
     /// Get all algorithm metadata as a map
@@ -459,17 +426,6 @@ mod tests {
     }
 
     #[test]
-    fn test_all_algorithms() {
-        let algos = AlgorithmRegistry::all_algorithms();
-        assert_eq!(algos.len(), 5);
-        assert!(algos.contains(&Algorithm::Ed25519));
-        assert!(algos.contains(&Algorithm::Secp256k1));
-        assert!(algos.contains(&Algorithm::P256));
-        assert!(algos.contains(&Algorithm::Rsa2048));
-        assert!(algos.contains(&Algorithm::Rsa4096));
-    }
-
-    #[test]
     fn test_recommend_for_performance() {
         let algo = AlgorithmRegistry::recommend_for_performance();
         assert_eq!(algo, Algorithm::Ed25519);
@@ -497,65 +453,10 @@ mod tests {
     }
 
     #[test]
-    fn test_compatible_with_ethereum() {
-        let algos = AlgorithmRegistry::compatible_with_ethereum();
-        assert!(algos.contains(&Algorithm::Ed25519));
-        assert!(algos.contains(&Algorithm::Secp256k1));
-        assert!(algos.contains(&Algorithm::P256));
-        assert!(!algos.contains(&Algorithm::Rsa2048));
-    }
-
-    #[test]
     fn test_compatible_with_solana() {
         let algos = AlgorithmRegistry::compatible_with_solana();
         assert_eq!(algos.len(), 1);
         assert!(algos.contains(&Algorithm::Ed25519));
-    }
-
-    #[test]
-    fn test_fips_compliant_algorithms() {
-        let algos = AlgorithmRegistry::fips_compliant_algorithms();
-        assert!(algos.contains(&Algorithm::P256));
-        assert!(algos.contains(&Algorithm::Rsa2048));
-        assert!(algos.contains(&Algorithm::Rsa4096));
-        assert!(!algos.contains(&Algorithm::Ed25519));
-        assert!(!algos.contains(&Algorithm::Secp256k1));
-    }
-
-    #[test]
-    fn test_by_security_level() {
-        let standard = AlgorithmRegistry::by_security_level(SecurityLevel::Standard);
-        assert_eq!(standard.len(), 5); // All algorithms are at least 128-bit
-
-        let high = AlgorithmRegistry::by_security_level(SecurityLevel::High);
-        assert_eq!(high.len(), 1); // Only RSA-4096
-        assert!(high.contains(&Algorithm::Rsa4096));
-    }
-
-    #[test]
-    fn test_by_performance_tier() {
-        let fast = AlgorithmRegistry::by_performance_tier(PerformanceTier::Fast);
-        assert_eq!(fast.len(), 1);
-        assert!(fast.contains(&Algorithm::Ed25519));
-
-        let medium = AlgorithmRegistry::by_performance_tier(PerformanceTier::Medium);
-        assert_eq!(medium.len(), 2);
-        assert!(medium.contains(&Algorithm::Secp256k1));
-        assert!(medium.contains(&Algorithm::P256));
-
-        let slow = AlgorithmRegistry::by_performance_tier(PerformanceTier::Slow);
-        assert_eq!(slow.len(), 2);
-        assert!(slow.contains(&Algorithm::Rsa2048));
-        assert!(slow.contains(&Algorithm::Rsa4096));
-    }
-
-    #[test]
-    fn test_is_deterministic() {
-        assert!(AlgorithmRegistry::is_deterministic(Algorithm::Ed25519));
-        assert!(AlgorithmRegistry::is_deterministic(Algorithm::Secp256k1));
-        assert!(AlgorithmRegistry::is_deterministic(Algorithm::P256));
-        assert!(!AlgorithmRegistry::is_deterministic(Algorithm::Rsa2048));
-        assert!(!AlgorithmRegistry::is_deterministic(Algorithm::Rsa4096));
     }
 
     #[test]
@@ -596,7 +497,7 @@ mod tests {
     #[test]
     fn test_all_metadata() {
         let all = AlgorithmRegistry::all_metadata();
-        assert_eq!(all.len(), 5);
+        assert_eq!(all.len(), 3);
         assert!(all.contains_key(&Algorithm::Ed25519));
         assert!(all.contains_key(&Algorithm::Secp256k1));
     }

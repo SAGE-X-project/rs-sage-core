@@ -16,12 +16,8 @@ pub enum SignatureAlgorithm {
     Ed25519,
     /// ECDSA P-256 SHA-256
     EcdsaP256Sha256,
-    /// ECDSA Secp256k1 SHA-256
+    /// ECDSA secp256k1 over Keccak-256 (Ethereum convention), `es256k`
     EcdsaSecp256k1Sha256,
-    /// RSA PKCS#1 v1.5 with SHA-256
-    RsaPkcs1v15Sha256,
-    /// RSA PSS with SHA-512
-    RsaPssSha512,
 }
 
 impl SignatureAlgorithm {
@@ -30,9 +26,7 @@ impl SignatureAlgorithm {
         match self {
             SignatureAlgorithm::Ed25519 => "ed25519",
             SignatureAlgorithm::EcdsaP256Sha256 => "ecdsa-p256-sha256",
-            SignatureAlgorithm::EcdsaSecp256k1Sha256 => "ecdsa-secp256k1-sha256",
-            SignatureAlgorithm::RsaPkcs1v15Sha256 => "rsa-v1_5-sha256",
-            SignatureAlgorithm::RsaPssSha512 => "rsa-pss-sha512",
+            SignatureAlgorithm::EcdsaSecp256k1Sha256 => "es256k",
         }
     }
 }
@@ -122,19 +116,7 @@ mod tests {
     #[test]
     fn test_signature_algorithm_ecdsa_secp256k1_identifier() {
         let alg = SignatureAlgorithm::EcdsaSecp256k1Sha256;
-        assert_eq!(alg.identifier(), "ecdsa-secp256k1-sha256");
-    }
-
-    #[test]
-    fn test_signature_algorithm_rsa_pkcs1_identifier() {
-        let alg = SignatureAlgorithm::RsaPkcs1v15Sha256;
-        assert_eq!(alg.identifier(), "rsa-v1_5-sha256");
-    }
-
-    #[test]
-    fn test_signature_algorithm_rsa_pss_identifier() {
-        let alg = SignatureAlgorithm::RsaPssSha512;
-        assert_eq!(alg.identifier(), "rsa-pss-sha512");
+        assert_eq!(alg.identifier(), "es256k");
     }
 
     #[test]
@@ -352,28 +334,5 @@ mod tests {
             .add_component(SignatureComponent::Header("content-type".to_string()));
 
         assert_eq!(input.components.len(), 8);
-    }
-
-    #[test]
-    fn test_signature_input_all_algorithms() {
-        let algorithms = vec![
-            (SignatureAlgorithm::Ed25519, "ed25519"),
-            (SignatureAlgorithm::EcdsaP256Sha256, "ecdsa-p256-sha256"),
-            (
-                SignatureAlgorithm::EcdsaSecp256k1Sha256,
-                "ecdsa-secp256k1-sha256",
-            ),
-            (SignatureAlgorithm::RsaPkcs1v15Sha256, "rsa-v1_5-sha256"),
-            (SignatureAlgorithm::RsaPssSha512, "rsa-pss-sha512"),
-        ];
-
-        for (alg, expected) in algorithms {
-            let input = SignatureInput::new()
-                .add_component(SignatureComponent::Method)
-                .algorithm(alg);
-
-            let result = input.build();
-            assert!(result.contains(&format!("alg=\"{expected}\"")));
-        }
     }
 }

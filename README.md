@@ -17,7 +17,8 @@ Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in R
 
 - **Cryptographic Primitives**
   - Ed25519 EdDSA signatures (RFC 8032)
-  - Secp256k1 ECDSA signatures
+  - Secp256k1 ECDSA over Keccak-256 (Ethereum convention: RFC 6979, low-S, `r || s || v`)
+  - P-256 ECDSA over SHA-256 (raw `r || s`, low-S)
   - Secure key generation using OS random
   - Key derivation and management
 
@@ -329,9 +330,9 @@ The `handshake` (four-phase), `transport` (reqwest) and `blockchain`
 [sage-spec](https://github.com/SAGE-X-project/sage-spec): the handshake is
 superseded by the HPKE profile, transport belongs to the gateway, and
 on-chain resolution is done by the Go core. Removing them also dropped the
-`reqwest`/`h2`/`rustls` advisory chain. The remaining acknowledged advisory
-is RUSTSEC-2023-0071 (`rsa`), which goes away when RSA support is removed
-in the crypto alignment step.
+`reqwest`/`h2`/`rustls` advisory chain. RSA support was removed in the
+crypto alignment step (it is optional in sage-spec and carried the only
+remaining advisory, RUSTSEC-2023-0071).
 
 ### Security Audit
 

@@ -11,7 +11,12 @@ pub fn generate_signing_key() -> SigningKey {
 
 /// Create signing key from bytes
 pub fn signing_key_from_bytes(bytes: &[u8]) -> Result<SigningKey> {
-    SigningKey::from_bytes(bytes)
+    if bytes.len() != 32 {
+        return Err(Error::InvalidKeyFormat(
+            "Secp256k1 private key must be 32 bytes".to_string(),
+        ));
+    }
+    SigningKey::from_slice(bytes)
         .map_err(|e| Error::InvalidKeyFormat(format!("Invalid Secp256k1 private key: {e}")))
 }
 
@@ -27,27 +32,16 @@ pub fn signature_from_der(bytes: &[u8]) -> Result<EcdsaSignature> {
         .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))
 }
 
-/// Create signature from fixed-size bytes
+/// Create a signature from `r || s` (64 bytes), `r || s || v` (65 bytes) or
+/// ASN.1 DER, normalised to low-S.
 pub fn signature_from_bytes(bytes: &[u8]) -> Result<EcdsaSignature> {
-    // Try DER format first, then try fixed format
-    EcdsaSignature::from_der(bytes).or_else(|_| {
-        if bytes.len() == 64 {
-            // For fixed-size format, split into r and s components
-            // For 64-byte format, parse as r||s components
-            use k256::FieldBytes;
-            let mut r_bytes = [0u8; 32];
-            let mut s_bytes = [0u8; 32];
-            r_bytes.copy_from_slice(&bytes[..32]);
-            s_bytes.copy_from_slice(&bytes[32..]);
-
-            EcdsaSignature::from_scalars(FieldBytes::from(r_bytes), FieldBytes::from(s_bytes))
-                .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))
-        } else {
-            Err(Error::InvalidKeyFormat(
-                "Invalid ECDSA signature length".to_string(),
-            ))
-        }
-    })
+    let sig = match bytes.len() {
+        64 | 65 => EcdsaSignature::from_slice(&bytes[..64])
+            .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))?,
+        _ => EcdsaSignature::from_der(bytes)
+            .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))?,
+    };
+    Ok(sig.normalize_s().unwrap_or(sig))
 }
 
 #[cfg(test)]
@@ -61,8 +55,9 @@ mod tests {
         let verifying_key = signing_key.verifying_key();
 
         assert_eq!(signing_key.to_bytes().len(), 32);
-        // Verify key was generated correctly - verifying key is 33 bytes (compressed)
-        assert_eq!(verifying_key.to_bytes().len(), 33);
+        // compressed SEC1 point
+        assert_eq!(verifying_key.to_sec1_bytes().len(), 33);
+        assert_eq!(verifying_key.to_encoded_point(false).as_bytes().len(), 65);
     }
 
     #[test]
@@ -94,10 +89,10 @@ mod tests {
     fn test_verifying_key_from_bytes() {
         let signing_key = generate_signing_key();
         let verifying_key = signing_key.verifying_key();
-        let bytes = verifying_key.to_bytes();
+        let bytes = verifying_key.to_sec1_bytes();
 
         let restored_key = verifying_key_from_bytes(&bytes).unwrap();
-        assert_eq!(verifying_key.to_bytes(), restored_key.to_bytes());
+        assert_eq!(verifying_key.to_sec1_bytes(), restored_key.to_sec1_bytes());
     }
 
     #[test]

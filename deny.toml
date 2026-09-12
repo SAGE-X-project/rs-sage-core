@@ -19,10 +19,7 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 unmaintained = "all"
 yanked = "warn"
 ignore = [
-    # rsa 0.9: Marvin timing side channel, no fixed release. RSA is optional in
-    # sage-spec (01-crypto.md O-3) and is removed from the crate in the F-03
-    # crypto step; until then the advisory is acknowledged here.
-    "RUSTSEC-2023-0071",
+    #"RUSTSEC-0000-0000", # Example ignored advisory
 ]
 
 

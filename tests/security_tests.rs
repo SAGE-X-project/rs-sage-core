@@ -116,15 +116,14 @@ fn test_signature_non_malleability() {
     // Get signature bytes
     let sig_bytes = signature.to_bytes();
 
-    // Try to create malleable signatures by modifying bytes
-    for i in 0..sig_bytes.len() {
+    // Flip one bit of r or s (the recovery byte is not part of verification)
+    assert_eq!(sig_bytes.len(), 65);
+    for i in 0..64 {
         let mut modified = sig_bytes.clone();
-        modified[i] ^= 1; // Flip one bit
+        modified[i] ^= 1;
 
-        // Try to parse modified signature
-        if let Ok(modified_sig) = secp256k1::signature_from_der(&modified) {
-            // If parsing succeeds, verification should fail
-            let result = keypair.verify(message, &Signature::Secp256k1(modified_sig));
+        if let Ok(modified_sig) = Signature::from_bytes(KeyType::Secp256k1, &modified) {
+            let result = keypair.verify(message, &modified_sig);
             assert!(
                 result.is_err(),
                 "Modified signature at byte {i} should not verify"

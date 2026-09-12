@@ -217,9 +217,8 @@ impl MessageBuilder {
 
         let algorithm = match keypair.key_type() {
             crate::crypto::KeyType::Ed25519 => "ed25519",
-            crate::crypto::KeyType::Secp256k1 => "ecdsa-secp256k1-sha256",
+            crate::crypto::KeyType::Secp256k1 => "es256k",
             crate::crypto::KeyType::P256 => "ecdsa-p256-sha256",
-            crate::crypto::KeyType::Rsa2048 | crate::crypto::KeyType::Rsa4096 => "rsa-v1_5-sha256",
         }
         .to_string();
 

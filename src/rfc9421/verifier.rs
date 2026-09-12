@@ -20,56 +20,7 @@ impl HttpVerifier {
 
     /// Parse signature bytes into a Signature enum based on the public key type
     fn parse_signature(&self, signature_bytes: &[u8]) -> Result<Signature> {
-        match &self.public_key {
-            PublicKey::Ed25519(_) => {
-                if signature_bytes.len() != 64 {
-                    return Err(Error::InvalidInput(
-                        "Ed25519 signature must be 64 bytes".to_string(),
-                    ));
-                }
-                let mut sig_array = [0u8; 64];
-                sig_array.copy_from_slice(signature_bytes);
-                Ok(Signature::Ed25519(ed25519_dalek::Signature::from_bytes(
-                    &sig_array,
-                )))
-            }
-            PublicKey::Secp256k1(_) => {
-                Ok(Signature::Secp256k1(
-                    k256::ecdsa::Signature::from_der(signature_bytes).or_else(|_| {
-                        // Try fixed-size format if DER fails
-                        if signature_bytes.len() == 64 {
-                            k256::ecdsa::Signature::try_from(signature_bytes).map_err(|e| {
-                                Error::InvalidInput(format!("Invalid ECDSA signature: {e}"))
-                            })
-                        } else {
-                            Err(Error::InvalidInput(
-                                "Invalid Secp256k1 signature format".to_string(),
-                            ))
-                        }
-                    })?,
-                ))
-            }
-            PublicKey::P256(_) => {
-                Ok(Signature::P256(
-                    p256::ecdsa::Signature::from_der(signature_bytes).or_else(|_| {
-                        // Try fixed-size format if DER fails
-                        if signature_bytes.len() == 64 {
-                            p256::ecdsa::Signature::try_from(signature_bytes).map_err(|e| {
-                                Error::InvalidInput(format!("Invalid P-256 signature: {e}"))
-                            })
-                        } else {
-                            Err(Error::InvalidInput(
-                                "Invalid P-256 signature format".to_string(),
-                            ))
-                        }
-                    })?,
-                ))
-            }
-            PublicKey::Rsa(_, _) => {
-                // RSA signatures are variable length depending on key size
-                Ok(Signature::Rsa(signature_bytes.to_vec()))
-            }
-        }
+        Signature::from_bytes(self.public_key.key_type(), signature_bytes)
     }
 
     /// Verify an HTTP request signature
@@ -311,17 +262,6 @@ mod tests {
         let sig_bytes = [0u8; 64];
         // Note: This might fail with invalid signature, but tests the parsing path
         let _ = verifier.parse_signature(&sig_bytes);
-    }
-
-    #[test]
-    fn test_parse_signature_rsa() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-
-        // RSA signatures are variable length
-        let sig_bytes = vec![0u8; 256];
-        let result = verifier.parse_signature(&sig_bytes);
-        assert!(result.is_ok());
     }
 
     #[test]
@@ -570,26 +510,6 @@ mod tests {
         let request = Request::builder()
             .method("PUT")
             .uri("https://example.com/resource")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_request_rsa2048_valid() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("DELETE")
-            .uri("https://example.com/item")
             .body(())
             .unwrap();
 
@@ -862,90 +782,6 @@ mod tests {
 
     // ===== RSA Key Type Integration Tests =====
 
-    #[test]
-    fn test_verify_request_rsa2048_with_headers() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("POST")
-            .uri("https://example.com/api/data")
-            .header("content-type", "application/json")
-            .header("host", "example.com")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_request_rsa4096_with_query() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let request = Request::builder()
-            .method("GET")
-            .uri("https://api.example.com/v1/users?page=1")
-            .header("accept", "application/json")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_request(&signed_request);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_response_rsa2048_with_location() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let response = Response::builder()
-            .status(201)
-            .header("content-type", "application/json")
-            .header("location", "/api/resource/123")
-            .body(())
-            .unwrap();
-
-        let signed_response = signer.sign_response(response).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_response(&signed_response);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_verify_response_rsa4096_error_status() {
-        use crate::rfc9421::HttpSigner;
-
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        let signer = HttpSigner::new(keypair.clone());
-
-        let response = Response::builder()
-            .status(500)
-            .header("content-type", "text/plain")
-            .body(())
-            .unwrap();
-
-        let signed_response = signer.sign_response(response).unwrap();
-
-        let verifier = HttpVerifier::new(keypair.public_key().clone());
-        let result = verifier.verify_response(&signed_response);
-        assert!(result.is_ok());
-    }
-
     // ===== Signature Tampering Tests with Different Key Types =====
 
     #[test]
@@ -1016,29 +852,6 @@ mod tests {
         // Try to verify with different key type
         let verifier = HttpVerifier::new(secp256k1_keypair.public_key().clone());
         let result = verifier.verify_request(&signed_request);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_response_p256_with_rsa_key() {
-        use crate::rfc9421::HttpSigner;
-
-        let p256_keypair = KeyPair::generate(KeyType::P256).unwrap();
-        let rsa_keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-
-        let signer = HttpSigner::new(p256_keypair.clone());
-
-        let response = Response::builder()
-            .status(200)
-            .header("content-type", "application/json")
-            .body(())
-            .unwrap();
-
-        let signed_response = signer.sign_response(response).unwrap();
-
-        // Try to verify with different key type
-        let verifier = HttpVerifier::new(rsa_keypair.public_key().clone());
-        let result = verifier.verify_response(&signed_response);
         assert!(result.is_err());
     }
 
