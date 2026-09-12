@@ -1,9 +1,16 @@
-//! FFI functions for HTTP signature operations (RFC 9421)
+//! FFI functions for HTTP message signatures (RFC 9421, sage-spec 03).
+//!
+//! Requests and responses are passed as `SageHttpRequest` /
+//! `SageHttpResponse` views over caller-owned memory. Signing returns the
+//! headers to add to the message (`content-digest` when a body was given,
+//! `signature-input`, `signature`) as `SageHttpHeader` entries whose strings
+//! are owned by the library and freed with `sage_http_headers_free`.
 
 use super::*;
-use crate::rfc9421::{HttpSigner, HttpVerifier};
-use ::http::Request;
+use crate::rfc9421::{HttpSigner, HttpVerifier, VerifyOptions};
+use ::http::{Request, Response};
 use std::ffi::CStr;
+use std::time::Duration;
 
 /// Opaque handle for HTTP signer
 pub struct SageHttpSigner {
@@ -15,40 +22,197 @@ pub struct SageHttpVerifier {
     inner: HttpVerifier,
 }
 
-/// HTTP request structure for FFI
+/// HTTP request view for FFI
 #[repr(C)]
 pub struct SageHttpRequest {
-    method: *const c_char,
-    uri: *const c_char,
-    headers: *const SageHttpHeader,
-    headers_count: size_t,
-    body: *const c_uchar,
-    body_len: size_t,
+    /// Method (`POST`)
+    pub method: *const c_char,
+    /// Absolute target URI
+    pub uri: *const c_char,
+    /// Headers
+    pub headers: *const SageHttpHeader,
+    /// Number of headers
+    pub headers_count: size_t,
+    /// Body bytes (may be NULL)
+    pub body: *const c_uchar,
+    /// Body length
+    pub body_len: size_t,
 }
 
-/// HTTP response structure for FFI
+/// HTTP response view for FFI
 #[repr(C)]
 pub struct SageHttpResponse {
-    status: c_int,
-    headers: *const SageHttpHeader,
-    headers_count: size_t,
-    body: *const c_uchar,
-    body_len: size_t,
+    /// Status code
+    pub status: c_int,
+    /// Headers
+    pub headers: *const SageHttpHeader,
+    /// Number of headers
+    pub headers_count: size_t,
+    /// Body bytes (may be NULL)
+    pub body: *const c_uchar,
+    /// Body length
+    pub body_len: size_t,
 }
 
-/// HTTP header structure for FFI
+/// HTTP header (name, value) for FFI
 #[repr(C)]
 pub struct SageHttpHeader {
-    name: *const c_char,
-    value: *const c_char,
+    /// Header name
+    pub name: *const c_char,
+    /// Header value
+    pub value: *const c_char,
 }
 
-/// Create a new HTTP signer
+/// Verification policy for FFI. `strict` enables the sage-spec strict
+/// request or response policy; `max_age_secs < 0` disables the age check;
+/// `expected_did` may be NULL.
+#[repr(C)]
+pub struct SageVerifyOptions {
+    /// Non-zero for the strict policy
+    pub strict: c_int,
+    /// Maximum signature age in seconds; negative disables the check
+    pub max_age_secs: i64,
+    /// DID the `keyid` must carry (NULL to skip)
+    pub expected_did: *const c_char,
+    /// Non-zero to skip the replay check
+    pub disable_replay_check: c_int,
+}
+
+unsafe fn c_str<'a>(p: *const c_char) -> Option<&'a str> {
+    if p.is_null() {
+        None
+    } else {
+        CStr::from_ptr(p).to_str().ok()
+    }
+}
+
+unsafe fn headers_of(
+    ptr: *const SageHttpHeader,
+    count: size_t,
+) -> Result<Vec<(String, String)>, SageResult> {
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    if ptr.is_null() {
+        return Err(fail_with(SageErrorCode::InvalidInput, "headers is NULL"));
+    }
+    let mut out = Vec::with_capacity(count);
+    for h in slice::from_raw_parts(ptr, count) {
+        let (Some(n), Some(v)) = (c_str(h.name), c_str(h.value)) else {
+            return Err(fail_with(
+                SageErrorCode::InvalidInput,
+                "invalid header string",
+            ));
+        };
+        out.push((n.to_string(), v.to_string()));
+    }
+    Ok(out)
+}
+
+unsafe fn body_of(ptr: *const c_uchar, len: size_t) -> Vec<u8> {
+    if ptr.is_null() || len == 0 {
+        Vec::new()
+    } else {
+        slice::from_raw_parts(ptr, len).to_vec()
+    }
+}
+
+unsafe fn build_request(r: &SageHttpRequest) -> Result<Request<Vec<u8>>, SageResult> {
+    let (Some(method), Some(uri)) = (c_str(r.method), c_str(r.uri)) else {
+        return Err(fail_with(SageErrorCode::InvalidInput, "method/uri missing"));
+    };
+    let mut b = Request::builder().method(method).uri(uri);
+    for (n, v) in headers_of(r.headers, r.headers_count)? {
+        b = b.header(n, v);
+    }
+    b.body(body_of(r.body, r.body_len)).map_err(|e| {
+        fail_with(
+            SageErrorCode::InvalidInput,
+            &format!("invalid request: {e}"),
+        )
+    })
+}
+
+unsafe fn build_response(r: &SageHttpResponse) -> Result<Response<Vec<u8>>, SageResult> {
+    let mut b = Response::builder().status(r.status as u16);
+    for (n, v) in headers_of(r.headers, r.headers_count)? {
+        b = b.header(n, v);
+    }
+    b.body(body_of(r.body, r.body_len)).map_err(|e| {
+        fail_with(
+            SageErrorCode::InvalidInput,
+            &format!("invalid response: {e}"),
+        )
+    })
+}
+
+unsafe fn options_of(o: *const SageVerifyOptions, response: bool) -> VerifyOptions {
+    let mut opts = if o.is_null() {
+        VerifyOptions::default()
+    } else if (*o).strict != 0 {
+        if response {
+            VerifyOptions::strict_response()
+        } else {
+            VerifyOptions::strict_request()
+        }
+    } else {
+        VerifyOptions::default()
+    };
+    if !o.is_null() {
+        let o = &*o;
+        if o.max_age_secs < 0 {
+            opts = opts.without_age_check();
+        } else {
+            opts.max_age = Some(Duration::from_secs(o.max_age_secs as u64));
+        }
+        if let Some(did) = c_str(o.expected_did) {
+            opts.expected_did = Some(did.to_string());
+        }
+        opts.disable_replay_check = o.disable_replay_check != 0;
+    }
+    opts
+}
+
+/// Write the headers added by signing into caller-provided entries.
+unsafe fn emit_headers(
+    original: &[(String, String)],
+    signed: &::http::HeaderMap,
+    out: *mut SageHttpHeader,
+    out_count: *mut size_t,
+) -> SageResult {
+    let had_digest = original
+        .iter()
+        .any(|(n, _)| n.eq_ignore_ascii_case("content-digest"));
+    let mut names: Vec<&str> = Vec::new();
+    if !had_digest && signed.contains_key("content-digest") {
+        names.push("content-digest");
+    }
+    names.push("signature-input");
+    names.push("signature");
+    if names.len() > *out_count {
+        *out_count = names.len();
+        return fail_with(
+            SageErrorCode::InvalidInput,
+            "output header buffer too small",
+        );
+    }
+    for (i, name) in names.iter().enumerate() {
+        let value = signed
+            .get(*name)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        (*out.add(i)).name = string_to_c(name);
+        (*out.add(i)).value = string_to_c(value);
+    }
+    *out_count = names.len();
+    SageErrorCode::Success.into()
+}
+
+/// Create a new HTTP signer. The `keyid` parameter defaults to the key id;
+/// set the agent DID with `sage_http_signer_set_key_id`.
 ///
 /// # Safety
-/// The caller must ensure that:
-/// - `keypair` is a valid pointer
-/// - `out_signer` is a valid pointer to a `*mut SageHttpSigner`
+/// `keypair` and `out_signer` must be valid pointers.
 #[no_mangle]
 pub unsafe extern "C" fn sage_http_signer_new(
     keypair: *const SageKeyPair,
@@ -57,18 +221,34 @@ pub unsafe extern "C" fn sage_http_signer_new(
     if keypair.is_null() || out_signer.is_null() {
         return SageErrorCode::InvalidInput.into();
     }
+    let signer = HttpSigner::new((*keypair).inner.clone());
+    *out_signer = Box::into_raw(Box::new(SageHttpSigner { inner: signer }));
+    SageErrorCode::Success.into()
+}
 
-    let keypair = &(*keypair).inner;
-    let signer = HttpSigner::new(keypair.clone());
-    let boxed = Box::new(SageHttpSigner { inner: signer });
-    *out_signer = Box::into_raw(boxed);
+/// Set the `keyid` parameter (`did:sage:…` or `did:sage:…#key-1`).
+///
+/// # Safety
+/// `signer` must be a valid signer and `key_id` a NUL-terminated string.
+#[no_mangle]
+pub unsafe extern "C" fn sage_http_signer_set_key_id(
+    signer: *mut SageHttpSigner,
+    key_id: *const c_char,
+) -> SageResult {
+    if signer.is_null() {
+        return SageErrorCode::InvalidInput.into();
+    }
+    let Some(key_id) = c_str(key_id) else {
+        return fail_with(SageErrorCode::InvalidInput, "key_id is not a valid string");
+    };
+    (*signer).inner.set_key_id(key_id);
     SageErrorCode::Success.into()
 }
 
 /// Free an HTTP signer
 ///
 /// # Safety
-/// The caller must ensure that `signer` is a valid pointer obtained from `sage_http_signer_new`.
+/// `signer` must have been returned by `sage_http_signer_new` or be NULL.
 #[no_mangle]
 pub unsafe extern "C" fn sage_http_signer_free(signer: *mut SageHttpSigner) {
     if !signer.is_null() {
@@ -76,14 +256,14 @@ pub unsafe extern "C" fn sage_http_signer_free(signer: *mut SageHttpSigner) {
     }
 }
 
-/// Sign an HTTP request
+/// Sign a request with the sage-spec default components. Returns the
+/// headers to add (`content-digest` when a body was given,
+/// `signature-input`, `signature`). On a too-small buffer the required
+/// count is written to `out_headers_count` and `InvalidInput` returned.
 ///
 /// # Safety
-/// The caller must ensure that:
-/// - `signer` is a valid pointer
-/// - `request` is a valid pointer to a properly initialized SageHttpRequest
-/// - `out_signed_headers` is a valid pointer with sufficient space
-/// - `out_headers_count` is a valid pointer
+/// All pointers must be valid; `out_signed_headers` must have room for
+/// `*out_headers_count` entries.
 #[no_mangle]
 pub unsafe extern "C" fn sage_http_signer_sign_request(
     signer: *const SageHttpSigner,
@@ -98,105 +278,84 @@ pub unsafe extern "C" fn sage_http_signer_sign_request(
     {
         return SageErrorCode::InvalidInput.into();
     }
-
-    let signer = &(*signer).inner;
     let request = &*request;
-
-    // Convert FFI request to Rust HTTP request
-    let method_str = match CStr::from_ptr(request.method).to_str() {
-        Ok(s) => s,
-        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    let original = match headers_of(request.headers, request.headers_count) {
+        Ok(h) => h,
+        Err(code) => return code,
     };
-    let uri_str = match CStr::from_ptr(request.uri).to_str() {
-        Ok(s) => s,
-        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    let http_request = match build_request(request) {
+        Ok(r) => r,
+        Err(code) => return code,
     };
-
-    // Build HTTP request
-    let mut builder = Request::builder().method(method_str).uri(uri_str);
-
-    // Add headers
-    let headers_slice = slice::from_raw_parts(request.headers, request.headers_count);
-    for header in headers_slice {
-        let name = match CStr::from_ptr(header.name).to_str() {
-            Ok(s) => s,
-            Err(_) => return SageErrorCode::InvalidInput as SageResult,
-        };
-        let value = match CStr::from_ptr(header.value).to_str() {
-            Ok(s) => s,
-            Err(_) => return SageErrorCode::InvalidInput as SageResult,
-        };
-        builder = builder.header(name, value);
-    }
-
-    // Add body
-    let body = if request.body.is_null() {
-        Vec::new()
-    } else {
-        slice::from_raw_parts(request.body, request.body_len).to_vec()
-    };
-
-    let http_request = match builder.body(body) {
-        Ok(req) => req,
-        Err(_) => return SageErrorCode::InvalidInput as SageResult,
-    };
-
-    // Sign the request
-    let body_for_digest = if http_request.body().is_empty() {
+    let body = http_request.body().clone();
+    let body_opt = if body.is_empty() {
         None
     } else {
-        Some(http_request.body().clone())
+        Some(body.as_slice())
     };
-    match signer.sign_request(http_request, body_for_digest.as_deref()) {
-        Ok(signed_request) => {
-            // Extract signature headers
-            let headers = signed_request.headers();
-            let mut header_count = 0;
-
-            // Count signature-related headers
-            if headers.contains_key("signature") {
-                header_count += 1;
-            }
-            if headers.contains_key("signature-input") {
-                header_count += 1;
-            }
-
-            if header_count > *out_headers_count {
-                *out_headers_count = header_count;
-                return SageErrorCode::InvalidInput.into();
-            }
-
-            // Fill output headers
-            let mut idx = 0;
-            if let Some(sig_header) = headers.get("signature") {
-                let sig_name = string_to_c("signature");
-                let sig_value = string_to_c(sig_header.to_str().unwrap());
-                (*out_signed_headers.add(idx)).name = sig_name;
-                (*out_signed_headers.add(idx)).value = sig_value;
-                idx += 1;
-            }
-
-            if let Some(sig_input_header) = headers.get("signature-input") {
-                let sig_input_name = string_to_c("signature-input");
-                let sig_input_value = string_to_c(sig_input_header.to_str().unwrap());
-                (*out_signed_headers.add(idx)).name = sig_input_name;
-                (*out_signed_headers.add(idx)).value = sig_input_value;
-                idx += 1;
-            }
-
-            *out_headers_count = idx;
-            SageErrorCode::Success.into()
-        }
-        Err(e) => SageErrorCode::from(e).into(),
+    match (*signer).inner.sign_request(http_request, body_opt) {
+        Ok(signed) => emit_headers(
+            &original,
+            signed.headers(),
+            out_signed_headers,
+            out_headers_count,
+        ),
+        Err(e) => fail(e),
     }
 }
 
-/// Create a new HTTP verifier
+/// Sign a response bound to the request it answers (reference responder
+/// component set). Returns the headers to add to the response.
 ///
 /// # Safety
-/// The caller must ensure that:
-/// - `public_key` is a valid pointer
-/// - `out_verifier` is a valid pointer to a `*mut SageHttpVerifier`
+/// All pointers must be valid; `out_signed_headers` must have room for
+/// `*out_headers_count` entries.
+#[no_mangle]
+pub unsafe extern "C" fn sage_http_signer_sign_response(
+    signer: *const SageHttpSigner,
+    request: *const SageHttpRequest,
+    response: *const SageHttpResponse,
+    out_signed_headers: *mut SageHttpHeader,
+    out_headers_count: *mut size_t,
+) -> SageResult {
+    if signer.is_null()
+        || request.is_null()
+        || response.is_null()
+        || out_signed_headers.is_null()
+        || out_headers_count.is_null()
+    {
+        return SageErrorCode::InvalidInput.into();
+    }
+    let response = &*response;
+    let original = match headers_of(response.headers, response.headers_count) {
+        Ok(h) => h,
+        Err(code) => return code,
+    };
+    let (req, resp) = match (build_request(&*request), build_response(response)) {
+        (Ok(r), Ok(s)) => (r, s),
+        (Err(code), _) | (_, Err(code)) => return code,
+    };
+    let body = resp.body().clone();
+    let body_opt = if body.is_empty() {
+        None
+    } else {
+        Some(body.as_slice())
+    };
+    match (*signer).inner.sign_response(resp, &req, body_opt) {
+        Ok(signed) => emit_headers(
+            &original,
+            signed.headers(),
+            out_signed_headers,
+            out_headers_count,
+        ),
+        Err(e) => fail(e),
+    }
+}
+
+/// Create a new HTTP verifier for `public_key` (with an in-memory replay guard).
+///
+/// # Safety
+/// `public_key` and `out_verifier` must be valid pointers.
 #[no_mangle]
 pub unsafe extern "C" fn sage_http_verifier_new(
     public_key: *const SagePublicKey,
@@ -205,18 +364,15 @@ pub unsafe extern "C" fn sage_http_verifier_new(
     if public_key.is_null() || out_verifier.is_null() {
         return SageErrorCode::InvalidInput.into();
     }
-
-    let public_key = &(*public_key).inner;
-    let verifier = HttpVerifier::new(public_key.clone());
-    let boxed = Box::new(SageHttpVerifier { inner: verifier });
-    *out_verifier = Box::into_raw(boxed);
+    let verifier = HttpVerifier::new((*public_key).inner.clone());
+    *out_verifier = Box::into_raw(Box::new(SageHttpVerifier { inner: verifier }));
     SageErrorCode::Success.into()
 }
 
 /// Free an HTTP verifier
 ///
 /// # Safety
-/// The caller must ensure that `verifier` is a valid pointer obtained from `sage_http_verifier_new`.
+/// `verifier` must have been returned by `sage_http_verifier_new` or be NULL.
 #[no_mangle]
 pub unsafe extern "C" fn sage_http_verifier_free(verifier: *mut SageHttpVerifier) {
     if !verifier.is_null() {
@@ -224,84 +380,107 @@ pub unsafe extern "C" fn sage_http_verifier_free(verifier: *mut SageHttpVerifier
     }
 }
 
-/// Verify an HTTP request signature
+/// Verify a request with the default options (see
+/// `sage_http_verifier_verify_request_with` for the strict policy).
 ///
 /// # Safety
-/// The caller must ensure that:
-/// - `verifier` is a valid pointer
-/// - `request` is a valid pointer to a properly initialized SageHttpRequest
+/// `verifier` and `request` must be valid pointers.
 #[no_mangle]
 pub unsafe extern "C" fn sage_http_verifier_verify_request(
     verifier: *const SageHttpVerifier,
     request: *const SageHttpRequest,
 ) -> SageResult {
+    sage_http_verifier_verify_request_with(verifier, request, ptr::null())
+}
+
+/// Verify a request with explicit options. The body of `request` is
+/// checked against `Content-Digest` when it is covered.
+///
+/// # Safety
+/// `verifier` and `request` must be valid; `options` may be NULL.
+#[no_mangle]
+pub unsafe extern "C" fn sage_http_verifier_verify_request_with(
+    verifier: *const SageHttpVerifier,
+    request: *const SageHttpRequest,
+    options: *const SageVerifyOptions,
+) -> SageResult {
     if verifier.is_null() || request.is_null() {
         return SageErrorCode::InvalidInput.into();
     }
-
-    let verifier = &(*verifier).inner;
-    let request = &*request;
-
-    // Convert FFI request to Rust HTTP request
-    let method_str = match CStr::from_ptr(request.method).to_str() {
-        Ok(s) => s,
-        Err(_) => return SageErrorCode::InvalidInput as SageResult,
+    let req = match build_request(&*request) {
+        Ok(r) => r,
+        Err(code) => return code,
     };
-    let uri_str = match CStr::from_ptr(request.uri).to_str() {
-        Ok(s) => s,
-        Err(_) => return SageErrorCode::InvalidInput as SageResult,
-    };
-
-    // Build HTTP request
-    let mut builder = Request::builder().method(method_str).uri(uri_str);
-
-    // Add headers
-    let headers_slice = slice::from_raw_parts(request.headers, request.headers_count);
-    for header in headers_slice {
-        let name = match CStr::from_ptr(header.name).to_str() {
-            Ok(s) => s,
-            Err(_) => return SageErrorCode::InvalidInput as SageResult,
-        };
-        let value = match CStr::from_ptr(header.value).to_str() {
-            Ok(s) => s,
-            Err(_) => return SageErrorCode::InvalidInput as SageResult,
-        };
-        builder = builder.header(name, value);
-    }
-
-    // Add body
-    let body = if request.body.is_null() {
-        Vec::new()
+    let body = req.body().clone();
+    let body_opt = if body.is_empty() {
+        None
     } else {
-        slice::from_raw_parts(request.body, request.body_len).to_vec()
+        Some(body.as_slice())
     };
-
-    let http_request = match builder.body(body) {
-        Ok(req) => req,
-        Err(_) => return SageErrorCode::InvalidInput as SageResult,
-    };
-
-    // Verify the request
-    match verifier.verify_request(&http_request) {
+    let opts = options_of(options, false);
+    match (*verifier).inner.verify_request_with(&req, body_opt, &opts) {
         Ok(()) => SageErrorCode::Success.into(),
-        Err(_) => SageErrorCode::VerificationFailed.into(),
+        Err(e) => {
+            let msg = format!("{e}");
+            fail_with(SageErrorCode::VerificationFailed, &msg)
+        }
     }
 }
 
-/// Free HTTP headers allocated by this library
+/// Verify a response against the request it answers.
 ///
 /// # Safety
-/// The caller must ensure that `headers` is a valid pointer with `count` elements.
+/// `verifier`, `request` and `response` must be valid; `options` may be NULL.
+#[no_mangle]
+pub unsafe extern "C" fn sage_http_verifier_verify_response(
+    verifier: *const SageHttpVerifier,
+    request: *const SageHttpRequest,
+    response: *const SageHttpResponse,
+    options: *const SageVerifyOptions,
+) -> SageResult {
+    if verifier.is_null() || request.is_null() || response.is_null() {
+        return SageErrorCode::InvalidInput.into();
+    }
+    let (req, resp) = match (build_request(&*request), build_response(&*response)) {
+        (Ok(r), Ok(s)) => (r, s),
+        (Err(code), _) | (_, Err(code)) => return code,
+    };
+    let body = resp.body().clone();
+    let body_opt = if body.is_empty() {
+        None
+    } else {
+        Some(body.as_slice())
+    };
+    let opts = options_of(options, true);
+    match (*verifier)
+        .inner
+        .verify_response(&resp, &req, body_opt, &opts)
+    {
+        Ok(()) => SageErrorCode::Success.into(),
+        Err(e) => {
+            let msg = format!("{e}");
+            fail_with(SageErrorCode::VerificationFailed, &msg)
+        }
+    }
+}
+
+/// Free headers returned by the signing functions.
+///
+/// # Safety
+/// `headers` must point to `count` entries whose strings were allocated by
+/// this library.
 #[no_mangle]
 pub unsafe extern "C" fn sage_http_headers_free(headers: *mut SageHttpHeader, count: size_t) {
     if !headers.is_null() {
         for i in 0..count {
             let header = &mut *headers.add(i);
             if !header.name.is_null() {
-                sage_string_free(header.name as *mut c_char);
+                let _ = CString::from_raw(header.name as *mut c_char);
+                header.name = ptr::null();
             }
             if !header.value.is_null() {
-                sage_string_free(header.value as *mut c_char);
+                let _ = CString::from_raw(header.value as *mut c_char);
+                header.value = ptr::null();
             }
         }
     }

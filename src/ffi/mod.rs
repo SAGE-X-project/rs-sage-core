@@ -11,12 +11,14 @@ pub mod formats;
 pub mod http;
 pub mod keypair;
 pub mod signature;
+pub mod spec;
 pub mod utils;
 
 pub use formats::*;
 pub use http::*;
 pub use keypair::*;
 pub use signature::*;
+pub use spec::*;
 pub use utils::*;
 
 /// Error codes for FFI
@@ -83,6 +85,8 @@ pub enum SageKeyType {
     Ed25519 = 0,
     /// Secp256k1 key type
     Secp256k1 = 1,
+    /// P-256 key type
+    P256 = 2,
 }
 
 impl From<SageKeyType> for KeyType {
@@ -90,6 +94,7 @@ impl From<SageKeyType> for KeyType {
         match key_type {
             SageKeyType::Ed25519 => KeyType::Ed25519,
             SageKeyType::Secp256k1 => KeyType::Secp256k1,
+            SageKeyType::P256 => KeyType::P256,
         }
     }
 }
@@ -99,7 +104,7 @@ impl From<KeyType> for SageKeyType {
         match key_type {
             KeyType::Ed25519 => SageKeyType::Ed25519,
             KeyType::Secp256k1 => SageKeyType::Secp256k1,
-            KeyType::P256 => SageKeyType::Secp256k1, // Map P256 to Secp256k1 for FFI
+            KeyType::P256 => SageKeyType::P256,
         }
     }
 }
@@ -139,12 +144,22 @@ thread_local! {
 }
 
 /// Set the thread-local error message
-#[allow(dead_code)] // the exported functions do not report errors through it yet (F-03 FFI rework)
-fn set_last_error(err: Error) {
+/// Record the message of `err` for `sage_last_error` and return its code.
+pub(crate) fn fail(err: Error) -> SageResult {
+    let message = format!("{err}");
+    let code: SageErrorCode = SageErrorCode::from(err);
     LAST_ERROR.with(|last| {
-        let error_msg = format!("{err}");
-        *last.borrow_mut() = CString::new(error_msg).ok();
+        *last.borrow_mut() = CString::new(message).ok();
     });
+    code.into()
+}
+
+/// Record a message for `sage_last_error` and return `code`.
+pub(crate) fn fail_with(code: SageErrorCode, message: &str) -> SageResult {
+    LAST_ERROR.with(|last| {
+        *last.borrow_mut() = CString::new(message).ok();
+    });
+    code.into()
 }
 
 /// Clear the thread-local error message

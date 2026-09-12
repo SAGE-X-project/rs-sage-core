@@ -77,23 +77,27 @@ let signature = keypair.sign_string("Hello, World!")?;
 
 ### HTTP Signatures
 ```c
-// C
+// C (include/sage_crypto.h)
 SageHttpSigner* signer;
 sage_http_signer_new(keypair, &signer);
-SageHttpSignature* sig;
-sage_http_signer_sign_request(signer, &request, &sig);
+sage_http_signer_set_key_id(signer, "did:sage:ethereum:0x...");
+SageHttpHeader added[3]; size_t added_len = 3;
+sage_http_signer_sign_request(signer, &request, added, &added_len);
+/* add `added` (content-digest, signature-input, signature) to the request */
+sage_http_headers_free(added, added_len);
 ```
 
 ```javascript
-// JavaScript
+// JavaScript (headers are JSON strings)
 const signer = new WasmHttpSigner(keyPair);
-const signedHeaders = signer.signSimpleRequest(request);
+signer.setKeyId("did:sage:ethereum:0x...");
+const added = JSON.parse(signer.signRequest("POST", url, JSON.stringify(headers), body));
 ```
 
 ```rust
 // Rust
-let signer = HttpSigner::new(keypair);
-let signature = signer.sign_request(&request)?;
+let signer = HttpSigner::new(keypair).with_key_id("did:sage:ethereum:0x...");
+let signed = signer.sign_request(request, Some(&body))?;
 ```
 
 ## Error Handling

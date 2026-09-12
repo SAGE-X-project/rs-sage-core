@@ -61,5 +61,10 @@ target/doc/
 target/criterion/
 
 # FFI generated files
-include/sage_crypto.h
 .sage-spec/
+
+# Built FFI example
+examples/ffi/basic
+
+# wasm-pack output (built by `make wasm` and CI)
+pkg/

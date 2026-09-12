@@ -2,16 +2,13 @@
 
 Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in Rust.
 
-> **Status (2026-09-12): not wire-compatible with the Go core (`sage` v1.5).**
-> This crate ports an earlier revision of the protocol. It signs secp256k1
-> messages over SHA-256 instead of Keccak-256, encrypts sessions with
-> AES-256-GCM and a counter nonce instead of ChaCha20-Poly1305 with a sequence
-> header and replay window, has no JCS (RFC 8785) canonicalisation, and keeps
-> a four-phase handshake that the Go core has removed. It is being aligned to
-> the protocol specification in
-> [sage-spec](https://github.com/SAGE-X-project/sage-spec); until that lands,
-> do not use it to interoperate with the Go core. The alignment plan is in
-> [sage/docs/refactoring/v2/REPO_PLAN.md](https://github.com/SAGE-X-project/sage/blob/main/docs/refactoring/v2/REPO_PLAN.md).
+> **Status (2026-09-12): aligned with [sage-spec](https://github.com/SAGE-X-project/sage-spec) 1.0.0-draft.1.**
+> Signatures, JCS, RFC 9421 HTTP message signatures, session records, the HPKE
+> handshake and `did:sage` all pass the shared test vectors byte for byte
+> (`cargo test --test spec_vectors` with a sage-spec checkout). Live
+> interoperability with the Go core over the wire has not been exercised yet;
+> the tracking plan is in
+> [sage/docs/refactoring/v2/RS_SAGE_CORE_ALIGNMENT.md](https://github.com/SAGE-X-project/sage/blob/main/docs/refactoring/v2/RS_SAGE_CORE_ALIGNMENT.md).
 
 ## Features
 
