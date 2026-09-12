@@ -80,9 +80,7 @@ jobs:
 
     - name: Build and run the FFI example (Linux only)
       if: runner.os == 'Linux' && matrix.rust != 'nightly'
-      run: |
-        make -C examples/ffi
-        ./examples/ffi/basic
+      run: make -C examples/ffi run
 
   security-audit:
     name: Security Audit
