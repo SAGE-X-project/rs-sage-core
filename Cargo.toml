@@ -31,6 +31,7 @@ zeroize = { version = "1.7", features = ["derive"] }
 
 # Phase 6: Production Security (AES-GCM)
 chacha20poly1305 = "0.10"
+hpke = { version = "0.14", default-features = false, features = ["x25519", "alloc", "chacha", "getrandom"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

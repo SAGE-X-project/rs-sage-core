@@ -24,7 +24,7 @@ struct Vector {
 }
 
 /// Suites and vectors this crate does not implement yet (F-03 steps 3-7).
-const NOT_YET: &[&str] = &["hpke", "did"];
+const NOT_YET: &[&str] = &["did"];
 
 fn vectors_dir() -> PathBuf {
     if let Ok(d) = std::env::var("SAGE_SPEC_VECTORS") {
@@ -482,6 +482,147 @@ fn session_suite() {
     assert!(
         failures.is_empty(),
         "session vectors failed:\n{}",
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn hpke_suite() {
+    use sage_crypto_core::hpke::{
+        combine_secrets, derive_traffic_keys, kem_open, make_ack_tag, DefaultInfoBuilder,
+        InfoBuilder,
+    };
+    let f = load("hpke");
+    let mut failures: Vec<String> = Vec::new();
+    for v in &f.vectors {
+        let mut detail: Vec<String> = Vec::new();
+        match v.name.as_str() {
+            "info-and-export-context" => {
+                let info = DefaultInfoBuilder.build_info(
+                    str_field(&v.input, "context_id"),
+                    str_field(&v.input, "init_did"),
+                    str_field(&v.input, "resp_did"),
+                );
+                let ectx =
+                    DefaultInfoBuilder.build_export_context(str_field(&v.input, "context_id"));
+                if info != str_field(&v.output, "info").as_bytes() {
+                    detail.push("info".into());
+                }
+                if ectx != str_field(&v.output, "export_context").as_bytes() {
+                    detail.push("export_context".into());
+                }
+                if hex::encode(sage_crypto_core::hpke::sha256_hash(&info))
+                    != str_field(&v.output, "info_sha256")
+                {
+                    detail.push("info_sha256".into());
+                }
+            }
+            "x25519-e2e-shared-secret" => {
+                let a = seed_from_label(str_field(&v.input, "init_label"));
+                let b = seed_from_label(str_field(&v.input, "resp_label"));
+                let pa = x25519_dalek::x25519(a, x25519_dalek::X25519_BASEPOINT_BYTES);
+                let pb = x25519_dalek::x25519(b, x25519_dalek::X25519_BASEPOINT_BYTES);
+                if pa.to_vec() != hex_field(&v.output, "init_public") {
+                    detail.push("init_public".into());
+                }
+                if pb.to_vec() != hex_field(&v.output, "resp_public") {
+                    detail.push("resp_public".into());
+                }
+                if x25519_dalek::x25519(a, pb).to_vec() != hex_field(&v.output, "shared_secret") {
+                    detail.push("shared_secret".into());
+                }
+            }
+            "combine-secrets" => {
+                let ectx =
+                    DefaultInfoBuilder.build_export_context(str_field(&v.input, "context_id"));
+                let seed = combine_secrets(
+                    &hex_field(&v.input, "exporter_hpke"),
+                    &hex_field(&v.input, "ss_e2e"),
+                    &ectx,
+                )
+                .unwrap();
+                if hex::encode(&*seed) != str_field(&v.output, "seed") {
+                    detail.push("seed".into());
+                }
+            }
+            "traffic-keys" => {
+                let tk = derive_traffic_keys(&hex_field(&v.input, "seed")).unwrap();
+                for (name, got) in [
+                    ("c2s_key", tk.c2s_key.to_vec()),
+                    ("c2s_iv", tk.c2s_iv.to_vec()),
+                    ("s2c_key", tk.s2c_key.to_vec()),
+                    ("s2c_iv", tk.s2c_iv.to_vec()),
+                    ("channel_binding", tk.channel_binding.to_vec()),
+                ] {
+                    if got != hex_field(&v.output, name) {
+                        detail.push(name.into());
+                    }
+                }
+            }
+            "ack-tag" => {
+                let ctx = str_field(&v.input, "context_id");
+                let info = DefaultInfoBuilder.build_info(
+                    ctx,
+                    str_field(&v.input, "init_did"),
+                    str_field(&v.input, "resp_did"),
+                );
+                let ectx = DefaultInfoBuilder.build_export_context(ctx);
+                let (enc, eph_c, eph_s) = (
+                    hex_field(&v.input, "enc"),
+                    hex_field(&v.input, "eph_c"),
+                    hex_field(&v.input, "eph_s"),
+                );
+                let tag = make_ack_tag(
+                    &hex_field(&v.input, "seed"),
+                    ctx,
+                    str_field(&v.input, "nonce"),
+                    str_field(&v.input, "kid"),
+                    &[
+                        &info,
+                        &ectx,
+                        &enc,
+                        &eph_c,
+                        &eph_s,
+                        str_field(&v.input, "init_did").as_bytes(),
+                        str_field(&v.input, "resp_did").as_bytes(),
+                    ],
+                )
+                .unwrap();
+                if hex::encode(&tag) != str_field(&v.output, "ack_tag") {
+                    detail.push("ack_tag".into());
+                }
+            }
+            "hpke-export-roundtrip" => {
+                let sk = seed_from_label(str_field(&v.input, "resp_label"));
+                let ctx = str_field(&v.input, "context_id");
+                let info = DefaultInfoBuilder.build_info(
+                    ctx,
+                    str_field(&v.input, "init_did"),
+                    str_field(&v.input, "resp_did"),
+                );
+                let ectx = DefaultInfoBuilder.build_export_context(ctx);
+                if x25519_dalek::x25519(sk, x25519_dalek::X25519_BASEPOINT_BYTES).to_vec()
+                    != hex_field(&v.output, "resp_public")
+                {
+                    detail.push("resp_public".into());
+                }
+                match kem_open(&sk, &hex_field(&v.output, "enc"), &info, &ectx) {
+                    Ok(exp) if *exp == hex_field(&v.output, "exporter") => {}
+                    Ok(_) => detail.push("exporter mismatch".into()),
+                    Err(e) => detail.push(format!("kem_open: {e}")),
+                }
+            }
+            other => detail.push(format!("{other}: unknown vector")),
+        }
+        if detail.is_empty() {
+            println!("pass hpke/{}", v.name);
+        } else {
+            failures.push(format!("{}: {}", v.name, detail.join(", ")));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "hpke vectors failed:\n{}",
         failures.join("\n")
     );
 }
