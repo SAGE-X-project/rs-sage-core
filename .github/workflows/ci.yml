@@ -68,20 +68,21 @@ jobs:
     - name: Build FFI
       run: cargo build --release --features ffi
 
-    - name: Test FFI examples (Linux only)
+    - name: Check the C header is current (Linux only)
+      if: runner.os == 'Linux' && matrix.rust != 'nightly'
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cbindgen@0.29.4
+
+    - name: Verify include/sage_crypto.h matches src/ffi (Linux only)
+      if: runner.os == 'Linux' && matrix.rust != 'nightly'
+      run: make header-check
+
+    - name: Build and run the FFI example (Linux only)
       if: runner.os == 'Linux' && matrix.rust != 'nightly'
       run: |
-        # Check if FFI library was built
-        ls -la target/release/
-        # Try to build FFI example
-        cd examples/ffi
-        make || echo "FFI example build failed"
-        # Run if built successfully
-        if [ -f basic ]; then
-          ./basic || echo "FFI example execution failed"
-        else
-          echo "FFI example binary not found, skipping execution"
-        fi
+        make -C examples/ffi
+        ./examples/ffi/basic
 
   security-audit:
     name: Security Audit

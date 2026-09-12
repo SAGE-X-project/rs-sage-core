@@ -1,4 +1,4 @@
-.PHONY: all build test bench clean docs release
+.PHONY: all build test bench clean docs release ffi header header-check wasm build-all
 
 # Default target
 all: build test
@@ -28,6 +28,15 @@ ffi:
 	cargo build --release --features ffi
 	@echo "FFI library built at target/release/"
 	@ls -la target/release/libsage_crypto_core.*
+
+# Regenerate the C header from src/ffi (requires cbindgen)
+header:
+	@command -v cbindgen >/dev/null 2>&1 || { echo "Installing cbindgen..."; cargo install cbindgen --locked; }
+	cbindgen --config cbindgen.toml --crate sage_crypto_core --output include/sage_crypto.h
+
+# Fail when include/sage_crypto.h is out of date
+header-check: header
+	@git diff --exit-code -- include/sage_crypto.h || { echo "include/sage_crypto.h is stale; run 'make header'"; exit 1; }
 
 # Build WASM
 wasm:

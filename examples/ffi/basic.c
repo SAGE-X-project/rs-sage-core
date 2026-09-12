@@ -65,7 +65,7 @@ int main() {
     printf("\nSigned message: \"%s\"\n", message);
 
     // Export signature
-    uint8_t sig_bytes[64];
+    uint8_t sig_bytes[65]; /* Ed25519 64 bytes; secp256k1 r||s||v is 65 */
     size_t sig_len = sizeof(sig_bytes);
     result = sage_signature_export(signature, sig_bytes, &sig_len);
     if (result == SAGE_SUCCESS) {

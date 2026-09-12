@@ -61,5 +61,7 @@ target/doc/
 target/criterion/
 
 # FFI generated files
-include/sage_crypto.h
 .sage-spec/
+
+# Built FFI example
+examples/ffi/basic
