@@ -3,11 +3,19 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use sage_crypto_core::session::{Session, SessionManager, SessionManagerConfig};
 
+/// Benchmarks encrypt far more messages than a session normally carries.
+fn unlimited() -> sage_crypto_core::session::SessionOpts {
+    sage_crypto_core::session::SessionOpts {
+        config: sage_crypto_core::session::SessionConfig {
+            max_messages: usize::MAX,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
 fn bench_session_creation_from_exporter(c: &mut Criterion) {
-    // Benchmarks encrypt far more messages than a session normally carries.
-    let mut config = SessionManagerConfig::default();
-    config.default_session_config.max_messages = usize::MAX;
-    let manager = SessionManager::new(config);
+    let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
 
     c.bench_function("session_creation_from_exporter", |b| {
@@ -25,13 +33,10 @@ fn bench_session_creation_from_exporter(c: &mut Criterion) {
 }
 
 fn bench_session_encrypt(c: &mut Criterion) {
-    // Benchmarks encrypt far more messages than a session normally carries.
-    let mut config = SessionManagerConfig::default();
-    config.default_session_config.max_messages = usize::MAX;
-    let manager = SessionManager::new(config);
+    let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
     let (session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, Some(unlimited()))
         .unwrap();
 
     let plaintext = b"Benchmark message for encryption performance test with reasonable length";
@@ -42,16 +47,13 @@ fn bench_session_encrypt(c: &mut Criterion) {
 }
 
 fn bench_session_decrypt(c: &mut Criterion) {
-    // Benchmarks encrypt far more messages than a session normally carries.
-    let mut config = SessionManagerConfig::default();
-    config.default_session_config.max_messages = usize::MAX;
-    let manager = SessionManager::new(config);
+    let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
     let (alice_session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, Some(unlimited()))
         .unwrap();
     let (bob_session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", false, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", false, Some(unlimited()))
         .unwrap();
 
     let plaintext = b"Benchmark message for decryption performance test with reasonable length";
@@ -63,13 +65,10 @@ fn bench_session_decrypt(c: &mut Criterion) {
 }
 
 fn bench_session_encrypt_and_sign(c: &mut Criterion) {
-    // Benchmarks encrypt far more messages than a session normally carries.
-    let mut config = SessionManagerConfig::default();
-    config.default_session_config.max_messages = usize::MAX;
-    let manager = SessionManager::new(config);
+    let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
     let (session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, Some(unlimited()))
         .unwrap();
 
     let plaintext = b"Benchmark message for MAC authentication performance test";
@@ -85,16 +84,13 @@ fn bench_session_encrypt_and_sign(c: &mut Criterion) {
 }
 
 fn bench_session_decrypt_and_verify(c: &mut Criterion) {
-    // Benchmarks encrypt far more messages than a session normally carries.
-    let mut config = SessionManagerConfig::default();
-    config.default_session_config.max_messages = usize::MAX;
-    let manager = SessionManager::new(config);
+    let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
     let (alice_session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, Some(unlimited()))
         .unwrap();
     let (bob_session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", false, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", false, Some(unlimited()))
         .unwrap();
 
     let plaintext = b"Benchmark message for MAC authentication performance test";
@@ -111,16 +107,13 @@ fn bench_session_decrypt_and_verify(c: &mut Criterion) {
 }
 
 fn bench_session_bidirectional_communication(c: &mut Criterion) {
-    // Benchmarks encrypt far more messages than a session normally carries.
-    let mut config = SessionManagerConfig::default();
-    config.default_session_config.max_messages = usize::MAX;
-    let manager = SessionManager::new(config);
+    let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
     let (alice_session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, Some(unlimited()))
         .unwrap();
     let (bob_session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", false, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", false, Some(unlimited()))
         .unwrap();
 
     c.bench_function("session_bidirectional_communication", |b| {
@@ -139,13 +132,10 @@ fn bench_session_bidirectional_communication(c: &mut Criterion) {
 }
 
 fn bench_session_key_binding(c: &mut Criterion) {
-    // Benchmarks encrypt far more messages than a session normally carries.
-    let mut config = SessionManagerConfig::default();
-    config.default_session_config.max_messages = usize::MAX;
-    let manager = SessionManager::new(config);
+    let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
     let (_, session_id, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, Some(unlimited()))
         .unwrap();
 
     c.bench_function("session_key_binding", |b| {
@@ -169,7 +159,12 @@ fn bench_session_cleanup(c: &mut Criterion) {
             for i in 0..10 {
                 let ctx = format!("ctx-{i}");
                 let _ = manager
-                    .ensure_session_from_exporter_with_role(&exporter, &ctx, true, None)
+                    .ensure_session_from_exporter_with_role(
+                        &exporter,
+                        &ctx,
+                        true,
+                        Some(unlimited()),
+                    )
                     .unwrap();
             }
 
@@ -181,13 +176,10 @@ fn bench_session_cleanup(c: &mut Criterion) {
 
 fn bench_session_encryption_sizes(c: &mut Criterion) {
     let mut group = c.benchmark_group("session_encryption_sizes");
-    // Benchmarks encrypt far more messages than a session normally carries.
-    let mut config = SessionManagerConfig::default();
-    config.default_session_config.max_messages = usize::MAX;
-    let manager = SessionManager::new(config);
+    let manager = SessionManager::new(SessionManagerConfig::default());
     let exporter = vec![0x42u8; 32];
     let (session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, Some(unlimited()))
         .unwrap();
 
     for size in [64, 256, 1024, 4096, 16384].iter() {
@@ -208,7 +200,7 @@ fn bench_concurrent_session_access(c: &mut Criterion) {
     let manager = Arc::new(SessionManager::new(SessionManagerConfig::default()));
     let exporter = vec![0x42u8; 32];
     let (session, _, _) = manager
-        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
+        .ensure_session_from_exporter_with_role(&exporter, "ctx", true, Some(unlimited()))
         .unwrap();
     let session = Arc::new(session);
 
