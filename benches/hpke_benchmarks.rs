@@ -82,7 +82,7 @@ fn bench_verify_ack_tag(c: &mut Criterion) {
 fn bench_traffic_key_derivation_sizes(c: &mut Criterion) {
     let mut group = c.benchmark_group("traffic_key_derivation_sizes");
 
-    for size in [16, 32, 64, 128].iter() {
+    for size in [32, 64, 128].iter() {
         let seed = vec![0x42u8; *size];
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
