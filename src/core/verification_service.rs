@@ -230,7 +230,7 @@ impl VerificationService {
         // Add RFC 9421 signature headers
         // Format: "sig1=:base64_signature:"
         let signature_base64 = base64::engine::general_purpose::STANDARD.encode(&message.signature);
-        let signature_header = format!("sig1=:{signature_base64}");
+        let signature_header = format!("sig1=:{signature_base64}:");
 
         request_builder = request_builder
             .header("signature", signature_header)
@@ -1382,7 +1382,7 @@ mod tests {
         // Create and sign an HTTP request
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         // Extract signature from signed request
         let signature_header = signed_request
@@ -1445,7 +1445,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1509,7 +1509,7 @@ mod tests {
         // Sign the message (signature will be valid)
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1574,7 +1574,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1640,7 +1640,7 @@ mod tests {
         // Sign with keypair1
         let signer = HttpSigner::new(keypair1.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1699,7 +1699,7 @@ mod tests {
             // Sign the message
             let signer = HttpSigner::new(keypair.clone());
             let request = service.reconstruct_http_request(&msg).unwrap();
-            let signed_request = signer.sign_request(request).unwrap();
+            let signed_request = signer.sign_request(request, None).unwrap();
 
             let signature_header = signed_request
                 .headers()
@@ -1755,7 +1755,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1814,7 +1814,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1882,7 +1882,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()

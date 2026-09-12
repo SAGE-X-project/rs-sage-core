@@ -180,7 +180,7 @@ fn test_http_signature_replay_protection() {
         .body(())
         .unwrap();
 
-    let signed1 = signer1.sign_request(request1).unwrap();
+    let signed1 = signer1.sign_request(request1, None).unwrap();
 
     let request2 = http::Request::builder()
         .method("POST")
@@ -188,7 +188,7 @@ fn test_http_signature_replay_protection() {
         .body(())
         .unwrap();
 
-    let signed2 = signer2.sign_request(request2).unwrap();
+    let signed2 = signer2.sign_request(request2, None).unwrap();
 
     // Signatures should be different due to different timestamps
     let sig1 = signed1.headers().get("signature").unwrap();

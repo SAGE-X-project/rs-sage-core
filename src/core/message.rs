@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use crate::crypto::keys::KeyPair;
 use crate::error::Result;
 use crate::rfc9421::{HttpSigner, SignatureComponent};
-use base64::Engine;
 
 /// Represents a SAGE message with RFC 9421 signature
 #[derive(Debug, Clone)]
@@ -183,7 +182,7 @@ impl MessageBuilder {
         // Sign the request
         let signer =
             HttpSigner::new(keypair.clone()).with_default_components(self.components.clone());
-        let signed_request = signer.sign_request(request)?;
+        let signed_request = signer.sign_request(request, Some(&self.body))?;
 
         // Extract signature from headers
         let signature_header = signed_request
@@ -200,13 +199,10 @@ impl MessageBuilder {
             .to_string();
 
         // Parse signature value (format: "sig1=:base64:")
-        let signature_bytes = if let Some(sig_val) = signature_header.strip_prefix("sig1=:") {
-            base64::engine::general_purpose::STANDARD
-                .decode(sig_val)
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+        let signature_bytes = crate::rfc9421::parse_signature_header(signature_header)
+            .ok()
+            .and_then(|m| m.get("sig1").cloned())
+            .unwrap_or_default();
 
         // Extract signed fields from signature-input
         let signed_fields = self

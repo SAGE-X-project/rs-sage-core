@@ -86,7 +86,7 @@ fn test_http_message_signing() {
         .unwrap();
 
     // Sign the request
-    let signed_request = signer.sign_request(request).unwrap();
+    let signed_request = signer.sign_request(request, None).unwrap();
 
     // Verify signatures were added
     assert!(signed_request.headers().contains_key("signature"));
@@ -110,7 +110,14 @@ fn test_http_response_signing() {
         .unwrap();
 
     // Sign the response
-    let signed_response = signer.sign_response(response).unwrap();
+    let bound_request = http::Request::builder()
+        .method("GET")
+        .uri("https://example.com/")
+        .body(())
+        .unwrap();
+    let signed_response = signer
+        .sign_response(response, &bound_request, None)
+        .unwrap();
 
     // Verify signatures were added
     assert!(signed_response.headers().contains_key("signature"));
@@ -118,7 +125,14 @@ fn test_http_response_signing() {
 
     // Verify the signature
     let verifier = HttpVerifier::new(keypair.public_key().clone());
-    assert!(verifier.verify_response(&signed_response).is_ok());
+    assert!(verifier
+        .verify_response(
+            &signed_response,
+            &bound_request,
+            None,
+            &sage_crypto_core::rfc9421::VerifyOptions::default()
+        )
+        .is_ok());
 }
 
 #[test]
@@ -133,7 +147,7 @@ fn test_signature_expiration() {
         .body(())
         .unwrap();
 
-    let signed_request = signer.sign_request(request).unwrap();
+    let signed_request = signer.sign_request(request, None).unwrap();
 
     // Extract signature-input header
     let sig_input = signed_request
@@ -143,9 +157,9 @@ fn test_signature_expiration() {
         .to_str()
         .unwrap();
 
-    // Verify it contains created and expires parameters
+    // Verify it contains created and nonce parameters (expires is optional)
     assert!(sig_input.contains("created="));
-    assert!(sig_input.contains("expires="));
+    assert!(sig_input.contains("nonce="));
 }
 
 #[test]

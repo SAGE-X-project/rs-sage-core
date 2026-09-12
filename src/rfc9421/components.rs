@@ -1,409 +1,340 @@
-//! HTTP signature components for RFC 9421
+//! Signature components and parameters for RFC 9421 (sage-spec `03-rfc9421.md`).
 
+use crate::error::{Error, Result};
 use std::fmt;
 
-/// Signature component identifier
+/// A covered component: a derived component, a header, or one of those
+/// bound to the request of a response (`;req`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignatureComponent {
-    /// HTTP method
+    /// `@method`
     Method,
-    /// Target URI
+    /// `@target-uri`
     TargetUri,
-    /// Authority (host)
+    /// `@authority`
     Authority,
-    /// Scheme (http/https)
+    /// `@scheme`
     Scheme,
-    /// Request target (path + query)
+    /// `@request-target`
     RequestTarget,
-    /// Path
+    /// `@path`
     Path,
-    /// Query string
+    /// `@query`
     Query,
-    /// Status code (for responses)
+    /// `@query-param;name="…"`
+    QueryParam(String),
+    /// `@status` (responses only)
     Status,
-    /// Header field
+    /// An HTTP header field (name is lower-cased)
     Header(String),
-    /// Derived component with parameters
-    DerivedComponent {
-        /// The name of the derived component
-        name: String,
-        /// Parameters associated with the derived component
-        params: Vec<String>,
-    },
+    /// A request component covered by a response signature (`;req`)
+    Req(Box<SignatureComponent>),
 }
 
 impl SignatureComponent {
-    /// Get the component identifier string
+    /// The component name without quotes or parameters (`@method`, `date`).
+    pub fn name(&self) -> String {
+        match self {
+            SignatureComponent::Method => "@method".into(),
+            SignatureComponent::TargetUri => "@target-uri".into(),
+            SignatureComponent::Authority => "@authority".into(),
+            SignatureComponent::Scheme => "@scheme".into(),
+            SignatureComponent::RequestTarget => "@request-target".into(),
+            SignatureComponent::Path => "@path".into(),
+            SignatureComponent::Query => "@query".into(),
+            SignatureComponent::QueryParam(_) => "@query-param".into(),
+            SignatureComponent::Status => "@status".into(),
+            SignatureComponent::Header(name) => name.to_lowercase(),
+            SignatureComponent::Req(inner) => inner.name(),
+        }
+    }
+
+    /// The component identifier as it appears in `Signature-Input` and in
+    /// the signature base: quoted name plus parameters, for example
+    /// `"@method"`, `"@method";req`, `"@query-param";name="id"`.
     pub fn identifier(&self) -> String {
         match self {
-            SignatureComponent::Method => "@method".to_string(),
-            SignatureComponent::TargetUri => "@target-uri".to_string(),
-            SignatureComponent::Authority => "@authority".to_string(),
-            SignatureComponent::Scheme => "@scheme".to_string(),
-            SignatureComponent::RequestTarget => "@request-target".to_string(),
-            SignatureComponent::Path => "@path".to_string(),
-            SignatureComponent::Query => "@query".to_string(),
-            SignatureComponent::Status => "@status".to_string(),
-            SignatureComponent::Header(name) => name.to_lowercase(),
-            SignatureComponent::DerivedComponent { name, params } => {
-                if params.is_empty() {
-                    format!("@{name}")
-                } else {
-                    format!("@{};{}", name, params.join(";"))
-                }
+            SignatureComponent::QueryParam(p) => format!("\"@query-param\";name=\"{p}\""),
+            SignatureComponent::Req(inner) => format!("{};req", inner.identifier()),
+            other => format!("\"{}\"", other.name()),
+        }
+    }
+
+    /// Bind this component to the request of a response signature.
+    pub fn req(self) -> Self {
+        SignatureComponent::Req(Box::new(self))
+    }
+
+    /// Whether the component carries the `;req` flag.
+    pub fn is_req(&self) -> bool {
+        matches!(self, SignatureComponent::Req(_))
+    }
+
+    /// Parse an identifier as it appears in `Signature-Input`
+    /// (`"@method"`, `"content-digest";req`, `"@query-param";name="id"`).
+    pub fn parse(identifier: &str) -> Result<Self> {
+        let s = identifier.trim();
+        let (quoted, rest) = if let Some(stripped) = s.strip_prefix('"') {
+            let end = stripped
+                .find('"')
+                .ok_or_else(|| Error::InvalidInput(format!("unterminated component {s}")))?;
+            (&stripped[..end], &stripped[end + 1..])
+        } else {
+            // tolerate unquoted identifiers without parameters
+            (s, "")
+        };
+        let mut req = false;
+        let mut name_param: Option<String> = None;
+        for p in rest.split(';').map(str::trim).filter(|p| !p.is_empty()) {
+            if p == "req" {
+                req = true;
+            } else if let Some(v) = p.strip_prefix("name=") {
+                name_param = Some(v.trim_matches('"').to_string());
+            } else {
+                return Err(Error::Unsupported(format!(
+                    "unsupported component parameter {p}"
+                )));
             }
         }
+        let base = match quoted {
+            "@method" => SignatureComponent::Method,
+            "@target-uri" => SignatureComponent::TargetUri,
+            "@authority" => SignatureComponent::Authority,
+            "@scheme" => SignatureComponent::Scheme,
+            "@request-target" => SignatureComponent::RequestTarget,
+            "@path" => SignatureComponent::Path,
+            "@query" => SignatureComponent::Query,
+            "@status" => SignatureComponent::Status,
+            "@query-param" => SignatureComponent::QueryParam(name_param.ok_or_else(|| {
+                Error::InvalidInput("@query-param requires a name parameter".into())
+            })?),
+            other if other.starts_with('@') => {
+                return Err(Error::Unsupported(format!(
+                    "unsupported derived component {other}"
+                )))
+            }
+            header => SignatureComponent::Header(header.to_lowercase()),
+        };
+        Ok(if req { base.req() } else { base })
     }
 }
 
-/// Signature parameters
-#[derive(Debug, Clone, Default)]
+impl fmt::Display for SignatureComponent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.identifier())
+    }
+}
+
+/// Signature parameters (`keyid`, `alg`, `created`, `expires`, `nonce`, `tag`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SignatureParams {
-    /// Key identifier
+    /// `keyid`: the signer's DID, optionally with `#fragment`
     pub key_id: Option<String>,
-    /// Algorithm identifier
+    /// `alg`
     pub alg: Option<String>,
-    /// Creation timestamp (Unix timestamp)
+    /// `created` (Unix seconds)
     pub created: Option<i64>,
-    /// Expiration timestamp (Unix timestamp)
+    /// `expires` (Unix seconds)
     pub expires: Option<i64>,
-    /// Nonce value
+    /// `nonce`
     pub nonce: Option<String>,
-    /// Tag value
+    /// `tag` (not used by SAGE; accepted for interoperability)
     pub tag: Option<String>,
+}
+
+impl SignatureParams {
+    /// The DID part of `keyid` (everything before the first `#`).
+    pub fn key_id_did(&self) -> Option<&str> {
+        self.key_id
+            .as_deref()
+            .map(|k| k.split('#').next().unwrap_or(k))
+    }
+
+    /// Parse the parameter list that follows the component list
+    /// (`;keyid="…";alg="…";created=…;nonce="…"`).
+    pub fn parse(params: &str) -> Result<Self> {
+        let mut out = SignatureParams::default();
+        for p in params.split(';').map(str::trim).filter(|p| !p.is_empty()) {
+            let (k, v) = p
+                .split_once('=')
+                .ok_or_else(|| Error::InvalidInput(format!("invalid signature parameter {p}")))?;
+            let unquoted = v.trim_matches('"').to_string();
+            match k {
+                "keyid" => out.key_id = Some(unquoted),
+                "alg" => out.alg = Some(unquoted),
+                "nonce" => out.nonce = Some(unquoted),
+                "tag" => out.tag = Some(unquoted),
+                "created" => {
+                    out.created =
+                        Some(v.parse().map_err(|_| {
+                            Error::InvalidInput(format!("invalid created value {v}"))
+                        })?)
+                }
+                "expires" => {
+                    out.expires =
+                        Some(v.parse().map_err(|_| {
+                            Error::InvalidInput(format!("invalid expires value {v}"))
+                        })?)
+                }
+                other => {
+                    return Err(Error::Unsupported(format!(
+                        "unsupported signature parameter {other}"
+                    )))
+                }
+            }
+        }
+        Ok(out)
+    }
 }
 
 impl fmt::Display for SignatureParams {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut params = Vec::new();
-
         if let Some(ref key_id) = self.key_id {
             params.push(format!("keyid=\"{key_id}\""));
         }
-
         if let Some(ref alg) = self.alg {
             params.push(format!("alg=\"{alg}\""));
         }
-
         if let Some(created) = self.created {
             params.push(format!("created={created}"));
         }
-
         if let Some(expires) = self.expires {
             params.push(format!("expires={expires}"));
         }
-
         if let Some(ref nonce) = self.nonce {
             params.push(format!("nonce=\"{nonce}\""));
         }
-
         if let Some(ref tag) = self.tag {
             params.push(format!("tag=\"{tag}\""));
         }
-
         write!(f, "{}", params.join(";"))
     }
+}
+
+/// Format the inner value of a `Signature-Input` member:
+/// `("@method" "@target-uri");keyid="…";alg="…";created=…;nonce="…"`.
+pub fn format_signature_input(
+    components: &[SignatureComponent],
+    params: &SignatureParams,
+) -> String {
+    let ids: Vec<String> = components.iter().map(|c| c.identifier()).collect();
+    let p = params.to_string();
+    if p.is_empty() {
+        format!("({})", ids.join(" "))
+    } else {
+        format!("({});{}", ids.join(" "), p)
+    }
+}
+
+/// Parse the inner value of a `Signature-Input` member.
+pub fn parse_signature_input_value(
+    value: &str,
+) -> Result<(Vec<SignatureComponent>, SignatureParams)> {
+    let v = value.trim();
+    let inner = v
+        .strip_prefix('(')
+        .ok_or_else(|| Error::InvalidInput("signature input must start with (".into()))?;
+    let close = inner
+        .find(')')
+        .ok_or_else(|| Error::InvalidInput("signature input missing )".into()))?;
+    let list = &inner[..close];
+    let rest = &inner[close + 1..];
+    let mut components = Vec::new();
+    for id in split_identifiers(list) {
+        components.push(SignatureComponent::parse(&id)?);
+    }
+    let params = SignatureParams::parse(rest.trim_start_matches(';'))?;
+    Ok((components, params))
+}
+
+/// Split `"a" "b";req "@query-param";name="x y"` into identifiers,
+/// respecting quotes.
+fn split_identifiers(list: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_quotes = false;
+    for c in list.chars() {
+        match c {
+            '"' => {
+                in_quotes = !in_quotes;
+                cur.push(c);
+            }
+            ' ' if !in_quotes => {
+                if !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                }
+            }
+            _ => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ===== SignatureComponent Identifier Tests =====
-
     #[test]
-    fn test_component_identifier_method() {
-        assert_eq!(SignatureComponent::Method.identifier(), "@method");
-    }
-
-    #[test]
-    fn test_component_identifier_target_uri() {
-        assert_eq!(SignatureComponent::TargetUri.identifier(), "@target-uri");
-    }
-
-    #[test]
-    fn test_component_identifier_authority() {
-        assert_eq!(SignatureComponent::Authority.identifier(), "@authority");
-    }
-
-    #[test]
-    fn test_component_identifier_scheme() {
-        assert_eq!(SignatureComponent::Scheme.identifier(), "@scheme");
-    }
-
-    #[test]
-    fn test_component_identifier_request_target() {
+    fn identifiers() {
+        assert_eq!(SignatureComponent::Method.identifier(), "\"@method\"");
         assert_eq!(
-            SignatureComponent::RequestTarget.identifier(),
-            "@request-target"
+            SignatureComponent::Header("Content-Digest".into()).identifier(),
+            "\"content-digest\""
+        );
+        assert_eq!(
+            SignatureComponent::Method.req().identifier(),
+            "\"@method\";req"
+        );
+        assert_eq!(
+            SignatureComponent::QueryParam("id".into()).identifier(),
+            "\"@query-param\";name=\"id\""
         );
     }
 
     #[test]
-    fn test_component_identifier_path() {
-        assert_eq!(SignatureComponent::Path.identifier(), "@path");
+    fn parse_roundtrip() {
+        for id in [
+            "\"@method\"",
+            "\"@target-uri\";req",
+            "\"@query-param\";name=\"q\"",
+            "\"x-sage-did\"",
+        ] {
+            let c = SignatureComponent::parse(id).unwrap();
+            assert_eq!(c.identifier(), id);
+        }
+        assert!(SignatureComponent::parse("\"@unknown\"").is_err());
+        assert!(SignatureComponent::parse("\"@query-param\"").is_err());
     }
 
     #[test]
-    fn test_component_identifier_query() {
-        assert_eq!(SignatureComponent::Query.identifier(), "@query");
+    fn signature_input_value() {
+        let v = "(\"@method\" \"@target-uri\" \"content-digest\";req);keyid=\"did:sage:ethereum:0x1#key-1\";alg=\"ed25519\";created=1788609600;nonce=\"n1\"";
+        let (components, params) = parse_signature_input_value(v).unwrap();
+        assert_eq!(components.len(), 3);
+        assert!(components[2].is_req());
+        assert_eq!(params.key_id_did(), Some("did:sage:ethereum:0x1"));
+        assert_eq!(params.created, Some(1788609600));
+        assert_eq!(params.nonce.as_deref(), Some("n1"));
+        assert_eq!(format_signature_input(&components, &params), v);
     }
 
     #[test]
-    fn test_component_identifier_status() {
-        assert_eq!(SignatureComponent::Status.identifier(), "@status");
-    }
-
-    #[test]
-    fn test_component_identifier_header() {
+    fn params_order() {
+        let p = SignatureParams {
+            key_id: Some("k".into()),
+            alg: Some("ed25519".into()),
+            created: Some(1),
+            expires: Some(2),
+            nonce: Some("n".into()),
+            tag: None,
+        };
         assert_eq!(
-            SignatureComponent::Header("Content-Type".to_string()).identifier(),
-            "content-type"
+            p.to_string(),
+            "keyid=\"k\";alg=\"ed25519\";created=1;expires=2;nonce=\"n\""
         );
-    }
-
-    #[test]
-    fn test_component_identifier_header_lowercase() {
-        assert_eq!(
-            SignatureComponent::Header("x-custom-header".to_string()).identifier(),
-            "x-custom-header"
-        );
-    }
-
-    #[test]
-    fn test_component_identifier_header_mixed_case() {
-        assert_eq!(
-            SignatureComponent::Header("X-Custom-HEADER".to_string()).identifier(),
-            "x-custom-header"
-        );
-    }
-
-    #[test]
-    fn test_component_identifier_derived_no_params() {
-        let component = SignatureComponent::DerivedComponent {
-            name: "custom".to_string(),
-            params: vec![],
-        };
-        assert_eq!(component.identifier(), "@custom");
-    }
-
-    #[test]
-    fn test_component_identifier_derived_with_params() {
-        let component = SignatureComponent::DerivedComponent {
-            name: "custom".to_string(),
-            params: vec!["param1".to_string(), "param2".to_string()],
-        };
-        assert_eq!(component.identifier(), "@custom;param1;param2");
-    }
-
-    #[test]
-    fn test_component_identifier_derived_single_param() {
-        let component = SignatureComponent::DerivedComponent {
-            name: "custom".to_string(),
-            params: vec!["param1".to_string()],
-        };
-        assert_eq!(component.identifier(), "@custom;param1");
-    }
-
-    // ===== SignatureComponent Trait Tests =====
-
-    #[test]
-    fn test_component_clone() {
-        let component = SignatureComponent::Method;
-        let cloned = component.clone();
-        assert_eq!(component, cloned);
-    }
-
-    #[test]
-    fn test_component_equality() {
-        assert_eq!(SignatureComponent::Method, SignatureComponent::Method);
-        assert_ne!(SignatureComponent::Method, SignatureComponent::Path);
-    }
-
-    #[test]
-    fn test_component_header_equality() {
-        let header1 = SignatureComponent::Header("content-type".to_string());
-        let header2 = SignatureComponent::Header("content-type".to_string());
-        let header3 = SignatureComponent::Header("x-custom".to_string());
-
-        assert_eq!(header1, header2);
-        assert_ne!(header1, header3);
-    }
-
-    #[test]
-    fn test_component_derived_equality() {
-        let derived1 = SignatureComponent::DerivedComponent {
-            name: "custom".to_string(),
-            params: vec!["p1".to_string()],
-        };
-        let derived2 = SignatureComponent::DerivedComponent {
-            name: "custom".to_string(),
-            params: vec!["p1".to_string()],
-        };
-        let derived3 = SignatureComponent::DerivedComponent {
-            name: "other".to_string(),
-            params: vec!["p1".to_string()],
-        };
-
-        assert_eq!(derived1, derived2);
-        assert_ne!(derived1, derived3);
-    }
-
-    #[test]
-    fn test_component_debug() {
-        let component = SignatureComponent::Method;
-        let debug_str = format!("{component:?}");
-        assert!(debug_str.contains("Method"));
-    }
-
-    // ===== SignatureParams Tests =====
-
-    #[test]
-    fn test_signature_params_default() {
-        let params = SignatureParams::default();
-        assert!(params.key_id.is_none());
-        assert!(params.alg.is_none());
-        assert!(params.created.is_none());
-        assert!(params.expires.is_none());
-        assert!(params.nonce.is_none());
-        assert!(params.tag.is_none());
-    }
-
-    #[test]
-    fn test_signature_params_clone() {
-        let params = SignatureParams {
-            key_id: Some("key".to_string()),
-            alg: Some("ed25519".to_string()),
-            created: Some(1000),
-            expires: Some(2000),
-            nonce: Some("nonce123".to_string()),
-            tag: Some("tag".to_string()),
-        };
-        let cloned = params.clone();
-        assert_eq!(params.key_id, cloned.key_id);
-        assert_eq!(params.alg, cloned.alg);
-        assert_eq!(params.created, cloned.created);
-    }
-
-    #[test]
-    fn test_signature_params_display_all_fields() {
-        let params = SignatureParams {
-            key_id: Some("test-key".to_string()),
-            alg: Some("ed25519".to_string()),
-            created: Some(1_234_567_890),
-            expires: Some(1_234_567_990),
-            nonce: Some("abc123".to_string()),
-            tag: Some("my-tag".to_string()),
-        };
-
-        let display = params.to_string();
-        assert!(display.contains("keyid=\"test-key\""));
-        assert!(display.contains("alg=\"ed25519\""));
-        assert!(display.contains("created=1234567890"));
-        assert!(display.contains("expires=1234567990"));
-        assert!(display.contains("nonce=\"abc123\""));
-        assert!(display.contains("tag=\"my-tag\""));
-    }
-
-    #[test]
-    fn test_signature_params_display_partial() {
-        let params = SignatureParams {
-            key_id: Some("test-key".to_string()),
-            alg: Some("ed25519".to_string()),
-            created: Some(1_234_567_890),
-            expires: None,
-            nonce: None,
-            tag: None,
-        };
-
-        let display = params.to_string();
-        assert!(display.contains("keyid=\"test-key\""));
-        assert!(display.contains("alg=\"ed25519\""));
-        assert!(display.contains("created=1234567890"));
-        assert!(!display.contains("expires"));
-        assert!(!display.contains("nonce"));
-        assert!(!display.contains("tag"));
-    }
-
-    #[test]
-    fn test_signature_params_display_empty() {
-        let params = SignatureParams::default();
-        let display = params.to_string();
-        assert_eq!(display, "");
-    }
-
-    #[test]
-    fn test_signature_params_display_only_created() {
-        let params = SignatureParams {
-            key_id: None,
-            alg: None,
-            created: Some(1618884473),
-            expires: None,
-            nonce: None,
-            tag: None,
-        };
-
-        let display = params.to_string();
-        assert_eq!(display, "created=1618884473");
-    }
-
-    #[test]
-    fn test_signature_params_display_only_expires() {
-        let params = SignatureParams {
-            key_id: None,
-            alg: None,
-            created: None,
-            expires: Some(1618884773),
-            nonce: None,
-            tag: None,
-        };
-
-        let display = params.to_string();
-        assert_eq!(display, "expires=1618884773");
-    }
-
-    #[test]
-    fn test_signature_params_display_only_nonce() {
-        let params = SignatureParams {
-            key_id: None,
-            alg: None,
-            created: None,
-            expires: None,
-            nonce: Some("test-nonce".to_string()),
-            tag: None,
-        };
-
-        let display = params.to_string();
-        assert_eq!(display, "nonce=\"test-nonce\"");
-    }
-
-    #[test]
-    fn test_signature_params_display_only_tag() {
-        let params = SignatureParams {
-            key_id: None,
-            alg: None,
-            created: None,
-            expires: None,
-            nonce: None,
-            tag: Some("test-tag".to_string()),
-        };
-
-        let display = params.to_string();
-        assert_eq!(display, "tag=\"test-tag\"");
-    }
-
-    #[test]
-    fn test_signature_params_debug() {
-        let params = SignatureParams {
-            key_id: Some("key".to_string()),
-            alg: Some("ed25519".to_string()),
-            created: Some(1000),
-            expires: None,
-            nonce: None,
-            tag: None,
-        };
-
-        let debug_str = format!("{params:?}");
-        assert!(debug_str.contains("SignatureParams"));
     }
 }

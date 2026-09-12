@@ -70,7 +70,7 @@ fn bench_http_sign_request(c: &mut Criterion) {
                 SignatureComponent::Header("content-type".to_string()),
             ]);
 
-            signer.sign_request(request).unwrap()
+            signer.sign_request(request, None).unwrap()
         });
     });
 }
