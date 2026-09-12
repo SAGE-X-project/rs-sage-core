@@ -30,6 +30,12 @@ impl WasmKeyPair {
         Self::new(WasmKeyType::Secp256k1)
     }
 
+    /// Generate a P-256 key pair
+    #[wasm_bindgen(js_name = generateP256)]
+    pub fn generate_p256() -> WasmResult<WasmKeyPair> {
+        Self::new(WasmKeyType::P256)
+    }
+
     /// Get the key type
     #[wasm_bindgen(getter, js_name = keyType)]
     pub fn key_type(&self) -> WasmKeyType {

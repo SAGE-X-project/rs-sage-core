@@ -3,18 +3,19 @@
 use crate::crypto::{KeyPair, KeyType, PublicKey, Signature};
 use crate::crypto::{Signer, Verifier};
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsValue;
 
 pub mod formats;
 pub mod http;
 pub mod keypair;
 pub mod signature;
+pub mod spec;
 pub mod utils;
 
 pub use formats::*;
 pub use http::*;
 pub use keypair::*;
 pub use signature::*;
+pub use spec::*;
 pub use utils::*;
 
 /// Initialize the WASM module
@@ -65,6 +66,7 @@ impl From<KeyType> for WasmKeyType {
 
 /// Error type for WASM
 #[wasm_bindgen]
+#[derive(Debug, Clone)]
 pub struct WasmError {
     message: String,
 }
