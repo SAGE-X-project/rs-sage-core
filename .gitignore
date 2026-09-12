@@ -65,3 +65,6 @@ target/criterion/
 
 # Built FFI example
 examples/ffi/basic
+
+# wasm-pack output (built by `make wasm` and CI)
+pkg/
