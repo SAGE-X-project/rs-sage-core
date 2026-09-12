@@ -93,6 +93,11 @@ impl HttpSigner {
         self
     }
 
+    /// Change the `keyid` parameter in place.
+    pub fn set_key_id(&mut self, key_id: impl Into<String>) {
+        self.key_id = key_id.into();
+    }
+
     /// Set the signature label (default `sig1`).
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = label.into();
