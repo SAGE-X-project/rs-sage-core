@@ -116,9 +116,6 @@ impl HttpSigner {
             crate::crypto::KeyType::Ed25519 => SignatureAlgorithm::Ed25519,
             crate::crypto::KeyType::Secp256k1 => SignatureAlgorithm::EcdsaSecp256k1Sha256,
             crate::crypto::KeyType::P256 => SignatureAlgorithm::EcdsaP256Sha256,
-            crate::crypto::KeyType::Rsa2048 | crate::crypto::KeyType::Rsa4096 => {
-                SignatureAlgorithm::RsaPkcs1v15Sha256
-            }
         };
 
         Ok(SignatureParams {
@@ -227,23 +224,6 @@ mod tests {
         let request = Request::builder()
             .method("PUT")
             .uri("https://example.com/data")
-            .body(())
-            .unwrap();
-
-        let signed_request = signer.sign_request(request).unwrap();
-
-        assert!(signed_request.headers().contains_key("signature"));
-        assert!(signed_request.headers().contains_key("signature-input"));
-    }
-
-    #[test]
-    fn test_sign_request_rsa() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let signer = HttpSigner::new(keypair);
-
-        let request = Request::builder()
-            .method("DELETE")
-            .uri("https://example.com/item/123")
             .body(())
             .unwrap();
 
@@ -368,12 +348,7 @@ mod tests {
 
     #[test]
     fn test_sign_response_different_algorithms() {
-        let key_types = vec![
-            KeyType::Ed25519,
-            KeyType::Secp256k1,
-            KeyType::P256,
-            KeyType::Rsa2048,
-        ];
+        let key_types = vec![KeyType::Ed25519, KeyType::Secp256k1, KeyType::P256];
 
         for key_type in key_types {
             let keypair = KeyPair::generate(key_type).unwrap();
@@ -420,7 +395,7 @@ mod tests {
 
         let params = signer.build_signature_params().unwrap();
 
-        assert_eq!(params.alg.unwrap(), "ecdsa-secp256k1-sha256");
+        assert_eq!(params.alg.unwrap(), "es256k");
     }
 
     #[test]
@@ -431,26 +406,6 @@ mod tests {
         let params = signer.build_signature_params().unwrap();
 
         assert_eq!(params.alg.unwrap(), "ecdsa-p256-sha256");
-    }
-
-    #[test]
-    fn test_build_signature_params_rsa2048() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let signer = HttpSigner::new(keypair);
-
-        let params = signer.build_signature_params().unwrap();
-
-        assert_eq!(params.alg.unwrap(), "rsa-v1_5-sha256");
-    }
-
-    #[test]
-    fn test_build_signature_params_rsa4096() {
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        let signer = HttpSigner::new(keypair);
-
-        let params = signer.build_signature_params().unwrap();
-
-        assert_eq!(params.alg.unwrap(), "rsa-v1_5-sha256");
     }
 
     // ===== Signature Input Tests =====

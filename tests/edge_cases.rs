@@ -122,14 +122,18 @@ fn test_signature_malleability() {
     // Convert to bytes and back
     let sig_bytes = signature.to_bytes();
 
-    // For secp256k1, signatures are DER encoded, so round-trip should work
-    let recovered = secp256k1::signature_from_der(&sig_bytes).unwrap();
+    // secp256k1 signatures are 65-byte r || s || v; both forms round-trip
+    assert_eq!(sig_bytes.len(), 65);
+    let recovered =
+        sage_crypto_core::Signature::from_bytes(KeyType::Secp256k1, &sig_bytes).unwrap();
+    let recovered64 =
+        sage_crypto_core::Signature::from_bytes(KeyType::Secp256k1, &sig_bytes[..64]).unwrap();
+    let low_s = secp256k1::signature_from_bytes(&sig_bytes).unwrap();
+    assert_eq!(&low_s.to_bytes()[..], &sig_bytes[..64]);
 
-    // The recovered signature should still verify
     use sage_crypto_core::crypto::Verifier;
-    assert!(keypair
-        .verify(message, &sage_crypto_core::Signature::Secp256k1(recovered))
-        .is_ok());
+    assert!(keypair.verify(message, &recovered).is_ok());
+    assert!(keypair.verify(message, &recovered64).is_ok());
 }
 
 #[test]

@@ -114,6 +114,7 @@ impl P256KeyPair {
     /// ```
     pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
         let signature: P256Signature = self.signing_key.sign(message);
+        let signature = signature.normalize_s().unwrap_or(signature);
         Ok(signature.to_bytes().to_vec())
     }
 
@@ -134,13 +135,14 @@ impl P256KeyPair {
 
         let sig = P256Signature::try_from(signature)
             .map_err(|e| Error::InvalidInput(format!("Invalid signature format: {e}")))?;
+        let sig = sig.normalize_s().unwrap_or(sig);
 
         self.verifying_key
             .verify(message, &sig)
             .map_err(|_| Error::Verification("Signature verification failed".into()))
     }
 
-    /// Get the public key bytes (compressed, 33 bytes)
+    /// Get the public key bytes (uncompressed SEC1, 65 bytes)
     ///
     /// # Example
     /// ```
@@ -148,9 +150,17 @@ impl P256KeyPair {
     ///
     /// let keypair = P256KeyPair::generate().unwrap();
     /// let pub_key = keypair.public_key_bytes();
-    /// assert_eq!(pub_key.len(), 33); // Compressed format
+    /// assert_eq!(pub_key.len(), 65); // uncompressed SEC1
     /// ```
     pub fn public_key_bytes(&self) -> Vec<u8> {
+        self.verifying_key
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec()
+    }
+
+    /// Compressed SEC1 encoding (33 bytes)
+    pub fn public_key_bytes_compressed(&self) -> Vec<u8> {
         self.verifying_key
             .to_encoded_point(true)
             .as_bytes()
@@ -217,7 +227,7 @@ mod tests {
     #[test]
     fn test_generate() {
         let keypair = P256KeyPair::generate().unwrap();
-        assert_eq!(keypair.public_key_bytes().len(), 33); // Compressed
+        assert_eq!(keypair.public_key_bytes().len(), 65); // uncompressed SEC1
         assert_eq!(keypair.private_key_bytes().len(), 32);
     }
 

@@ -1,4 +1,10 @@
 //! Key pair management and operations
+//!
+//! Encodings follow sage-spec `01-crypto.md`: Ed25519 keys are 32 bytes,
+//! secp256k1 and P-256 public keys are 65-byte uncompressed SEC1 points
+//! (33-byte compressed points are accepted on input), secp256k1 signatures
+//! are 65-byte `r || s || v` over Keccak-256 with low-S, and P-256
+//! signatures are 64-byte `r || s` over SHA-256 with low-S.
 
 use crate::crypto::{Algorithm, Signature, Signer, Verifier};
 use crate::error::{Error, Result};
@@ -18,12 +24,6 @@ pub enum KeyType {
     Secp256k1,
     /// P-256 (NIST P-256, secp256r1) key type
     P256,
-    /// RSA-2048 key type
-    #[serde(rename = "rsa-2048")]
-    Rsa2048,
-    /// RSA-4096 key type
-    #[serde(rename = "rsa-4096")]
-    Rsa4096,
 }
 
 impl From<KeyType> for Algorithm {
@@ -32,10 +32,18 @@ impl From<KeyType> for Algorithm {
             KeyType::Ed25519 => Algorithm::Ed25519,
             KeyType::Secp256k1 => Algorithm::Secp256k1,
             KeyType::P256 => Algorithm::P256,
-            KeyType::Rsa2048 => Algorithm::Rsa2048,
-            KeyType::Rsa4096 => Algorithm::Rsa4096,
         }
     }
+}
+
+/// Keccak-256 digest (Ethereum convention for secp256k1 signatures).
+pub fn keccak256(data: &[u8]) -> [u8; 32] {
+    use tiny_keccak::{Hasher, Keccak};
+    let mut hasher = Keccak::v256();
+    hasher.update(data);
+    let mut out = [0u8; 32];
+    hasher.finalize(&mut out);
+    out
 }
 
 /// Public key abstraction
@@ -43,12 +51,10 @@ impl From<KeyType> for Algorithm {
 pub enum PublicKey {
     /// Ed25519 public key (32 bytes)
     Ed25519([u8; 32]),
-    /// Secp256k1 public key (33 bytes compressed)
-    Secp256k1([u8; 33]),
-    /// P-256 public key (33 bytes compressed)
-    P256([u8; 33]),
-    /// RSA public key (variable length DER-encoded)
-    Rsa(Vec<u8>, crate::crypto::rsa::RsaKeySize),
+    /// Secp256k1 public key (65 bytes, uncompressed SEC1: `04 || X || Y`)
+    Secp256k1([u8; 65]),
+    /// P-256 public key (65 bytes, uncompressed SEC1: `04 || X || Y`)
+    P256([u8; 65]),
 }
 
 impl PublicKey {
@@ -58,10 +64,6 @@ impl PublicKey {
             PublicKey::Ed25519(_) => KeyType::Ed25519,
             PublicKey::Secp256k1(_) => KeyType::Secp256k1,
             PublicKey::P256(_) => KeyType::P256,
-            PublicKey::Rsa(_, size) => match size {
-                crate::crypto::rsa::RsaKeySize::Rsa2048 => KeyType::Rsa2048,
-                crate::crypto::rsa::RsaKeySize::Rsa4096 => KeyType::Rsa4096,
-            },
         }
     }
 
@@ -70,17 +72,31 @@ impl PublicKey {
         self.key_type().into()
     }
 
-    /// Encode public key to bytes
+    /// Encode public key to bytes (32 bytes for Ed25519, 65 bytes uncompressed
+    /// for the ECDSA curves).
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             PublicKey::Ed25519(key_bytes) => key_bytes.to_vec(),
             PublicKey::Secp256k1(key_bytes) => key_bytes.to_vec(),
             PublicKey::P256(key_bytes) => key_bytes.to_vec(),
-            PublicKey::Rsa(der_bytes, _) => der_bytes.clone(),
         }
     }
 
-    /// Get the key ID
+    /// Compressed SEC1 encoding (33 bytes) for the ECDSA curves; the raw key
+    /// for Ed25519.
+    pub fn to_compressed_bytes(&self) -> Vec<u8> {
+        match self {
+            PublicKey::Ed25519(key_bytes) => key_bytes.to_vec(),
+            PublicKey::Secp256k1(key_bytes) => k256::PublicKey::from_sec1_bytes(key_bytes)
+                .map(|k| k.to_encoded_point(true).as_bytes().to_vec())
+                .unwrap_or_default(),
+            PublicKey::P256(key_bytes) => p256::PublicKey::from_sec1_bytes(key_bytes)
+                .map(|k| k.to_encoded_point(true).as_bytes().to_vec())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// Key identifier: `hex(SHA-256(to_bytes())[0:8])` (sage-spec 01 §4).
     pub fn key_id(&self) -> String {
         use sha2::{Digest, Sha256};
 
@@ -90,7 +106,24 @@ impl PublicKey {
         hex::encode(&result[..8])
     }
 
-    /// Create PublicKey from bytes
+    /// Ethereum address of a secp256k1 key: `0x` + lower-case hex of
+    /// `Keccak-256(X || Y)[12..32]` (the Go core's `keys.EthereumAddress`;
+    /// `did:sage:ethereum` identifiers use this form).
+    pub fn ethereum_address(&self) -> Result<String> {
+        let bytes = match self {
+            PublicKey::Secp256k1(b) => b,
+            _ => {
+                return Err(Error::InvalidKeyType(
+                    "Ethereum address requires a secp256k1 key".to_string(),
+                ))
+            }
+        };
+        let hash = keccak256(&bytes[1..]);
+        Ok(format!("0x{}", hex::encode(&hash[12..])))
+    }
+
+    /// Create PublicKey from bytes. ECDSA keys are accepted as 33-byte
+    /// compressed or 65-byte uncompressed SEC1 points and stored uncompressed.
     pub fn from_bytes(key_type: KeyType, bytes: &[u8]) -> Result<Self> {
         match key_type {
             KeyType::Ed25519 => {
@@ -104,48 +137,50 @@ impl PublicKey {
                 Ok(PublicKey::Ed25519(key_bytes))
             }
             KeyType::Secp256k1 => {
-                if bytes.len() != 33 {
+                if bytes.len() != 33 && bytes.len() != 65 {
                     return Err(Error::InvalidInput(
-                        "Secp256k1 public key must be 33 bytes (compressed)".to_string(),
+                        "Secp256k1 public key must be 33 (compressed) or 65 (uncompressed) bytes"
+                            .to_string(),
                     ));
                 }
-                let mut key_bytes = [0u8; 33];
-                key_bytes.copy_from_slice(bytes);
-                Ok(PublicKey::Secp256k1(key_bytes))
+                let key = k256::PublicKey::from_sec1_bytes(bytes)
+                    .map_err(|_| Error::InvalidInput("Invalid Secp256k1 public key".to_string()))?;
+                Ok(PublicKey::Secp256k1(uncompressed_65(
+                    key.to_encoded_point(false).as_bytes(),
+                )))
             }
             KeyType::P256 => {
-                if bytes.len() != 33 {
+                if bytes.len() != 33 && bytes.len() != 65 {
                     return Err(Error::InvalidInput(
-                        "P-256 public key must be 33 bytes (compressed)".to_string(),
+                        "P-256 public key must be 33 (compressed) or 65 (uncompressed) bytes"
+                            .to_string(),
                     ));
                 }
-                let mut key_bytes = [0u8; 33];
-                key_bytes.copy_from_slice(bytes);
-                Ok(PublicKey::P256(key_bytes))
+                let key = p256::PublicKey::from_sec1_bytes(bytes)
+                    .map_err(|_| Error::InvalidInput("Invalid P-256 public key".to_string()))?;
+                Ok(PublicKey::P256(uncompressed_65(
+                    key.to_encoded_point(false).as_bytes(),
+                )))
             }
-            KeyType::Rsa2048 => Ok(PublicKey::Rsa(
-                bytes.to_vec(),
-                crate::crypto::rsa::RsaKeySize::Rsa2048,
-            )),
-            KeyType::Rsa4096 => Ok(PublicKey::Rsa(
-                bytes.to_vec(),
-                crate::crypto::rsa::RsaKeySize::Rsa4096,
-            )),
         }
     }
+}
+
+fn uncompressed_65(bytes: &[u8]) -> [u8; 65] {
+    let mut out = [0u8; 65];
+    out.copy_from_slice(bytes);
+    out
 }
 
 /// Private key abstraction
 #[derive(Debug, Clone)]
 pub enum PrivateKey {
-    /// Ed25519 private key (32 bytes)
+    /// Ed25519 seed (32 bytes)
     Ed25519([u8; 32]),
-    /// Secp256k1 private key (32 bytes)
+    /// Secp256k1 scalar (32 bytes)
     Secp256k1([u8; 32]),
-    /// P-256 private key (32 bytes)
+    /// P-256 scalar (32 bytes)
     P256([u8; 32]),
-    /// RSA private key (variable length DER-encoded)
-    Rsa(Vec<u8>, crate::crypto::rsa::RsaKeySize),
 }
 
 impl PrivateKey {
@@ -155,56 +190,46 @@ impl PrivateKey {
             PrivateKey::Ed25519(_) => KeyType::Ed25519,
             PrivateKey::Secp256k1(_) => KeyType::Secp256k1,
             PrivateKey::P256(_) => KeyType::P256,
-            PrivateKey::Rsa(_, size) => match size {
-                crate::crypto::rsa::RsaKeySize::Rsa2048 => KeyType::Rsa2048,
-                crate::crypto::rsa::RsaKeySize::Rsa4096 => KeyType::Rsa4096,
-            },
         }
     }
 
-    /// Get the public key
+    /// Derive the public key
     pub fn public_key(&self) -> PublicKey {
         match self {
             PrivateKey::Ed25519(key_bytes) => {
                 use ed25519_dalek::SigningKey;
                 let signing_key = SigningKey::from_bytes(key_bytes);
-                let verifying_key = signing_key.verifying_key();
-                PublicKey::Ed25519(verifying_key.to_bytes())
+                PublicKey::Ed25519(signing_key.verifying_key().to_bytes())
             }
             PrivateKey::Secp256k1(key_bytes) => {
-                use k256::ecdsa::SigningKey;
-                let signing_key = SigningKey::from_bytes(key_bytes).unwrap();
-                let verifying_key = signing_key.verifying_key();
-                let compressed_point = verifying_key.to_encoded_point(true);
-                let mut bytes = [0u8; 33];
-                bytes.copy_from_slice(compressed_point.as_bytes());
-                PublicKey::Secp256k1(bytes)
+                let signing_key = k256::ecdsa::SigningKey::from_slice(key_bytes)
+                    .expect("validated on construction");
+                PublicKey::Secp256k1(uncompressed_65(
+                    signing_key
+                        .verifying_key()
+                        .to_encoded_point(false)
+                        .as_bytes(),
+                ))
             }
             PrivateKey::P256(key_bytes) => {
-                use p256::ecdsa::SigningKey;
-                let signing_key = SigningKey::from_bytes(key_bytes.into()).unwrap();
-                let verifying_key = p256::ecdsa::VerifyingKey::from(&signing_key);
-                let compressed_point = verifying_key.to_encoded_point(true);
-                let mut bytes = [0u8; 33];
-                bytes.copy_from_slice(compressed_point.as_bytes());
-                PublicKey::P256(bytes)
-            }
-            PrivateKey::Rsa(der_bytes, size) => {
-                use crate::crypto::rsa::RsaKeyPair;
-                let keypair = RsaKeyPair::private_key_from_der(der_bytes, *size).unwrap();
-                let pub_der = keypair.public_key_to_der().unwrap();
-                PublicKey::Rsa(pub_der, *size)
+                let signing_key = p256::ecdsa::SigningKey::from_slice(key_bytes)
+                    .expect("validated on construction");
+                PublicKey::P256(uncompressed_65(
+                    signing_key
+                        .verifying_key()
+                        .to_encoded_point(false)
+                        .as_bytes(),
+                ))
             }
         }
     }
 
-    /// Encode private key to bytes (CAUTION: contains secret material)
+    /// Encode private key to bytes
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             PrivateKey::Ed25519(key_bytes) => key_bytes.to_vec(),
             PrivateKey::Secp256k1(key_bytes) => key_bytes.to_vec(),
             PrivateKey::P256(key_bytes) => key_bytes.to_vec(),
-            PrivateKey::Rsa(der_bytes, _) => der_bytes.clone(),
         }
     }
 }
@@ -220,71 +245,23 @@ pub struct KeyPair {
 impl KeyPair {
     /// Generate a new key pair
     pub fn generate(key_type: KeyType) -> Result<Self> {
-        let (private_key, public_key) = match key_type {
+        let private_key = match key_type {
             KeyType::Ed25519 => {
-                use ed25519_dalek::SigningKey;
-                let mut rng = OsRng;
                 let mut bytes = [0u8; 32];
-                rng.fill_bytes(&mut bytes);
-                let signing_key = SigningKey::from_bytes(&bytes);
-                let verifying_key = signing_key.verifying_key();
-                (
-                    PrivateKey::Ed25519(signing_key.to_bytes()),
-                    PublicKey::Ed25519(verifying_key.to_bytes()),
-                )
+                OsRng.fill_bytes(&mut bytes);
+                PrivateKey::Ed25519(bytes)
             }
             KeyType::Secp256k1 => {
                 let signing_key = k256::ecdsa::SigningKey::random(&mut OsRng);
-                let verifying_key = signing_key.verifying_key();
-                let compressed_point = verifying_key.to_encoded_point(true);
-                let mut bytes = [0u8; 33];
-                bytes.copy_from_slice(compressed_point.as_bytes());
-                (
-                    PrivateKey::Secp256k1(signing_key.to_bytes().into()),
-                    PublicKey::Secp256k1(bytes),
-                )
+                PrivateKey::Secp256k1(signing_key.to_bytes().into())
             }
             KeyType::P256 => {
                 let signing_key = p256::ecdsa::SigningKey::random(&mut OsRng);
-                let verifying_key = p256::ecdsa::VerifyingKey::from(&signing_key);
-                let compressed_point = verifying_key.to_encoded_point(true);
-                let mut bytes = [0u8; 33];
-                bytes.copy_from_slice(compressed_point.as_bytes());
-                (
-                    PrivateKey::P256(signing_key.to_bytes().into()),
-                    PublicKey::P256(bytes),
-                )
-            }
-            KeyType::Rsa2048 => {
-                use crate::crypto::rsa::{RsaKeyPair, RsaKeySize};
-                let rsa_keypair = RsaKeyPair::generate(RsaKeySize::Rsa2048)?;
-                let priv_der = rsa_keypair.private_key_to_der()?;
-                let pub_der = rsa_keypair.public_key_to_der()?;
-                (
-                    PrivateKey::Rsa(priv_der, RsaKeySize::Rsa2048),
-                    PublicKey::Rsa(pub_der, RsaKeySize::Rsa2048),
-                )
-            }
-            KeyType::Rsa4096 => {
-                use crate::crypto::rsa::{RsaKeyPair, RsaKeySize};
-                let rsa_keypair = RsaKeyPair::generate(RsaKeySize::Rsa4096)?;
-                let priv_der = rsa_keypair.private_key_to_der()?;
-                let pub_der = rsa_keypair.public_key_to_der()?;
-                (
-                    PrivateKey::Rsa(priv_der, RsaKeySize::Rsa4096),
-                    PublicKey::Rsa(pub_der, RsaKeySize::Rsa4096),
-                )
+                PrivateKey::P256(signing_key.to_bytes().into())
             }
         };
-
-        // Generate key ID from public key hash
-        let key_id = Self::generate_key_id(&public_key);
-
-        Ok(Self {
-            private_key,
-            public_key,
-            key_id,
-        })
+        let public_key = private_key.public_key();
+        Ok(Self::from_parts(private_key, public_key))
     }
 
     /// Get the key type
@@ -307,17 +284,10 @@ impl KeyPair {
         &self.private_key
     }
 
-    /// Generate key ID from public key
     fn generate_key_id(public_key: &PublicKey) -> String {
-        use sha2::{Digest, Sha256};
-
-        let mut hasher = Sha256::new();
-        hasher.update(public_key.to_bytes());
-        let result = hasher.finalize();
-        hex::encode(&result[..8])
+        public_key.key_id()
     }
 
-    /// Create KeyPair from parts (used by importers)
     pub(crate) fn from_parts(private_key: PrivateKey, public_key: PublicKey) -> Self {
         let key_id = Self::generate_key_id(&public_key);
         Self {
@@ -329,12 +299,7 @@ impl KeyPair {
 
     /// Get private key bytes
     pub fn private_key_bytes(&self) -> Vec<u8> {
-        match &self.private_key {
-            PrivateKey::Ed25519(bytes) => bytes.to_vec(),
-            PrivateKey::Secp256k1(bytes) => bytes.to_vec(),
-            PrivateKey::P256(bytes) => bytes.to_vec(),
-            PrivateKey::Rsa(der_bytes, _) => der_bytes.clone(),
-        }
+        self.private_key.to_bytes()
     }
 
     /// Get public key bytes
@@ -342,87 +307,30 @@ impl KeyPair {
         self.public_key.to_bytes()
     }
 
-    /// Create KeyPair from private key bytes
+    /// Create key pair from private key bytes (32 bytes for every key type)
     pub fn from_private_key_bytes(key_type: KeyType, bytes: &[u8]) -> Result<Self> {
+        if bytes.len() != 32 {
+            return Err(Error::InvalidInput(format!(
+                "{key_type:?} private key must be 32 bytes"
+            )));
+        }
+        let mut key_bytes = [0u8; 32];
+        key_bytes.copy_from_slice(bytes);
         let private_key = match key_type {
-            KeyType::Ed25519 => {
-                if bytes.len() != 32 {
-                    return Err(Error::InvalidInput(
-                        "Ed25519 private key must be 32 bytes".to_string(),
-                    ));
-                }
-                let mut key_bytes = [0u8; 32];
-                key_bytes.copy_from_slice(bytes);
-                PrivateKey::Ed25519(key_bytes)
-            }
+            KeyType::Ed25519 => PrivateKey::Ed25519(key_bytes),
             KeyType::Secp256k1 => {
-                if bytes.len() != 32 {
-                    return Err(Error::InvalidInput(
-                        "Secp256k1 private key must be 32 bytes".to_string(),
-                    ));
-                }
-                let mut key_bytes = [0u8; 32];
-                key_bytes.copy_from_slice(bytes);
+                k256::ecdsa::SigningKey::from_slice(&key_bytes).map_err(|e| {
+                    Error::CryptoError(format!("Invalid Secp256k1 private key: {e}"))
+                })?;
                 PrivateKey::Secp256k1(key_bytes)
             }
             KeyType::P256 => {
-                if bytes.len() != 32 {
-                    return Err(Error::InvalidInput(
-                        "P-256 private key must be 32 bytes".to_string(),
-                    ));
-                }
-                let mut key_bytes = [0u8; 32];
-                key_bytes.copy_from_slice(bytes);
+                p256::ecdsa::SigningKey::from_slice(&key_bytes)
+                    .map_err(|e| Error::CryptoError(format!("Invalid P-256 private key: {e}")))?;
                 PrivateKey::P256(key_bytes)
             }
-            KeyType::Rsa2048 => {
-                // For RSA, bytes should be DER-encoded private key
-                PrivateKey::Rsa(bytes.to_vec(), crate::crypto::rsa::RsaKeySize::Rsa2048)
-            }
-            KeyType::Rsa4096 => {
-                // For RSA, bytes should be DER-encoded private key
-                PrivateKey::Rsa(bytes.to_vec(), crate::crypto::rsa::RsaKeySize::Rsa4096)
-            }
         };
-
-        // Derive public key from private key
-        let public_key = match &private_key {
-            PrivateKey::Ed25519(key_bytes) => {
-                use ed25519_dalek::SigningKey;
-                let signing_key = SigningKey::from_bytes(key_bytes);
-                let verifying_key = signing_key.verifying_key();
-                PublicKey::Ed25519(verifying_key.to_bytes())
-            }
-            PrivateKey::Secp256k1(key_bytes) => {
-                use k256::ecdsa::SigningKey;
-                use k256::elliptic_curve::sec1::ToEncodedPoint;
-                let signing_key = SigningKey::from_bytes(key_bytes).map_err(|e| {
-                    Error::CryptoError(format!("Invalid Secp256k1 private key: {e}"))
-                })?;
-                let public_key = signing_key.verifying_key();
-                let point = public_key.to_encoded_point(true); // compressed
-                let mut bytes = [0u8; 33];
-                bytes.copy_from_slice(point.as_bytes());
-                PublicKey::Secp256k1(bytes)
-            }
-            PrivateKey::P256(key_bytes) => {
-                use p256::ecdsa::SigningKey;
-                let signing_key = SigningKey::from_bytes(key_bytes.into())
-                    .map_err(|e| Error::CryptoError(format!("Invalid P-256 private key: {e}")))?;
-                let verifying_key = p256::ecdsa::VerifyingKey::from(&signing_key);
-                let compressed_point = verifying_key.to_encoded_point(true);
-                let mut bytes = [0u8; 33];
-                bytes.copy_from_slice(compressed_point.as_bytes());
-                PublicKey::P256(bytes)
-            }
-            PrivateKey::Rsa(der_bytes, size) => {
-                use crate::crypto::rsa::RsaKeyPair;
-                let rsa_keypair = RsaKeyPair::private_key_from_der(der_bytes, *size)?;
-                let pub_der = rsa_keypair.public_key_to_der()?;
-                PublicKey::Rsa(pub_der, *size)
-            }
-        };
-
+        let public_key = private_key.public_key();
         Ok(Self::from_parts(private_key, public_key))
     }
 }
@@ -433,26 +341,37 @@ impl Signer for KeyPair {
             PrivateKey::Ed25519(key_bytes) => {
                 use ed25519_dalek::{Signer, SigningKey};
                 let signing_key = SigningKey::from_bytes(key_bytes);
-                let signature = signing_key.sign(message);
-                Ok(Signature::Ed25519(signature))
+                Ok(Signature::Ed25519(signing_key.sign(message)))
             }
             PrivateKey::Secp256k1(key_bytes) => {
-                use k256::ecdsa::{signature::Signer, Signature as EcdsaSignature, SigningKey};
-                let signing_key = SigningKey::from_bytes(key_bytes).unwrap();
-                let signature: EcdsaSignature = signing_key.sign(message);
-                Ok(Signature::Secp256k1(signature))
+                let signing_key = k256::ecdsa::SigningKey::from_slice(key_bytes)
+                    .map_err(|e| Error::CryptoError(format!("Invalid Secp256k1 key: {e}")))?;
+                let digest = keccak256(message);
+                let (sig, recid) = signing_key
+                    .sign_prehash_recoverable(&digest)
+                    .map_err(|e| Error::CryptoError(format!("Secp256k1 signing failed: {e}")))?;
+                // k256 emits low-S; normalise defensively and keep v consistent.
+                let (sig, recid) = match sig.normalize_s() {
+                    Some(low) => (
+                        low,
+                        k256::ecdsa::RecoveryId::from_byte(recid.to_byte() ^ 1).unwrap(),
+                    ),
+                    None => (sig, recid),
+                };
+                let mut out = [0u8; 65];
+                out[..64].copy_from_slice(&sig.to_bytes());
+                out[64] = recid.to_byte();
+                Ok(Signature::Secp256k1(out))
             }
             PrivateKey::P256(key_bytes) => {
-                use p256::ecdsa::{signature::Signer, Signature as P256Signature, SigningKey};
-                let signing_key = SigningKey::from_bytes(key_bytes.into()).unwrap();
-                let signature: P256Signature = signing_key.sign(message);
-                Ok(Signature::P256(signature))
-            }
-            PrivateKey::Rsa(der_bytes, size) => {
-                use crate::crypto::rsa::{PaddingScheme, RsaKeyPair};
-                let rsa_keypair = RsaKeyPair::private_key_from_der(der_bytes, *size)?;
-                let sig_bytes = rsa_keypair.sign(message, PaddingScheme::Pkcs1v15)?;
-                Ok(Signature::Rsa(sig_bytes))
+                use p256::ecdsa::signature::Signer;
+                let signing_key = p256::ecdsa::SigningKey::from_slice(key_bytes)
+                    .map_err(|e| Error::CryptoError(format!("Invalid P-256 key: {e}")))?;
+                let sig: p256::ecdsa::Signature = signing_key.sign(message);
+                let sig = sig.normalize_s().unwrap_or(sig);
+                let mut out = [0u8; 64];
+                out.copy_from_slice(&sig.to_bytes());
+                Ok(Signature::P256(out))
             }
         }
     }
@@ -475,52 +394,29 @@ impl Verifier for PublicKey {
                     Error::Verification("Ed25519 signature verification failed".to_string())
                 })
             }
-            (PublicKey::Secp256k1(key_bytes), Signature::Secp256k1(sig)) => {
-                use k256::ecdsa::{signature::Verifier, VerifyingKey};
-                use k256::elliptic_curve::sec1::FromEncodedPoint;
-                use k256::PublicKey as K256PublicKey;
-
-                let point = k256::EncodedPoint::from_bytes(key_bytes).map_err(|_| {
-                    Error::Verification("Invalid Secp256k1 public key encoding".to_string())
-                })?;
-                let public_key_opt = K256PublicKey::from_encoded_point(&point);
-                if public_key_opt.is_none().into() {
-                    return Err(Error::Verification(
-                        "Invalid Secp256k1 public key".to_string(),
-                    ));
-                }
-                let public_key = public_key_opt.unwrap();
-                let verifying_key = VerifyingKey::from(public_key);
-
-                verifying_key.verify(message, sig).map_err(|_| {
-                    Error::Verification("Secp256k1 signature verification failed".to_string())
-                })
+            (PublicKey::Secp256k1(key_bytes), Signature::Secp256k1(sig_bytes)) => {
+                use k256::ecdsa::signature::hazmat::PrehashVerifier;
+                let verifying_key = k256::ecdsa::VerifyingKey::from_sec1_bytes(key_bytes)
+                    .map_err(|_| Error::Verification("Invalid Secp256k1 public key".to_string()))?;
+                let sig = k256::ecdsa::Signature::from_slice(&sig_bytes[..64])
+                    .map_err(|_| Error::Verification("Invalid Secp256k1 signature".to_string()))?;
+                // (r, s) and (r, N - s) are both valid; verify the low-S form.
+                let sig = sig.normalize_s().unwrap_or(sig);
+                verifying_key
+                    .verify_prehash(&keccak256(message), &sig)
+                    .map_err(|_| {
+                        Error::Verification("Secp256k1 signature verification failed".to_string())
+                    })
             }
-            (PublicKey::P256(key_bytes), Signature::P256(sig)) => {
-                use p256::ecdsa::{signature::Verifier, VerifyingKey};
-
-                let verifying_key = VerifyingKey::from_sec1_bytes(key_bytes)
+            (PublicKey::P256(key_bytes), Signature::P256(sig_bytes)) => {
+                use p256::ecdsa::signature::Verifier;
+                let verifying_key = p256::ecdsa::VerifyingKey::from_sec1_bytes(key_bytes)
                     .map_err(|_| Error::Verification("Invalid P-256 public key".to_string()))?;
-
-                verifying_key.verify(message, sig).map_err(|_| {
-                    Error::Verification("P-256 signature verification failed".to_string())
-                })
-            }
-            (PublicKey::Rsa(der_bytes, _size), Signature::Rsa(sig_bytes)) => {
-                use rsa::pkcs1::DecodeRsaPublicKey;
-                use rsa::pkcs1v15::VerifyingKey;
-                use rsa::sha2::Sha256;
-                use rsa::signature::Verifier as RsaVerifier;
-
-                let rsa_public_key = rsa::RsaPublicKey::from_pkcs1_der(der_bytes)
-                    .map_err(|e| Error::Verification(format!("Invalid RSA public key: {e}")))?;
-
-                let verifying_key = VerifyingKey::<Sha256>::new(rsa_public_key);
-                let sig = rsa::pkcs1v15::Signature::try_from(sig_bytes.as_slice())
-                    .map_err(|e| Error::Verification(format!("Invalid RSA signature: {e}")))?;
-
+                let sig = p256::ecdsa::Signature::from_slice(sig_bytes)
+                    .map_err(|_| Error::Verification("Invalid P-256 signature".to_string()))?;
+                let sig = sig.normalize_s().unwrap_or(sig);
                 verifying_key.verify(message, &sig).map_err(|_| {
-                    Error::Verification("RSA signature verification failed".to_string())
+                    Error::Verification("P-256 signature verification failed".to_string())
                 })
             }
             _ => Err(Error::InvalidKeyType("Key type mismatch".to_string())),
@@ -538,24 +434,6 @@ mod tests {
     fn test_key_type_equality() {
         assert_eq!(KeyType::Ed25519, KeyType::Ed25519);
         assert_ne!(KeyType::Ed25519, KeyType::Secp256k1);
-    }
-
-    #[test]
-    fn test_key_type_to_algorithm() {
-        assert_eq!(Algorithm::from(KeyType::Ed25519), Algorithm::Ed25519);
-        assert_eq!(Algorithm::from(KeyType::Secp256k1), Algorithm::Secp256k1);
-        assert_eq!(Algorithm::from(KeyType::P256), Algorithm::P256);
-        assert_eq!(Algorithm::from(KeyType::Rsa2048), Algorithm::Rsa2048);
-        assert_eq!(Algorithm::from(KeyType::Rsa4096), Algorithm::Rsa4096);
-    }
-
-    #[test]
-    fn test_key_type_serde() {
-        let json = serde_json::to_string(&KeyType::Ed25519).unwrap();
-        assert_eq!(json, "\"ed25519\"");
-
-        let json = serde_json::to_string(&KeyType::Rsa2048).unwrap();
-        assert_eq!(json, "\"rsa-2048\"");
     }
 
     // ===== KeyPair Generation Tests =====
@@ -579,20 +457,6 @@ mod tests {
     fn test_generate_p256_keypair() {
         let keypair = KeyPair::generate(KeyType::P256).unwrap();
         assert_eq!(keypair.key_type(), KeyType::P256);
-        assert!(!keypair.key_id().is_empty());
-    }
-
-    #[test]
-    fn test_generate_rsa2048_keypair() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        assert_eq!(keypair.key_type(), KeyType::Rsa2048);
-        assert!(!keypair.key_id().is_empty());
-    }
-
-    #[test]
-    fn test_generate_rsa4096_keypair() {
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        assert_eq!(keypair.key_type(), KeyType::Rsa4096);
         assert!(!keypair.key_id().is_empty());
     }
 
@@ -634,18 +498,6 @@ mod tests {
         assert!(keypair.verify(b"Wrong message", &signature).is_err());
     }
 
-    #[test]
-    fn test_sign_verify_rsa2048() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let message = b"Hello, SAGE!";
-
-        let signature = keypair.sign(message).unwrap();
-        assert!(keypair.verify(message, &signature).is_ok());
-
-        // Wrong message should fail
-        assert!(keypair.verify(b"Wrong message", &signature).is_err());
-    }
-
     // ===== PublicKey Tests =====
 
     #[test]
@@ -671,14 +523,14 @@ mod tests {
     fn test_public_key_to_bytes_secp256k1() {
         let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
         let bytes = keypair.public_key().to_bytes();
-        assert_eq!(bytes.len(), 33);
+        assert_eq!(bytes.len(), 65);
     }
 
     #[test]
     fn test_public_key_to_bytes_p256() {
         let keypair = KeyPair::generate(KeyType::P256).unwrap();
         let bytes = keypair.public_key().to_bytes();
-        assert_eq!(bytes.len(), 33);
+        assert_eq!(bytes.len(), 65);
     }
 
     #[test]
@@ -814,18 +666,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rsa2048_from_private_key_bytes() {
-        let keypair1 = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let priv_bytes = keypair1.private_key_bytes();
-
-        let keypair2 = KeyPair::from_private_key_bytes(KeyType::Rsa2048, &priv_bytes).unwrap();
-
-        let message = b"test";
-        let sig1 = keypair1.sign(message).unwrap();
-        assert!(keypair2.verify(message, &sig1).is_ok());
-    }
-
-    #[test]
     fn test_from_private_key_bytes_invalid_length_ed25519() {
         let result = KeyPair::from_private_key_bytes(KeyType::Ed25519, &[0u8; 16]);
         assert!(result.is_err());
@@ -951,12 +791,7 @@ mod tests {
 
     #[test]
     fn test_all_key_types_generation() {
-        let key_types = vec![
-            KeyType::Ed25519,
-            KeyType::Secp256k1,
-            KeyType::P256,
-            KeyType::Rsa2048,
-        ];
+        let key_types = vec![KeyType::Ed25519, KeyType::Secp256k1, KeyType::P256];
 
         for key_type in key_types {
             let keypair = KeyPair::generate(key_type).unwrap();
@@ -968,60 +803,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_rsa_key_size_preservation() {
-        let keypair2048 = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        assert_eq!(keypair2048.key_type(), KeyType::Rsa2048);
-
-        let keypair4096 = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        assert_eq!(keypair4096.key_type(), KeyType::Rsa4096);
-    }
-
     // ===== Additional RSA Tests =====
-
-    #[test]
-    fn test_public_key_from_bytes_rsa2048() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let bytes = keypair.public_key().to_bytes();
-
-        let reconstructed = PublicKey::from_bytes(KeyType::Rsa2048, &bytes).unwrap();
-        assert_eq!(reconstructed.key_type(), KeyType::Rsa2048);
-    }
-
-    #[test]
-    fn test_public_key_from_bytes_rsa4096() {
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        let bytes = keypair.public_key().to_bytes();
-
-        let reconstructed = PublicKey::from_bytes(KeyType::Rsa4096, &bytes).unwrap();
-        assert_eq!(reconstructed.key_type(), KeyType::Rsa4096);
-    }
-
-    #[test]
-    fn test_private_key_to_bytes_rsa2048() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let bytes = keypair.private_key().to_bytes();
-        assert!(!bytes.is_empty());
-    }
-
-    #[test]
-    fn test_private_key_to_bytes_rsa4096() {
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        let bytes = keypair.private_key().to_bytes();
-        assert!(!bytes.is_empty());
-    }
-
-    #[test]
-    fn test_rsa4096_from_private_key_bytes() {
-        let keypair1 = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        let priv_bytes = keypair1.private_key_bytes();
-
-        let keypair2 = KeyPair::from_private_key_bytes(KeyType::Rsa4096, &priv_bytes).unwrap();
-
-        let message = b"test";
-        let sig1 = keypair1.sign(message).unwrap();
-        assert!(keypair2.verify(message, &sig1).is_ok());
-    }
 
     #[test]
     fn test_private_key_public_key_secp256k1() {
@@ -1037,32 +819,6 @@ mod tests {
         let derived_pub = keypair.private_key().public_key();
         assert_eq!(derived_pub.to_bytes(), keypair.public_key().to_bytes());
         assert_eq!(derived_pub.key_type(), KeyType::P256);
-    }
-
-    #[test]
-    fn test_private_key_public_key_rsa2048() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let derived_pub = keypair.private_key().public_key();
-        assert_eq!(derived_pub.key_type(), KeyType::Rsa2048);
-    }
-
-    #[test]
-    fn test_private_key_public_key_rsa4096() {
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        let derived_pub = keypair.private_key().public_key();
-        assert_eq!(derived_pub.key_type(), KeyType::Rsa4096);
-    }
-
-    #[test]
-    fn test_sign_verify_rsa4096() {
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        let message = b"Hello, SAGE!";
-
-        let signature = keypair.sign(message).unwrap();
-        assert!(keypair.verify(message, &signature).is_ok());
-
-        // Wrong message should fail
-        assert!(keypair.verify(b"Wrong message", &signature).is_err());
     }
 
     // ===== Invalid Key Tests =====
@@ -1096,15 +852,6 @@ mod tests {
         let kt = KeyType::Secp256k1;
         let debug_str = format!("{kt:?}");
         assert!(debug_str.contains("Secp256k1"));
-    }
-
-    #[test]
-    fn test_key_type_serde_rsa4096() {
-        let json = serde_json::to_string(&KeyType::Rsa4096).unwrap();
-        assert_eq!(json, "\"rsa-4096\"");
-
-        let deserialized: KeyType = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, KeyType::Rsa4096);
     }
 
     // ===== KeyPair::from_parts Tests =====
@@ -1169,19 +916,6 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_rsa_with_public_key_directly() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let message = b"test message";
-        let signature = keypair.sign(message).unwrap();
-
-        // Verify using the public key directly
-        assert!(keypair.public_key().verify(message, &signature).is_ok());
-
-        // Wrong message should fail
-        assert!(keypair.public_key().verify(b"wrong", &signature).is_err());
-    }
-
-    #[test]
     fn test_public_key_algorithm_p256() {
         let keypair = KeyPair::generate(KeyType::P256).unwrap();
         assert_eq!(keypair.public_key().algorithm(), Algorithm::P256);
@@ -1194,18 +928,6 @@ mod tests {
     }
 
     #[test]
-    fn test_public_key_algorithm_rsa2048() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        assert_eq!(keypair.public_key().algorithm(), Algorithm::Rsa2048);
-    }
-
-    #[test]
-    fn test_public_key_algorithm_rsa4096() {
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        assert_eq!(keypair.public_key().algorithm(), Algorithm::Rsa4096);
-    }
-
-    #[test]
     fn test_keypair_key_type_secp256k1() {
         let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
         assert_eq!(keypair.key_type(), KeyType::Secp256k1);
@@ -1215,17 +937,5 @@ mod tests {
     fn test_keypair_key_type_p256() {
         let keypair = KeyPair::generate(KeyType::P256).unwrap();
         assert_eq!(keypair.key_type(), KeyType::P256);
-    }
-
-    #[test]
-    fn test_keypair_key_type_rsa2048() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        assert_eq!(keypair.key_type(), KeyType::Rsa2048);
-    }
-
-    #[test]
-    fn test_keypair_key_type_rsa4096() {
-        let keypair = KeyPair::generate(KeyType::Rsa4096).unwrap();
-        assert_eq!(keypair.key_type(), KeyType::Rsa4096);
     }
 }

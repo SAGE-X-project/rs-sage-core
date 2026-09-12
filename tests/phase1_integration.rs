@@ -63,7 +63,7 @@ fn test_end_to_end_signed_message_flow_secp256k1() {
 
     // Verify the message was signed
     assert!(!message.signature.is_empty());
-    assert_eq!(message.algorithm, "ecdsa-secp256k1-sha256");
+    assert_eq!(message.algorithm, "es256k");
     assert_eq!(message.key_id, keypair.public_key().key_id());
 
     // Verify message using VerificationService

@@ -7,7 +7,6 @@ pub mod manager;
 pub mod multi_key;
 pub mod p256;
 pub mod rotation;
-pub mod rsa;
 pub mod secp256k1;
 pub mod signature;
 pub mod storage;
@@ -20,7 +19,6 @@ pub use keys::{KeyPair, KeyType, PrivateKey, PublicKey};
 pub use manager::CryptoManager;
 pub use multi_key::{MultiKeyManager, Protocol, MAX_KEYS_PER_AGENT};
 pub use rotation::{DefaultKeyRotator, KeyRotationConfig, KeyRotationEvent, KeyRotator};
-pub use rsa::{PaddingScheme, RsaKeyPair, RsaKeySize};
 pub use signature::{Signature, Signer, Verifier};
 pub use storage::{FileKeyStorage, KeyStorage, MemoryKeyStorage};
 pub use x25519::X25519KeyPair;
@@ -34,10 +32,6 @@ pub enum Algorithm {
     Secp256k1,
     /// P-256 (NIST P-256, secp256r1) ECDSA signature algorithm
     P256,
-    /// RSA-2048 signature algorithm
-    Rsa2048,
-    /// RSA-4096 signature algorithm
-    Rsa4096,
 }
 
 impl std::fmt::Display for Algorithm {
@@ -46,8 +40,6 @@ impl std::fmt::Display for Algorithm {
             Algorithm::Ed25519 => write!(f, "Ed25519"),
             Algorithm::Secp256k1 => write!(f, "Secp256k1"),
             Algorithm::P256 => write!(f, "P-256"),
-            Algorithm::Rsa2048 => write!(f, "RSA-2048"),
-            Algorithm::Rsa4096 => write!(f, "RSA-4096"),
         }
     }
 }
@@ -74,18 +66,6 @@ mod tests {
     fn test_algorithm_display_p256() {
         let algo = Algorithm::P256;
         assert_eq!(format!("{algo}"), "P-256");
-    }
-
-    #[test]
-    fn test_algorithm_display_rsa2048() {
-        let algo = Algorithm::Rsa2048;
-        assert_eq!(format!("{algo}"), "RSA-2048");
-    }
-
-    #[test]
-    fn test_algorithm_display_rsa4096() {
-        let algo = Algorithm::Rsa4096;
-        assert_eq!(format!("{algo}"), "RSA-4096");
     }
 
     // ===== Algorithm Equality Tests =====
@@ -119,14 +99,8 @@ mod tests {
 
     #[test]
     fn test_all_algorithms() {
-        let algorithms = [
-            Algorithm::Ed25519,
-            Algorithm::Secp256k1,
-            Algorithm::P256,
-            Algorithm::Rsa2048,
-            Algorithm::Rsa4096,
-        ];
+        let algorithms = [Algorithm::Ed25519, Algorithm::Secp256k1, Algorithm::P256];
 
-        assert_eq!(algorithms.len(), 5);
+        assert_eq!(algorithms.len(), 3);
     }
 }

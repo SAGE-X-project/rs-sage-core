@@ -34,37 +34,9 @@ impl WasmSignature {
     /// Import signature from bytes
     #[wasm_bindgen(js_name = fromBytes)]
     pub fn from_bytes(key_type: WasmKeyType, bytes: &[u8]) -> WasmResult<WasmSignature> {
-        let signature = match key_type {
-            WasmKeyType::Ed25519 => {
-                if bytes.len() != 64 {
-                    return Err(WasmError {
-                        message: "Ed25519 signature must be 64 bytes".to_string(),
-                    });
-                }
-                let mut sig_bytes = [0u8; 64];
-                sig_bytes.copy_from_slice(bytes);
-                Signature::Ed25519(ed25519_dalek::Signature::from_bytes(&sig_bytes))
-            }
-            WasmKeyType::Secp256k1 => Signature::Secp256k1(
-                k256::ecdsa::Signature::from_der(bytes)
-                    .or_else(|_| {
-                        if bytes.len() == 64 {
-                            k256::ecdsa::Signature::try_from(bytes)
-                        } else {
-                            Err(k256::ecdsa::Error::new())
-                        }
-                    })
-                    .map_err(|e| WasmError {
-                        message: format!("Invalid Secp256k1 signature: {e}"),
-                    })?,
-            ),
-            WasmKeyType::P256 => {
-                return Err(WasmError {
-                    message: "P256 signature not supported in WASM yet".to_string(),
-                })
-            }
-        };
-
+        let signature = Signature::from_bytes(key_type.into(), bytes).map_err(|e| WasmError {
+            message: format!("Invalid signature: {e}"),
+        })?;
         Ok(WasmSignature { inner: signature })
     }
 }
