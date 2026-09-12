@@ -82,6 +82,7 @@ pub struct Secp256k1Jwk {
 }
 
 impl KeyExporter for PublicKey {
+    #[allow(clippy::vec_init_then_push)] // DER is built byte by byte with comments per tag
     fn export(&self, format: KeyFormat) -> Result<Vec<u8>> {
         match format {
             KeyFormat::Jwk => {
@@ -119,12 +120,15 @@ impl KeyExporter for PublicKey {
                     PublicKey::P256(key_bytes) => {
                         // P-256 uses SEC1 encoding wrapped in SPKI
                         use p256::PublicKey as P256PublicKey;
-                        let public_key = P256PublicKey::from_sec1_bytes(key_bytes)
-                            .map_err(|e| Error::Serialization(format!("Invalid P-256 public key: {}", e)))?;
+                        let public_key =
+                            P256PublicKey::from_sec1_bytes(key_bytes).map_err(|e| {
+                                Error::Serialization(format!("Invalid P-256 public key: {e}"))
+                            })?;
                         use p256::pkcs8::EncodePublicKey;
-                        public_key.to_public_key_der()
+                        public_key
+                            .to_public_key_der()
                             .map(|der| der.as_bytes().to_vec())
-                            .map_err(|e| Error::Serialization(format!("DER encoding failed: {}", e)))
+                            .map_err(|e| Error::Serialization(format!("DER encoding failed: {e}")))
                     }
                     PublicKey::Secp256k1(key_bytes) => {
                         // Secp256k1 OID: 1.3.132.0.10
@@ -188,7 +192,7 @@ impl KeyExporter for PublicKey {
                 use p256::PublicKey as P256PublicKey;
 
                 let public_key = P256PublicKey::from_sec1_bytes(key_bytes)
-                    .map_err(|e| Error::Serialization(format!("Invalid P-256 public key: {}", e)))?;
+                    .map_err(|e| Error::Serialization(format!("Invalid P-256 public key: {e}")))?;
 
                 let point = public_key.to_encoded_point(false); // uncompressed
                 let x = general_purpose::URL_SAFE_NO_PAD.encode(point.x().ok_or_else(|| {
@@ -243,17 +247,22 @@ impl KeyExporter for PublicKey {
             PublicKey::Rsa(der_bytes, _) => {
                 // RSA public keys are already DER-encoded, just convert to PEM
                 use crate::crypto::rsa::RsaKeyPair;
-                let rsa_pubkey = RsaKeyPair::public_key_from_der(der_bytes, crate::crypto::rsa::RsaKeySize::Rsa2048)?;
+                let rsa_pubkey = RsaKeyPair::public_key_from_der(
+                    der_bytes,
+                    crate::crypto::rsa::RsaKeySize::Rsa2048,
+                )?;
                 use rsa::pkcs1::EncodeRsaPublicKey;
-                rsa_pubkey.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
+                rsa_pubkey
+                    .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
                     .map(|p| p.to_string())
-                    .map_err(|e| Error::Serialization(format!("RSA PEM encoding failed: {}", e)))
+                    .map_err(|e| Error::Serialization(format!("RSA PEM encoding failed: {e}")))
             }
         }
     }
 }
 
 impl KeyExporter for PrivateKey {
+    #[allow(clippy::vec_init_then_push)] // DER is built byte by byte with comments per tag
     fn export(&self, format: KeyFormat) -> Result<Vec<u8>> {
         match format {
             KeyFormat::Jwk => {
@@ -296,12 +305,14 @@ impl KeyExporter for PrivateKey {
                     PrivateKey::P256(key_bytes) => {
                         // P-256 private key DER export
                         use p256::SecretKey as P256SecretKey;
-                        let secret_key = P256SecretKey::from_slice(key_bytes)
-                            .map_err(|e| Error::Serialization(format!("Invalid P-256 private key: {}", e)))?;
+                        let secret_key = P256SecretKey::from_slice(key_bytes).map_err(|e| {
+                            Error::Serialization(format!("Invalid P-256 private key: {e}"))
+                        })?;
                         use p256::pkcs8::EncodePrivateKey;
-                        secret_key.to_pkcs8_der()
+                        secret_key
+                            .to_pkcs8_der()
                             .map(|der| der.as_bytes().to_vec())
-                            .map_err(|e| Error::Serialization(format!("DER encoding failed: {}", e)))
+                            .map_err(|e| Error::Serialization(format!("DER encoding failed: {e}")))
                     }
                     PrivateKey::Secp256k1(key_bytes) => {
                         // PKCS#8 structure for secp256k1
@@ -347,7 +358,7 @@ impl KeyExporter for PrivateKey {
                         der.push(0x32);
                         der.push(0x00);
                         // Public key would go here, but we'll skip for simplicity
-                        der.extend_from_slice(&vec![0; 49]);
+                        der.extend_from_slice(&[0; 49]);
 
                         Ok(der)
                     }
@@ -383,7 +394,7 @@ impl KeyExporter for PrivateKey {
                 use p256::SecretKey as P256SecretKey;
 
                 let secret_key = P256SecretKey::from_slice(key_bytes)
-                    .map_err(|e| Error::Serialization(format!("Invalid P-256 private key: {}", e)))?;
+                    .map_err(|e| Error::Serialization(format!("Invalid P-256 private key: {e}")))?;
 
                 let public_key = secret_key.public_key();
                 let point = public_key.to_encoded_point(false); // uncompressed
@@ -439,7 +450,10 @@ impl KeyExporter for PrivateKey {
             PrivateKey::Rsa(der_bytes, _) => {
                 // RSA private keys are already DER-encoded, just convert to PEM
                 use crate::crypto::rsa::RsaKeyPair;
-                let rsa_keypair = RsaKeyPair::private_key_from_der(der_bytes, crate::crypto::rsa::RsaKeySize::Rsa2048)?;
+                let rsa_keypair = RsaKeyPair::private_key_from_der(
+                    der_bytes,
+                    crate::crypto::rsa::RsaKeySize::Rsa2048,
+                )?;
                 rsa_keypair.private_key_to_pem()
             }
         }
@@ -447,6 +461,7 @@ impl KeyExporter for PrivateKey {
 }
 
 impl KeyExporter for KeyPair {
+    #[allow(clippy::vec_init_then_push)] // DER is built byte by byte with comments per tag
     fn export(&self, format: KeyFormat) -> Result<Vec<u8>> {
         self.private_key().export(format)
     }
@@ -641,27 +656,37 @@ mod tests {
         for key_type in key_types {
             let keypair = KeyPair::generate(key_type).unwrap();
             let jwk = keypair.public_key().export(KeyFormat::Jwk);
-            assert!(jwk.is_ok(), "Failed for {:?}", key_type);
+            assert!(jwk.is_ok(), "Failed for {key_type:?}");
         }
     }
 
     #[test]
     fn test_all_keys_pem_export() {
-        let key_types = vec![KeyType::Ed25519, KeyType::Secp256k1, KeyType::P256, KeyType::Rsa2048];
+        let key_types = vec![
+            KeyType::Ed25519,
+            KeyType::Secp256k1,
+            KeyType::P256,
+            KeyType::Rsa2048,
+        ];
         for key_type in key_types {
             let keypair = KeyPair::generate(key_type).unwrap();
             let pem = keypair.public_key().export(KeyFormat::Pem);
-            assert!(pem.is_ok(), "Failed for {:?}", key_type);
+            assert!(pem.is_ok(), "Failed for {key_type:?}");
         }
     }
 
     #[test]
     fn test_all_keys_raw_export() {
-        let key_types = vec![KeyType::Ed25519, KeyType::Secp256k1, KeyType::P256, KeyType::Rsa2048];
+        let key_types = vec![
+            KeyType::Ed25519,
+            KeyType::Secp256k1,
+            KeyType::P256,
+            KeyType::Rsa2048,
+        ];
         for key_type in key_types {
             let keypair = KeyPair::generate(key_type).unwrap();
             let raw = keypair.public_key().export(KeyFormat::Raw);
-            assert!(raw.is_ok(), "Failed for {:?}", key_type);
+            assert!(raw.is_ok(), "Failed for {key_type:?}");
             assert!(!raw.unwrap().is_empty());
         }
     }
@@ -670,14 +695,14 @@ mod tests {
     #[test]
     fn test_key_format_debug() {
         let format = KeyFormat::Jwk;
-        let debug_str = format!("{:?}", format);
+        let debug_str = format!("{format:?}");
         assert!(debug_str.contains("Jwk"));
     }
 
     #[test]
     fn test_key_format_clone() {
         let format = KeyFormat::Pem;
-        let cloned = format.clone();
+        let cloned = format;
         assert_eq!(format, cloned);
     }
 

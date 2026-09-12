@@ -446,10 +446,7 @@ mod tests {
 
     #[test]
     fn test_canonicalize_response_status() {
-        let response = Response::builder()
-            .status(StatusCode::OK)
-            .body(())
-            .unwrap();
+        let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
 
         let components = vec![super::super::SignatureComponent::Status];
         let result = canonicalize_response(&response, &components).unwrap();
@@ -513,10 +510,7 @@ mod tests {
 
     #[test]
     fn test_canonicalize_response_method_error() {
-        let response = Response::builder()
-            .status(StatusCode::OK)
-            .body(())
-            .unwrap();
+        let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
 
         let components = vec![super::super::SignatureComponent::Method];
         let result = canonicalize_response(&response, &components);
@@ -527,10 +521,7 @@ mod tests {
 
     #[test]
     fn test_canonicalize_response_path_error() {
-        let response = Response::builder()
-            .status(StatusCode::OK)
-            .body(())
-            .unwrap();
+        let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
 
         let components = vec![super::super::SignatureComponent::Path];
         let result = canonicalize_response(&response, &components);
@@ -541,10 +532,7 @@ mod tests {
 
     #[test]
     fn test_canonicalize_response_derived_component_error() {
-        let response = Response::builder()
-            .status(StatusCode::OK)
-            .body(())
-            .unwrap();
+        let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
 
         let components = vec![super::super::SignatureComponent::DerivedComponent {
             name: "custom".to_string(),

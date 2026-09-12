@@ -1,6 +1,6 @@
 //! Session Management Benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use sage_crypto_core::session::{Session, SessionManager, SessionManagerConfig};
 
 fn bench_session_creation_from_exporter(c: &mut Criterion) {
@@ -9,12 +9,14 @@ fn bench_session_creation_from_exporter(c: &mut Criterion) {
 
     c.bench_function("session_creation_from_exporter", |b| {
         b.iter(|| {
-            manager.ensure_session_from_exporter_with_role(
-                black_box(&exporter),
-                black_box("bench-context"),
-                black_box(true),
-                None,
-            ).unwrap()
+            manager
+                .ensure_session_from_exporter_with_role(
+                    black_box(&exporter),
+                    black_box("bench-context"),
+                    black_box(true),
+                    None,
+                )
+                .unwrap()
         });
     });
 }
@@ -29,9 +31,7 @@ fn bench_session_encrypt(c: &mut Criterion) {
     let plaintext = b"Benchmark message for encryption performance test with reasonable length";
 
     c.bench_function("session_encrypt", |b| {
-        b.iter(|| {
-            session.encrypt(black_box(plaintext)).unwrap()
-        });
+        b.iter(|| session.encrypt(black_box(plaintext)).unwrap());
     });
 }
 
@@ -49,9 +49,7 @@ fn bench_session_decrypt(c: &mut Criterion) {
     let ciphertext = alice_session.encrypt(plaintext).unwrap();
 
     c.bench_function("session_decrypt", |b| {
-        b.iter(|| {
-            bob_session.decrypt(black_box(&ciphertext)).unwrap()
-        });
+        b.iter(|| bob_session.decrypt(black_box(&ciphertext)).unwrap());
     });
 }
 
@@ -67,10 +65,9 @@ fn bench_session_encrypt_and_sign(c: &mut Criterion) {
 
     c.bench_function("session_encrypt_and_sign", |b| {
         b.iter(|| {
-            session.encrypt_and_sign(
-                black_box(plaintext),
-                black_box(covered),
-            ).unwrap()
+            session
+                .encrypt_and_sign(black_box(plaintext), black_box(covered))
+                .unwrap()
         });
     });
 }
@@ -91,11 +88,9 @@ fn bench_session_decrypt_and_verify(c: &mut Criterion) {
 
     c.bench_function("session_decrypt_and_verify", |b| {
         b.iter(|| {
-            bob_session.decrypt_and_verify(
-                black_box(&ciphertext),
-                black_box(covered),
-                black_box(&mac),
-            ).unwrap()
+            bob_session
+                .decrypt_and_verify(black_box(&ciphertext), black_box(covered), black_box(&mac))
+                .unwrap()
         });
     });
 }
@@ -148,7 +143,7 @@ fn bench_session_cleanup(c: &mut Criterion) {
 
             // Create multiple sessions
             for i in 0..10 {
-                let ctx = format!("ctx-{}", i);
+                let ctx = format!("ctx-{i}");
                 let _ = manager
                     .ensure_session_from_exporter_with_role(&exporter, &ctx, true, None)
                     .unwrap();
@@ -172,9 +167,7 @@ fn bench_session_encryption_sizes(c: &mut Criterion) {
         let plaintext = vec![0x42u8; *size];
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| {
-                session.encrypt(black_box(&plaintext)).unwrap()
-            });
+            b.iter(|| session.encrypt(black_box(&plaintext)).unwrap());
         });
     }
 

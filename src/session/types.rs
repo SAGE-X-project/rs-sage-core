@@ -20,8 +20,8 @@ pub struct SessionConfig {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            max_age: Duration::seconds(3600),      // 1 hour
-            idle_timeout: Duration::seconds(600),  // 10 minutes
+            max_age: Duration::seconds(3600),     // 1 hour
+            idle_timeout: Duration::seconds(600), // 10 minutes
             max_messages: 10_000,
         }
     }
@@ -72,12 +72,7 @@ pub trait Session: Send + Sync {
     fn encrypt_and_sign(&self, plaintext: &[u8], covered: &[u8]) -> Result<(Vec<u8>, Vec<u8>)>;
 
     /// Decrypt and verify MAC
-    fn decrypt_and_verify(
-        &self,
-        ciphertext: &[u8],
-        covered: &[u8],
-        mac: &[u8],
-    ) -> Result<Vec<u8>>;
+    fn decrypt_and_verify(&self, ciphertext: &[u8], covered: &[u8], mac: &[u8]) -> Result<Vec<u8>>;
 
     /// Sign covered data (for MAC generation)
     fn sign_covered(&self, covered: &[u8]) -> Vec<u8>;
@@ -93,8 +88,7 @@ pub trait Session: Send + Sync {
 }
 
 /// Session options for creation
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SessionOpts {
     /// Custom session ID (if None, will be generated)
     pub session_id: Option<String>,
@@ -103,7 +97,6 @@ pub struct SessionOpts {
     /// Additional metadata
     pub metadata: std::collections::HashMap<String, String>,
 }
-
 
 #[cfg(test)]
 mod tests {

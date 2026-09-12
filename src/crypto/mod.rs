@@ -61,31 +61,31 @@ mod tests {
     #[test]
     fn test_algorithm_display_ed25519() {
         let algo = Algorithm::Ed25519;
-        assert_eq!(format!("{}", algo), "Ed25519");
+        assert_eq!(format!("{algo}"), "Ed25519");
     }
 
     #[test]
     fn test_algorithm_display_secp256k1() {
         let algo = Algorithm::Secp256k1;
-        assert_eq!(format!("{}", algo), "Secp256k1");
+        assert_eq!(format!("{algo}"), "Secp256k1");
     }
 
     #[test]
     fn test_algorithm_display_p256() {
         let algo = Algorithm::P256;
-        assert_eq!(format!("{}", algo), "P-256");
+        assert_eq!(format!("{algo}"), "P-256");
     }
 
     #[test]
     fn test_algorithm_display_rsa2048() {
         let algo = Algorithm::Rsa2048;
-        assert_eq!(format!("{}", algo), "RSA-2048");
+        assert_eq!(format!("{algo}"), "RSA-2048");
     }
 
     #[test]
     fn test_algorithm_display_rsa4096() {
         let algo = Algorithm::Rsa4096;
-        assert_eq!(format!("{}", algo), "RSA-4096");
+        assert_eq!(format!("{algo}"), "RSA-4096");
     }
 
     // ===== Algorithm Equality Tests =====
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn test_algorithm_clone() {
         let algo = Algorithm::Ed25519;
-        let cloned = algo.clone();
+        let cloned = algo;
         assert_eq!(algo, cloned);
     }
 
@@ -113,13 +113,13 @@ mod tests {
     #[test]
     fn test_algorithm_debug() {
         let algo = Algorithm::Ed25519;
-        let debug_str = format!("{:?}", algo);
+        let debug_str = format!("{algo:?}");
         assert!(debug_str.contains("Ed25519"));
     }
 
     #[test]
     fn test_all_algorithms() {
-        let algorithms = vec![
+        let algorithms = [
             Algorithm::Ed25519,
             Algorithm::Secp256k1,
             Algorithm::P256,

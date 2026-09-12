@@ -76,9 +76,7 @@ pub fn validate_did_format(did: &str, max_length: usize) -> Result<()> {
 
     // Must start with "did:"
     if !did.starts_with("did:") {
-        return Err(Error::ValidationError(
-            "DID must start with 'did:'".into(),
-        ));
+        return Err(Error::ValidationError("DID must start with 'did:'".into()));
     }
 
     // Split into parts: did:method:identifier
@@ -94,7 +92,10 @@ pub fn validate_did_format(did: &str, max_length: usize) -> Result<()> {
     if method.is_empty() {
         return Err(Error::ValidationError("DID method cannot be empty".into()));
     }
-    if !method.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()) {
+    if !method
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    {
         return Err(Error::ValidationError(
             "DID method must be lowercase alphanumeric".into(),
         ));
@@ -107,9 +108,10 @@ pub fn validate_did_format(did: &str, max_length: usize) -> Result<()> {
             "DID identifier cannot be empty".into(),
         ));
     }
-    if !identifier.chars().all(|c| {
-        c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':'
-    }) {
+    if !identifier
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':')
+    {
         return Err(Error::ValidationError(
             "DID identifier contains invalid characters".into(),
         ));
@@ -176,8 +178,7 @@ pub fn validate_timestamp(timestamp: i64, now: i64, max_skew_secs: i64) -> Resul
     let diff = (timestamp - now).abs();
     if diff > max_skew_secs {
         return Err(Error::ValidationError(format!(
-            "Timestamp skew {} seconds exceeds maximum {} seconds",
-            diff, max_skew_secs
+            "Timestamp skew {diff} seconds exceeds maximum {max_skew_secs} seconds"
         )));
     }
     Ok(())
@@ -198,7 +199,10 @@ pub fn validate_header_name(name: &str, max_length: usize) -> Result<()> {
     }
 
     // Header names must be lowercase, alphanumeric, or hyphens
-    if !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         return Err(Error::ValidationError(
             "Header name must be lowercase alphanumeric or hyphen".into(),
         ));
@@ -218,7 +222,10 @@ pub fn validate_header_value(value: &str, max_length: usize) -> Result<()> {
     }
 
     // Header values must be printable ASCII or whitespace
-    if !value.chars().all(|c| c.is_ascii() && (c.is_ascii_graphic() || c.is_whitespace())) {
+    if !value
+        .chars()
+        .all(|c| c.is_ascii() && (c.is_ascii_graphic() || c.is_whitespace()))
+    {
         return Err(Error::ValidationError(
             "Header value contains invalid characters".into(),
         ));
@@ -231,8 +238,7 @@ pub fn validate_header_value(value: &str, max_length: usize) -> Result<()> {
 pub fn validate_collection_size(count: usize, max_count: usize, item_type: &str) -> Result<()> {
     if count > max_count {
         return Err(Error::ValidationError(format!(
-            "{} count {} exceeds maximum {}",
-            item_type, count, max_count
+            "{item_type} count {count} exceeds maximum {max_count}"
         )));
     }
     Ok(())
@@ -261,7 +267,11 @@ mod tests {
         assert!(validate_did_format("did:sage:alice", 1024).is_ok());
         assert!(validate_did_format("did:ethr:0x1234", 1024).is_ok());
         assert!(validate_did_format("did:web:example.com", 1024).is_ok());
-        assert!(validate_did_format("did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH", 1024).is_ok());
+        assert!(validate_did_format(
+            "did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRoAnwWsdvktH",
+            1024
+        )
+        .is_ok());
 
         // Invalid DIDs
         assert!(validate_did_format("", 1024).is_err()); // Empty

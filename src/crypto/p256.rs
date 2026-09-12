@@ -75,7 +75,7 @@ impl P256KeyPair {
         }
 
         let signing_key = SigningKey::from_slice(bytes)
-            .map_err(|e| Error::CryptoError(format!("Invalid P-256 private key: {}", e)))?;
+            .map_err(|e| Error::CryptoError(format!("Invalid P-256 private key: {e}")))?;
 
         let verifying_key = VerifyingKey::from(&signing_key);
 
@@ -91,7 +91,7 @@ impl P256KeyPair {
     /// * `bytes` - 33-byte (compressed) or 65-byte (uncompressed) public key
     pub fn from_public_key_bytes(bytes: &[u8]) -> Result<VerifyingKey> {
         VerifyingKey::from_sec1_bytes(bytes)
-            .map_err(|e| Error::CryptoError(format!("Invalid P-256 public key: {}", e)))
+            .map_err(|e| Error::CryptoError(format!("Invalid P-256 public key: {e}")))
     }
 
     /// Sign a message with this key pair
@@ -133,7 +133,7 @@ impl P256KeyPair {
         }
 
         let sig = P256Signature::try_from(signature)
-            .map_err(|e| Error::InvalidInput(format!("Invalid signature format: {}", e)))?;
+            .map_err(|e| Error::InvalidInput(format!("Invalid signature format: {e}")))?;
 
         self.verifying_key
             .verify(message, &sig)
@@ -151,12 +151,18 @@ impl P256KeyPair {
     /// assert_eq!(pub_key.len(), 33); // Compressed format
     /// ```
     pub fn public_key_bytes(&self) -> Vec<u8> {
-        self.verifying_key.to_encoded_point(true).as_bytes().to_vec()
+        self.verifying_key
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec()
     }
 
     /// Get the public key bytes in uncompressed format (65 bytes)
     pub fn public_key_bytes_uncompressed(&self) -> Vec<u8> {
-        self.verifying_key.to_encoded_point(false).as_bytes().to_vec()
+        self.verifying_key
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec()
     }
 
     /// Get the private key bytes (32 bytes)

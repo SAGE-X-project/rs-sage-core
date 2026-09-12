@@ -136,13 +136,14 @@ pub extern "C" fn sage_version() -> *const c_char {
 use std::cell::RefCell;
 
 thread_local! {
-    static LAST_ERROR: RefCell<Option<CString>> = RefCell::new(None);
+    static LAST_ERROR: RefCell<Option<CString>> = const { RefCell::new(None) };
 }
 
 /// Set the thread-local error message
+#[allow(dead_code)] // the exported functions do not report errors through it yet (F-03 FFI rework)
 fn set_last_error(err: Error) {
     LAST_ERROR.with(|last| {
-        let error_msg = format!("{}", err);
+        let error_msg = format!("{err}");
         *last.borrow_mut() = CString::new(error_msg).ok();
     });
 }

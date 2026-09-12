@@ -171,8 +171,7 @@ mod tests {
 
     #[test]
     fn test_signature_input_add_component() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Method);
+        let input = SignatureInput::new().add_component(SignatureComponent::Method);
 
         assert_eq!(input.components.len(), 1);
         assert_eq!(input.components[0], "@method");
@@ -193,32 +192,28 @@ mod tests {
 
     #[test]
     fn test_signature_input_key_id() {
-        let input = SignatureInput::new()
-            .key_id("test-key-123");
+        let input = SignatureInput::new().key_id("test-key-123");
 
         assert_eq!(input.params.key_id, Some("test-key-123".to_string()));
     }
 
     #[test]
     fn test_signature_input_algorithm() {
-        let input = SignatureInput::new()
-            .algorithm(SignatureAlgorithm::Ed25519);
+        let input = SignatureInput::new().algorithm(SignatureAlgorithm::Ed25519);
 
         assert_eq!(input.params.alg, Some("ed25519".to_string()));
     }
 
     #[test]
     fn test_signature_input_created() {
-        let input = SignatureInput::new()
-            .created(1618884473);
+        let input = SignatureInput::new().created(1618884473);
 
         assert_eq!(input.params.created, Some(1618884473));
     }
 
     #[test]
     fn test_signature_input_expires() {
-        let input = SignatureInput::new()
-            .expires(1618884773);
+        let input = SignatureInput::new().expires(1618884773);
 
         assert_eq!(input.params.expires, Some(1618884773));
     }
@@ -233,8 +228,7 @@ mod tests {
 
     #[test]
     fn test_signature_input_build_single_component() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Method);
+        let input = SignatureInput::new().add_component(SignatureComponent::Method);
 
         let result = input.build();
 
@@ -365,7 +359,10 @@ mod tests {
         let algorithms = vec![
             (SignatureAlgorithm::Ed25519, "ed25519"),
             (SignatureAlgorithm::EcdsaP256Sha256, "ecdsa-p256-sha256"),
-            (SignatureAlgorithm::EcdsaSecp256k1Sha256, "ecdsa-secp256k1-sha256"),
+            (
+                SignatureAlgorithm::EcdsaSecp256k1Sha256,
+                "ecdsa-secp256k1-sha256",
+            ),
             (SignatureAlgorithm::RsaPkcs1v15Sha256, "rsa-v1_5-sha256"),
             (SignatureAlgorithm::RsaPssSha512, "rsa-pss-sha512"),
         ];
@@ -376,7 +373,7 @@ mod tests {
                 .algorithm(alg);
 
             let result = input.build();
-            assert!(result.contains(&format!("alg=\"{}\"", expected)));
+            assert!(result.contains(&format!("alg=\"{expected}\"")));
         }
     }
 }

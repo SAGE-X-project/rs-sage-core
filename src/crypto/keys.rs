@@ -123,12 +123,14 @@ impl PublicKey {
                 key_bytes.copy_from_slice(bytes);
                 Ok(PublicKey::P256(key_bytes))
             }
-            KeyType::Rsa2048 => {
-                Ok(PublicKey::Rsa(bytes.to_vec(), crate::crypto::rsa::RsaKeySize::Rsa2048))
-            }
-            KeyType::Rsa4096 => {
-                Ok(PublicKey::Rsa(bytes.to_vec(), crate::crypto::rsa::RsaKeySize::Rsa4096))
-            }
+            KeyType::Rsa2048 => Ok(PublicKey::Rsa(
+                bytes.to_vec(),
+                crate::crypto::rsa::RsaKeySize::Rsa2048,
+            )),
+            KeyType::Rsa4096 => Ok(PublicKey::Rsa(
+                bytes.to_vec(),
+                crate::crypto::rsa::RsaKeySize::Rsa4096,
+            )),
         }
     }
 }
@@ -405,9 +407,8 @@ impl KeyPair {
             }
             PrivateKey::P256(key_bytes) => {
                 use p256::ecdsa::SigningKey;
-                let signing_key = SigningKey::from_bytes(key_bytes.into()).map_err(|e| {
-                    Error::CryptoError(format!("Invalid P-256 private key: {e}"))
-                })?;
+                let signing_key = SigningKey::from_bytes(key_bytes.into())
+                    .map_err(|e| Error::CryptoError(format!("Invalid P-256 private key: {e}")))?;
                 let verifying_key = p256::ecdsa::VerifyingKey::from(&signing_key);
                 let compressed_point = verifying_key.to_encoded_point(true);
                 let mut bytes = [0u8; 33];
@@ -498,9 +499,8 @@ impl Verifier for PublicKey {
             (PublicKey::P256(key_bytes), Signature::P256(sig)) => {
                 use p256::ecdsa::{signature::Verifier, VerifyingKey};
 
-                let verifying_key = VerifyingKey::from_sec1_bytes(key_bytes).map_err(|_| {
-                    Error::Verification("Invalid P-256 public key".to_string())
-                })?;
+                let verifying_key = VerifyingKey::from_sec1_bytes(key_bytes)
+                    .map_err(|_| Error::Verification("Invalid P-256 public key".to_string()))?;
 
                 verifying_key.verify(message, sig).map_err(|_| {
                     Error::Verification("P-256 signature verification failed".to_string())
@@ -509,18 +509,19 @@ impl Verifier for PublicKey {
             (PublicKey::Rsa(der_bytes, _size), Signature::Rsa(sig_bytes)) => {
                 use rsa::pkcs1::DecodeRsaPublicKey;
                 use rsa::pkcs1v15::VerifyingKey;
-                use rsa::signature::Verifier as RsaVerifier;
                 use rsa::sha2::Sha256;
+                use rsa::signature::Verifier as RsaVerifier;
 
                 let rsa_public_key = rsa::RsaPublicKey::from_pkcs1_der(der_bytes)
-                    .map_err(|e| Error::Verification(format!("Invalid RSA public key: {}", e)))?;
+                    .map_err(|e| Error::Verification(format!("Invalid RSA public key: {e}")))?;
 
                 let verifying_key = VerifyingKey::<Sha256>::new(rsa_public_key);
                 let sig = rsa::pkcs1v15::Signature::try_from(sig_bytes.as_slice())
-                    .map_err(|e| Error::Verification(format!("Invalid RSA signature: {}", e)))?;
+                    .map_err(|e| Error::Verification(format!("Invalid RSA signature: {e}")))?;
 
-                verifying_key.verify(message, &sig)
-                    .map_err(|_| Error::Verification("RSA signature verification failed".to_string()))
+                verifying_key.verify(message, &sig).map_err(|_| {
+                    Error::Verification("RSA signature verification failed".to_string())
+                })
             }
             _ => Err(Error::InvalidKeyType("Key type mismatch".to_string())),
         }
@@ -1079,7 +1080,7 @@ mod tests {
     #[test]
     fn test_key_type_clone() {
         let kt = KeyType::Ed25519;
-        let cloned = kt.clone();
+        let cloned = kt;
         assert_eq!(kt, cloned);
     }
 
@@ -1093,7 +1094,7 @@ mod tests {
     #[test]
     fn test_key_type_debug() {
         let kt = KeyType::Secp256k1;
-        let debug_str = format!("{:?}", kt);
+        let debug_str = format!("{kt:?}");
         assert!(debug_str.contains("Secp256k1"));
     }
 

@@ -13,22 +13,10 @@ pub mod error;
 pub mod formats;
 pub mod rfc9421;
 
-// Phase 4: HPKE, Handshake, Session Management
-// Re-enabled with blockchain-based DID resolution
 pub mod did;
 pub mod hpke;
-pub mod handshake;
 pub mod session;
-
-// Phase 5.1: Transport Layer
-pub mod transport;
-
-// Phase 6.3: Input Validation
 pub mod validation;
-
-// Phase 9: Blockchain integration - Implemented with alloy crate
-#[cfg(feature = "blockchain")]
-pub mod blockchain;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;

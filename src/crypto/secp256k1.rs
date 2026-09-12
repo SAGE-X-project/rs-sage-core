@@ -40,11 +40,8 @@ pub fn signature_from_bytes(bytes: &[u8]) -> Result<EcdsaSignature> {
             r_bytes.copy_from_slice(&bytes[..32]);
             s_bytes.copy_from_slice(&bytes[32..]);
 
-            EcdsaSignature::from_scalars(
-                FieldBytes::from(r_bytes),
-                FieldBytes::from(s_bytes),
-            )
-            .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))
+            EcdsaSignature::from_scalars(FieldBytes::from(r_bytes), FieldBytes::from(s_bytes))
+                .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))
         } else {
             Err(Error::InvalidKeyFormat(
                 "Invalid ECDSA signature length".to_string(),

@@ -19,8 +19,10 @@ async fn main() -> Result<()> {
 
     // 1. Create session manager
     println!("1. Creating session manager...");
-    let mut config = SessionManagerConfig::default();
-    config.cleanup_interval = Duration::from_secs(30);
+    let config = SessionManagerConfig {
+        cleanup_interval: Duration::from_secs(30),
+        ..Default::default()
+    };
     let manager = SessionManager::new(config);
     println!("   ✓ Session manager created\n");
 
@@ -28,28 +30,36 @@ async fn main() -> Result<()> {
     println!("2. Creating sessions from HPKE exporter secrets...");
 
     // Simulate exporter secret from HPKE handshake (same for Alice and Bob)
-    let shared_exporter = vec![0x42u8; 32];  // From successful HPKE handshake
+    let shared_exporter = vec![0x42u8; 32]; // From successful HPKE handshake
     let exporter_charlie = vec![0x03u8; 32]; // Charlie uses different channel
 
     // Alice's session (initiator)
-    let (session_alice, sid_alice, key_alice) = manager
-        .ensure_session_from_exporter_with_role(&shared_exporter, "alice-bob-session", true, None)?;
+    let (session_alice, sid_alice, key_alice) = manager.ensure_session_from_exporter_with_role(
+        &shared_exporter,
+        "alice-bob-session",
+        true,
+        None,
+    )?;
     println!("   ✓ Session created for Alice (initiator)");
-    println!("     Session ID: {}", sid_alice);
+    println!("     Session ID: {sid_alice}");
     println!("     Key: {}", hex::encode(&key_alice));
 
     // Bob's session (responder) - uses SAME exporter secret
-    let (session_bob, sid_bob, key_bob) = manager
-        .ensure_session_from_exporter_with_role(&shared_exporter, "alice-bob-session", false, None)?;
+    let (session_bob, sid_bob, key_bob) = manager.ensure_session_from_exporter_with_role(
+        &shared_exporter,
+        "alice-bob-session",
+        false,
+        None,
+    )?;
     println!("   ✓ Session created for Bob (responder)");
-    println!("     Session ID: {}", sid_bob);
+    println!("     Session ID: {sid_bob}");
     println!("     Key: {}", hex::encode(&key_bob));
 
     // Charlie's session (separate channel)
     let (_session_charlie, sid_charlie, _key_charlie) = manager
         .ensure_session_from_exporter_with_role(&exporter_charlie, "charlie-session", true, None)?;
     println!("   ✓ Session created for Charlie");
-    println!("     Session ID: {}\n", sid_charlie);
+    println!("     Session ID: {sid_charlie}\n");
 
     // 3. Bind key IDs to sessions
     println!("3. Binding key IDs to sessions...");
@@ -73,7 +83,10 @@ async fn main() -> Result<()> {
     println!("5. Encrypting and decrypting messages...");
     let plaintext = b"Hello Bob, this is a message from Alice!";
 
-    println!("   Original message: {:?}", String::from_utf8_lossy(plaintext));
+    println!(
+        "   Original message: {:?}",
+        String::from_utf8_lossy(plaintext)
+    );
 
     // Alice encrypts (initiator)
     let ciphertext = session_alice.encrypt(plaintext)?;
@@ -83,7 +96,10 @@ async fn main() -> Result<()> {
     // Bob decrypts (responder)
     let decrypted = session_bob.decrypt(&ciphertext)?;
     println!("   ✓ Bob decrypted message");
-    println!("     Decrypted: {:?}\n", String::from_utf8_lossy(&decrypted));
+    println!(
+        "     Decrypted: {:?}\n",
+        String::from_utf8_lossy(&decrypted)
+    );
 
     // Verify decryption matches original
     assert_eq!(plaintext.as_ref(), decrypted.as_slice());
@@ -102,7 +118,10 @@ async fn main() -> Result<()> {
     // Alice decrypts and verifies
     let decrypted2 = session_alice.decrypt_and_verify(&ciphertext2, covered, &mac)?;
     println!("   ✓ Alice decrypted and verified message");
-    println!("     Decrypted: {:?}\n", String::from_utf8_lossy(&decrypted2));
+    println!(
+        "     Decrypted: {:?}\n",
+        String::from_utf8_lossy(&decrypted2)
+    );
 
     // 7. Session statistics
     println!("7. Session statistics...");
@@ -130,7 +149,10 @@ async fn main() -> Result<()> {
     println!("9. Removing Bob's key binding...");
     manager.remove_key_binding("bob-key-1");
     println!("   ✓ Key binding removed");
-    println!("   Remaining key bindings: {}\n", manager.key_binding_count());
+    println!(
+        "   Remaining key bindings: {}\n",
+        manager.key_binding_count()
+    );
 
     // 10. Session cleanup
     println!("10. Cleaning up expired sessions...");

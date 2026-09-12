@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 /// Rate limit tracking for DOS prevention
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // window accounting is kept for the rate-limit rework (sage-spec 04-hpke.md O-6)
 struct RateLimitEntry {
     /// Number of attempts in current window
     count: usize,
@@ -28,7 +29,7 @@ pub struct RateLimitConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            max_attempts: 100,                // 100 attempts
+            max_attempts: 100,                     // 100 attempts
             window_duration: Duration::minutes(1), // per minute
         }
     }
@@ -47,6 +48,7 @@ impl Default for RateLimitConfig {
 /// Expired entries are cleaned up lazily during check_and_mark operations and
 /// periodically via cleanup_expired().
 #[derive(Clone)]
+#[allow(dead_code)] // rate limiting is configured but not yet enforced (sage-spec 04-hpke.md O-6)
 pub struct NonceStore {
     /// Time-to-live for nonce entries
     ttl: Duration,

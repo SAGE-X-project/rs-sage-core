@@ -343,7 +343,10 @@ mod tests {
     fn test_extract_signature_headers_valid() {
         let mut headers = HeaderMap::new();
         headers.insert("signature", HeaderValue::from_static("sig1=:YWJj:"));
-        headers.insert("signature-input", HeaderValue::from_static("sig1=(\"@method\" \"@path\");created=1234567890"));
+        headers.insert(
+            "signature-input",
+            HeaderValue::from_static("sig1=(\"@method\" \"@path\");created=1234567890"),
+        );
 
         let result = extract_signature_headers(&headers);
         assert!(result.is_ok());
@@ -356,7 +359,10 @@ mod tests {
     fn test_extract_signature_headers_invalid_format() {
         let mut headers = HeaderMap::new();
         headers.insert("signature", HeaderValue::from_static("invalid"));
-        headers.insert("signature-input", HeaderValue::from_static("sig1=(\"@method\")"));
+        headers.insert(
+            "signature-input",
+            HeaderValue::from_static("sig1=(\"@method\")"),
+        );
 
         let result = extract_signature_headers(&headers);
         assert!(result.is_err());
@@ -427,8 +433,10 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
 
-        let mut params = SignatureParams::default();
-        params.created = Some(now + 1000); // Future timestamp
+        let params = SignatureParams {
+            created: Some(now + 1000),
+            ..Default::default()
+        }; // Future timestamp
 
         let result = verify_signature_params(&params, &public_key);
         assert!(result.is_err());
@@ -444,8 +452,10 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
 
-        let mut params = SignatureParams::default();
-        params.expires = Some(now - 1000); // Expired
+        let params = SignatureParams {
+            expires: Some(now - 1000),
+            ..Default::default()
+        }; // Expired
 
         let result = verify_signature_params(&params, &public_key);
         assert!(result.is_err());
@@ -456,8 +466,10 @@ mod tests {
         let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
         let public_key = keypair.public_key().clone();
 
-        let mut params = SignatureParams::default();
-        params.key_id = Some("wrong-key-id".to_string());
+        let params = SignatureParams {
+            key_id: Some("wrong-key-id".to_string()),
+            ..Default::default()
+        };
 
         let result = verify_signature_params(&params, &public_key);
         assert!(result.is_err());
@@ -473,10 +485,12 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
 
-        let mut params = SignatureParams::default();
-        params.created = Some(now - 100);
-        params.expires = Some(now + 1000);
-        params.key_id = Some(public_key.key_id());
+        let params = SignatureParams {
+            created: Some(now - 100),
+            expires: Some(now + 1000),
+            key_id: Some(public_key.key_id()),
+            ..Default::default()
+        };
 
         let result = verify_signature_params(&params, &public_key);
         assert!(result.is_ok());
@@ -752,10 +766,7 @@ mod tests {
         let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
         let verifier = HttpVerifier::new(keypair.public_key().clone());
 
-        let response = Response::builder()
-            .status(200)
-            .body(())
-            .unwrap();
+        let response = Response::builder().status(200).body(()).unwrap();
 
         let result = verifier.verify_response(&response);
         assert!(result.is_err());
@@ -790,7 +801,10 @@ mod tests {
     fn test_extract_signature_headers_invalid_prefix() {
         let mut headers = HeaderMap::new();
         headers.insert("signature", HeaderValue::from_static("wrong-prefix:abc:"));
-        headers.insert("signature-input", HeaderValue::from_static("sig1=(\"@method\")"));
+        headers.insert(
+            "signature-input",
+            HeaderValue::from_static("sig1=(\"@method\")"),
+        );
 
         let result = extract_signature_headers(&headers);
         assert!(result.is_err());
@@ -1095,7 +1109,10 @@ mod tests {
 
             let verifier = HttpVerifier::new(keypair.public_key().clone());
             let result = verifier.verify_response(&signed_response);
-            assert!(result.is_ok(), "Failed to verify response with status {}", status);
+            assert!(
+                result.is_ok(),
+                "Failed to verify response with status {status}"
+            );
         }
     }
 }

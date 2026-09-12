@@ -169,9 +169,7 @@ impl HpkeServer {
         }
 
         // Verify info and exportCtx are correctly formed
-        let expected_info = self
-            .info_builder
-            .build_info(ctx_id, sender_did, &self.did);
+        let expected_info = self.info_builder.build_info(ctx_id, sender_did, &self.did);
         if payload.info != expected_info {
             return Err(Error::ValidationError("Info mismatch".into()));
         }
@@ -185,12 +183,7 @@ impl HpkeServer {
     }
 
     /// HPKE open operation
-    fn hpke_open(
-        &self,
-        enc: &[u8],
-        info: &[u8],
-        export_ctx: &[u8],
-    ) -> Result<Zeroizing<Vec<u8>>> {
+    fn hpke_open(&self, enc: &[u8], info: &[u8], export_ctx: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
         // Parse encapsulated key
         let enc_array: [u8; 32] = enc
             .try_into()

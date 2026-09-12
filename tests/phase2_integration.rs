@@ -14,7 +14,6 @@ use sage_crypto_core::did::{
 use sage_crypto_core::{KeyPair, KeyType};
 use std::sync::Arc;
 
-#[cfg(not(feature = "blockchain"))]
 use sage_crypto_core::did::DIDExt;
 
 /// Test end-to-end flow with DID integration
@@ -190,7 +189,7 @@ fn test_did_document_json_roundtrip() {
     let mut did_doc = DIDDocument::new(did.clone());
     let vm = VerificationMethod::from_public_key(&did, "key-1", keypair.public_key());
     did_doc.add_verification_method(vm);
-    did_doc.add_authentication(VerificationReference::Reference(format!("{}#key-1", did)));
+    did_doc.add_authentication(VerificationReference::Reference(format!("{did}#key-1")));
 
     // Serialize to JSON
     let json = serde_json::to_string_pretty(&did_doc).unwrap();
@@ -205,7 +204,10 @@ fn test_did_document_json_roundtrip() {
         deserialized.verification_method.len(),
         did_doc.verification_method.len()
     );
-    assert_eq!(deserialized.authentication.len(), did_doc.authentication.len());
+    assert_eq!(
+        deserialized.authentication.len(),
+        did_doc.authentication.len()
+    );
 }
 
 /// Test multiple agents with different DIDs
@@ -230,14 +232,18 @@ fn test_multiple_agents_different_dids() {
         // Each agent signs a message
         let message = MessageBuilder::new()
             .agent_did(did.as_str())
-            .body(format!("Message from agent {}", i).into_bytes())
+            .body(format!("Message from agent {i}").into_bytes())
             .keypair(keypair.clone())
             .build()
             .unwrap();
 
         // Verify each message
         let result = service
-            .verify(&message, keypair.public_key(), &VerificationOptions::default())
+            .verify(
+                &message,
+                keypair.public_key(),
+                &VerificationOptions::default(),
+            )
             .unwrap();
 
         assert!(result.verified);

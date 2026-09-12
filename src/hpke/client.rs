@@ -7,7 +7,9 @@ use crate::error::{Error, Result};
 use crate::hpke::common::{combine_secrets, make_ack_tag, verify_ack_tag};
 use crate::hpke::nonce_store::NonceStore;
 use crate::hpke::types::*;
-pub use crate::hpke::types::{AgentDID as DID, DIDResolver, DIDDocument, DIDResolutionResult, VerificationMethod};
+pub use crate::hpke::types::{
+    AgentDID as DID, DIDDocument, DIDResolutionResult, DIDResolver, VerificationMethod,
+};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::Rng;
 use std::sync::Arc;
@@ -153,13 +155,7 @@ impl HpkeClient {
             payload.eph_c.as_slice(),
             response.eph_s.as_slice(),
         ];
-        let expected_ack = make_ack_tag(
-            &combined,
-            ctx_id,
-            &payload.nonce,
-            &response.kid,
-            &binds,
-        )?;
+        let expected_ack = make_ack_tag(&combined, ctx_id, &payload.nonce, &response.kid, &binds)?;
 
         // 5. Verify ACK tag
         verify_ack_tag(&expected_ack, &response.ack_tag)?;
@@ -169,9 +165,6 @@ impl HpkeClient {
 
     /// Resolve peer's X25519 KEM key from DID document
     fn resolve_peer_kem_key(&self, peer_did: &str) -> Result<X25519PublicKey> {
-        #[cfg(feature = "blockchain")]
-        let did = crate::blockchain::AgentDID::parse(peer_did)?;
-        #[cfg(not(feature = "blockchain"))]
         let did = peer_did.to_string();
 
         let result = self.resolver.resolve(&did)?;

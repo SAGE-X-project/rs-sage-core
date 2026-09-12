@@ -33,15 +33,15 @@
 //! let history = rotator.get_rotation_history("my-key-id")?;
 //! ```
 
-use crate::crypto::storage::KeyStorage;
 use crate::crypto::keys::KeyPair;
+use crate::crypto::storage::KeyStorage;
 use crate::error::{Error, Result};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 use parking_lot::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::task::JoinHandle;
 
 /// Configuration for key rotation behavior
@@ -294,7 +294,7 @@ impl DefaultKeyRotator {
         if keep_old {
             // Archive old key with timestamp suffix
             let timestamp = Utc::now().timestamp();
-            let archived_id = format!("{}.old.{}", id, timestamp);
+            let archived_id = format!("{id}.old.{timestamp}");
             self.storage.store(&archived_id, old_key)?;
         }
         // When keep_old is false, we don't need to do anything - the old key
@@ -311,7 +311,7 @@ impl DefaultKeyRotator {
     fn record_event(&self, storage_id: &str, event: KeyRotationEvent) {
         self.history
             .entry(storage_id.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(event);
     }
 
@@ -408,7 +408,8 @@ impl DefaultKeyRotator {
                         if let Some(last_event) = events.last() {
                             let age = Utc::now().signed_duration_since(last_event.timestamp);
                             // Use milliseconds for sub-second precision
-                            let age_duration = Duration::from_millis(age.num_milliseconds().max(0) as u64);
+                            let age_duration =
+                                Duration::from_millis(age.num_milliseconds().max(0) as u64);
 
                             age_duration >= rotation_interval || age_duration >= max_key_age
                         } else {
@@ -432,7 +433,7 @@ impl DefaultKeyRotator {
                                     // Handle old key
                                     if keep_old_keys {
                                         let timestamp = Utc::now().timestamp();
-                                        let archived_id = format!("{}.old.{}", key_id, timestamp);
+                                        let archived_id = format!("{key_id}.old.{timestamp}");
                                         let _ = storage.store(&archived_id, &old_key);
                                     }
 
@@ -443,10 +444,7 @@ impl DefaultKeyRotator {
                                         "auto".to_string(),
                                     );
 
-                                    history
-                                        .entry(key_id.clone())
-                                        .or_insert_with(Vec::new)
-                                        .push(event);
+                                    history.entry(key_id.clone()).or_default().push(event);
                                 }
                             }
                         }
@@ -476,8 +474,8 @@ impl DefaultKeyRotator {
         self.stop_flag.store(true, Ordering::Relaxed);
 
         // Wait for task to finish
-        let mut task_guard = self.auto_rotation_task.write();
-        if let Some(handle) = task_guard.take() {
+        let handle = self.auto_rotation_task.write().take();
+        if let Some(handle) = handle {
             let _ = handle.await;
         }
 
@@ -509,11 +507,7 @@ impl KeyRotator for DefaultKeyRotator {
         self.handle_old_key_sync(id, &old_key, keep_old)?;
 
         // Step 5: Record rotation event
-        let event = KeyRotationEvent::new(
-            old_key_id,
-            new_key_id,
-            "manual".to_string(),
-        );
+        let event = KeyRotationEvent::new(old_key_id, new_key_id, "manual".to_string());
         self.record_event(id, event);
 
         Ok(new_key)
@@ -531,7 +525,7 @@ impl KeyRotator for DefaultKeyRotator {
         self.history
             .get(id)
             .map(|entry| entry.clone())
-            .ok_or_else(|| Error::NotFound(format!("No rotation history for key: {}", id)))
+            .ok_or_else(|| Error::NotFound(format!("No rotation history for key: {id}")))
     }
 
     fn get_last_rotation_time(&self, id: &str) -> Result<Option<DateTime<Utc>>> {
@@ -574,8 +568,8 @@ impl KeyRotator for DefaultKeyRotator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::storage::MemoryKeyStorage;
     use crate::crypto::keys::KeyType;
+    use crate::crypto::storage::MemoryKeyStorage;
 
     #[test]
     fn test_default_config() {
@@ -890,7 +884,8 @@ mod tests {
         let current_key = storage.load("test-key").unwrap();
         let current_key_id = current_key.key_id().to_string();
         assert_ne!(
-            current_key_id, first_key_id,
+            current_key_id,
+            first_key_id,
             "Auto-rotation did not change the key after waiting. History: {:?}",
             rotator.get_rotation_history("test-key").unwrap_or_default()
         );
@@ -918,7 +913,7 @@ mod tests {
         // Create initial keys
         for i in 0..5 {
             let key = KeyPair::generate(KeyType::Ed25519).unwrap();
-            storage.store(&format!("key-{}", i), &key).unwrap();
+            storage.store(&format!("key-{i}"), &key).unwrap();
         }
 
         // Spawn multiple threads to rotate concurrently
@@ -927,7 +922,7 @@ mod tests {
             let rotator_clone = Arc::clone(&rotator);
             let handle = thread::spawn(move || {
                 for _ in 0..3 {
-                    let _ = rotator_clone.rotate(&format!("key-{}", i));
+                    let _ = rotator_clone.rotate(&format!("key-{i}"));
                     thread::sleep(Duration::from_millis(10));
                 }
             });
@@ -941,7 +936,7 @@ mod tests {
 
         // Verify all keys have history
         for i in 0..5 {
-            let history = rotator.get_rotation_history(&format!("key-{}", i)).unwrap();
+            let history = rotator.get_rotation_history(&format!("key-{i}")).unwrap();
             assert_eq!(history.len(), 3);
         }
     }
