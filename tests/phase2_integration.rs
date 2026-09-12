@@ -8,8 +8,8 @@
 use sage_crypto_core::core::{MessageBuilder, VerificationOptions, VerificationService};
 use sage_crypto_core::crypto::{CryptoManager, MemoryKeyStorage};
 use sage_crypto_core::did::{
-    generate_did_from_pubkey, DIDDocument, DIDMethod, DIDResolver, MemoryDIDResolver,
-    VerificationMethod, VerificationReference,
+    generate_did_from_pubkey, DIDDocument, DIDResolver, MemoryDIDResolver, VerificationMethod,
+    VerificationReference,
 };
 use sage_crypto_core::{KeyPair, KeyType};
 use std::sync::Arc;
@@ -25,8 +25,8 @@ fn test_end_to_end_with_did_ed25519() {
     let keypair = manager.generate_keypair(KeyType::Ed25519).unwrap();
 
     // 2. Generate DID from public key
-    let did = generate_did_from_pubkey(keypair.public_key(), DIDMethod::Key).unwrap();
-    assert!(did.as_str().starts_with("did:sage:key:"));
+    let did = generate_did_from_pubkey(keypair.public_key()).unwrap();
+    assert!(did.as_str().starts_with("did:sage:"));
 
     // 3. Create DID Document with verification method
     let mut did_doc = DIDDocument::new(did.clone());
@@ -69,7 +69,7 @@ fn test_end_to_end_with_did_secp256k1() {
     let manager = CryptoManager::new(storage);
     let keypair = manager.generate_keypair(KeyType::Secp256k1).unwrap();
 
-    let did = generate_did_from_pubkey(keypair.public_key(), DIDMethod::Key).unwrap();
+    let did = generate_did_from_pubkey(keypair.public_key()).unwrap();
 
     let mut did_doc = DIDDocument::new(did.clone());
     let vm = VerificationMethod::from_public_key(&did, "key-1", keypair.public_key());
@@ -102,9 +102,9 @@ fn test_chain_did_integration() {
     let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
 
     // Generate chain-based DID
-    let did = generate_did_from_pubkey(keypair.public_key(), DIDMethod::Chain).unwrap();
-    assert!(did.as_str().starts_with("did:sage:chain:"));
-    assert_eq!(did.identifier().len(), 40); // 20 bytes as hex
+    let did = generate_did_from_pubkey(keypair.public_key()).unwrap();
+    assert!(did.as_str().starts_with("did:sage:"));
+    assert!(!did.identifier().is_empty());
 
     let mut did_doc = DIDDocument::new(did.clone());
     let vm = VerificationMethod::from_public_key(&did, "key-1", keypair.public_key());
@@ -125,7 +125,7 @@ fn test_verification_failure_wrong_key() {
     let keypair1 = KeyPair::generate(KeyType::Ed25519).unwrap();
     let keypair2 = KeyPair::generate(KeyType::Ed25519).unwrap();
 
-    let did = generate_did_from_pubkey(keypair1.public_key(), DIDMethod::Key).unwrap();
+    let did = generate_did_from_pubkey(keypair1.public_key()).unwrap();
 
     // Sign with keypair1
     let message = MessageBuilder::new()
@@ -150,7 +150,7 @@ fn test_verification_failure_wrong_key() {
 #[test]
 fn test_verification_with_all_checks() {
     let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-    let did = generate_did_from_pubkey(keypair.public_key(), DIDMethod::Key).unwrap();
+    let did = generate_did_from_pubkey(keypair.public_key()).unwrap();
 
     let now = chrono::Utc::now().timestamp();
     let message = MessageBuilder::new()
@@ -184,7 +184,7 @@ fn test_verification_with_all_checks() {
 #[test]
 fn test_did_document_json_roundtrip() {
     let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-    let did = generate_did_from_pubkey(keypair.public_key(), DIDMethod::Key).unwrap();
+    let did = generate_did_from_pubkey(keypair.public_key()).unwrap();
 
     let mut did_doc = DIDDocument::new(did.clone());
     let vm = VerificationMethod::from_public_key(&did, "key-1", keypair.public_key());
@@ -221,7 +221,7 @@ fn test_multiple_agents_different_dids() {
     // Create 3 different agents
     for i in 0..3 {
         let keypair = manager.generate_keypair(KeyType::Ed25519).unwrap();
-        let did = generate_did_from_pubkey(keypair.public_key(), DIDMethod::Key).unwrap();
+        let did = generate_did_from_pubkey(keypair.public_key()).unwrap();
 
         let mut did_doc = DIDDocument::new(did.clone());
         let vm = VerificationMethod::from_public_key(&did, "key-1", keypair.public_key());
@@ -257,7 +257,7 @@ fn test_multiple_agents_different_dids() {
 #[test]
 fn test_did_resolution_not_found() {
     let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-    let did = generate_did_from_pubkey(keypair.public_key(), DIDMethod::Key).unwrap();
+    let did = generate_did_from_pubkey(keypair.public_key()).unwrap();
 
     let resolver = MemoryDIDResolver::new();
 
@@ -277,13 +277,13 @@ fn test_did_resolution_not_found() {
 fn test_verification_method_types() {
     // Ed25519
     let ed_keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-    let ed_did = generate_did_from_pubkey(ed_keypair.public_key(), DIDMethod::Key).unwrap();
+    let ed_did = generate_did_from_pubkey(ed_keypair.public_key()).unwrap();
     let ed_vm = VerificationMethod::from_public_key(&ed_did, "key-1", ed_keypair.public_key());
     assert_eq!(ed_vm.method_type, "Ed25519VerificationKey2020");
 
     // Secp256k1
     let secp_keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
-    let secp_did = generate_did_from_pubkey(secp_keypair.public_key(), DIDMethod::Key).unwrap();
+    let secp_did = generate_did_from_pubkey(secp_keypair.public_key()).unwrap();
     let secp_vm =
         VerificationMethod::from_public_key(&secp_did, "key-1", secp_keypair.public_key());
     assert_eq!(secp_vm.method_type, "EcdsaSecp256k1VerificationKey2019");
