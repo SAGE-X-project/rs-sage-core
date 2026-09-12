@@ -4,7 +4,10 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use sage_crypto_core::session::{Session, SessionManager, SessionManagerConfig};
 
 fn bench_session_creation_from_exporter(c: &mut Criterion) {
-    let manager = SessionManager::new(SessionManagerConfig::default());
+    // Benchmarks encrypt far more messages than a session normally carries.
+    let mut config = SessionManagerConfig::default();
+    config.default_session_config.max_messages = usize::MAX;
+    let manager = SessionManager::new(config);
     let exporter = vec![0x42u8; 32];
 
     c.bench_function("session_creation_from_exporter", |b| {
@@ -22,7 +25,10 @@ fn bench_session_creation_from_exporter(c: &mut Criterion) {
 }
 
 fn bench_session_encrypt(c: &mut Criterion) {
-    let manager = SessionManager::new(SessionManagerConfig::default());
+    // Benchmarks encrypt far more messages than a session normally carries.
+    let mut config = SessionManagerConfig::default();
+    config.default_session_config.max_messages = usize::MAX;
+    let manager = SessionManager::new(config);
     let exporter = vec![0x42u8; 32];
     let (session, _, _) = manager
         .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
@@ -36,7 +42,10 @@ fn bench_session_encrypt(c: &mut Criterion) {
 }
 
 fn bench_session_decrypt(c: &mut Criterion) {
-    let manager = SessionManager::new(SessionManagerConfig::default());
+    // Benchmarks encrypt far more messages than a session normally carries.
+    let mut config = SessionManagerConfig::default();
+    config.default_session_config.max_messages = usize::MAX;
+    let manager = SessionManager::new(config);
     let exporter = vec![0x42u8; 32];
     let (alice_session, _, _) = manager
         .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
@@ -54,7 +63,10 @@ fn bench_session_decrypt(c: &mut Criterion) {
 }
 
 fn bench_session_encrypt_and_sign(c: &mut Criterion) {
-    let manager = SessionManager::new(SessionManagerConfig::default());
+    // Benchmarks encrypt far more messages than a session normally carries.
+    let mut config = SessionManagerConfig::default();
+    config.default_session_config.max_messages = usize::MAX;
+    let manager = SessionManager::new(config);
     let exporter = vec![0x42u8; 32];
     let (session, _, _) = manager
         .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
@@ -73,7 +85,10 @@ fn bench_session_encrypt_and_sign(c: &mut Criterion) {
 }
 
 fn bench_session_decrypt_and_verify(c: &mut Criterion) {
-    let manager = SessionManager::new(SessionManagerConfig::default());
+    // Benchmarks encrypt far more messages than a session normally carries.
+    let mut config = SessionManagerConfig::default();
+    config.default_session_config.max_messages = usize::MAX;
+    let manager = SessionManager::new(config);
     let exporter = vec![0x42u8; 32];
     let (alice_session, _, _) = manager
         .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
@@ -96,7 +111,10 @@ fn bench_session_decrypt_and_verify(c: &mut Criterion) {
 }
 
 fn bench_session_bidirectional_communication(c: &mut Criterion) {
-    let manager = SessionManager::new(SessionManagerConfig::default());
+    // Benchmarks encrypt far more messages than a session normally carries.
+    let mut config = SessionManagerConfig::default();
+    config.default_session_config.max_messages = usize::MAX;
+    let manager = SessionManager::new(config);
     let exporter = vec![0x42u8; 32];
     let (alice_session, _, _) = manager
         .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
@@ -121,7 +139,10 @@ fn bench_session_bidirectional_communication(c: &mut Criterion) {
 }
 
 fn bench_session_key_binding(c: &mut Criterion) {
-    let manager = SessionManager::new(SessionManagerConfig::default());
+    // Benchmarks encrypt far more messages than a session normally carries.
+    let mut config = SessionManagerConfig::default();
+    config.default_session_config.max_messages = usize::MAX;
+    let manager = SessionManager::new(config);
     let exporter = vec![0x42u8; 32];
     let (_, session_id, _) = manager
         .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
@@ -138,7 +159,10 @@ fn bench_session_key_binding(c: &mut Criterion) {
 fn bench_session_cleanup(c: &mut Criterion) {
     c.bench_function("session_cleanup", |b| {
         b.iter(|| {
-            let manager = SessionManager::new(SessionManagerConfig::default());
+            // Benchmarks encrypt far more messages than a session normally carries.
+            let mut config = SessionManagerConfig::default();
+            config.default_session_config.max_messages = usize::MAX;
+            let manager = SessionManager::new(config);
             let exporter = vec![0x42u8; 32];
 
             // Create multiple sessions
@@ -157,7 +181,10 @@ fn bench_session_cleanup(c: &mut Criterion) {
 
 fn bench_session_encryption_sizes(c: &mut Criterion) {
     let mut group = c.benchmark_group("session_encryption_sizes");
-    let manager = SessionManager::new(SessionManagerConfig::default());
+    // Benchmarks encrypt far more messages than a session normally carries.
+    let mut config = SessionManagerConfig::default();
+    config.default_session_config.max_messages = usize::MAX;
+    let manager = SessionManager::new(config);
     let exporter = vec![0x42u8; 32];
     let (session, _, _) = manager
         .ensure_session_from_exporter_with_role(&exporter, "ctx", true, None)
