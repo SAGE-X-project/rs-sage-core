@@ -17,21 +17,20 @@ Core cryptographic library for SAGE (Secure Agent Guarantee Engine) written in R
 
 - **Cryptographic Primitives**
   - Ed25519 EdDSA signatures (RFC 8032)
-  - Secp256k1 ECDSA signatures
+  - Secp256k1 ECDSA over Keccak-256 (Ethereum convention: RFC 6979, low-S, `r || s || v`)
+  - P-256 ECDSA over SHA-256 (raw `r || s`, low-S)
   - Secure key generation using OS random
   - Key derivation and management
 
-- **RFC 9421 HTTP Message Signatures**
-  - HTTP request and response signing
-  - Signature component canonicalization
-  - Derived components support
-  - Multiple signature algorithms
+- **RFC 9421 HTTP Message Signatures** (sage-spec profile)
+  - Request signing with `Content-Digest`, `nonce` and DID `keyid`; response signing bound to the request (`;req`)
+  - Verification policies (`VerifyOptions::strict_request` / `strict_response`), replay guard, freshness window
+  - Derived components including `@query-param`; identifiers `ed25519`, `es256k`, `ecdsa-p256-sha256`
 
 - **HPKE & Secure Communication (Phase 4)** 🆕
   - HPKE (Hybrid Public Key Encryption) - RFC 9180
   - X25519 key exchange with HKDF
-  - Session management with encryption
-  - Traffic key derivation (C2S, S2C, Channel Binding)
+  - Sessions per sage-spec 05: ChaCha20-Poly1305 records with sequence header, replay window and key rotation; HKDF key schedule; directional keys
   - MAC-authenticated encryption
 
 - **DID (Decentralized Identifiers)**
@@ -329,9 +328,9 @@ The `handshake` (four-phase), `transport` (reqwest) and `blockchain`
 [sage-spec](https://github.com/SAGE-X-project/sage-spec): the handshake is
 superseded by the HPKE profile, transport belongs to the gateway, and
 on-chain resolution is done by the Go core. Removing them also dropped the
-`reqwest`/`h2`/`rustls` advisory chain. The remaining acknowledged advisory
-is RUSTSEC-2023-0071 (`rsa`), which goes away when RSA support is removed
-in the crypto alignment step.
+`reqwest`/`h2`/`rustls` advisory chain. RSA support was removed in the
+crypto alignment step (it is optional in sage-spec and carried the only
+remaining advisory, RUSTSEC-2023-0071).
 
 ### Security Audit
 

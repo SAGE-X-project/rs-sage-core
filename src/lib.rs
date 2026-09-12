@@ -11,6 +11,7 @@ pub mod core;
 pub mod crypto;
 pub mod error;
 pub mod formats;
+pub mod jcs;
 pub mod rfc9421;
 
 pub mod did;

@@ -230,7 +230,7 @@ impl VerificationService {
         // Add RFC 9421 signature headers
         // Format: "sig1=:base64_signature:"
         let signature_base64 = base64::engine::general_purpose::STANDARD.encode(&message.signature);
-        let signature_header = format!("sig1=:{signature_base64}");
+        let signature_header = format!("sig1=:{signature_base64}:");
 
         request_builder = request_builder
             .header("signature", signature_header)
@@ -991,24 +991,6 @@ mod tests {
         assert!(!is_valid);
     }
 
-    #[test]
-    fn test_verify_signature_rsa() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let service = VerificationService::new();
-
-        let msg = MessageBuilder::new()
-            .agent_did("did:sage:test")
-            .nonce("test-nonce")
-            .build()
-            .unwrap();
-
-        // Empty signature should fail
-        let is_valid = service
-            .verify_signature(&msg, keypair.public_key())
-            .unwrap();
-        assert!(!is_valid);
-    }
-
     // ===== Additional Edge Case Tests =====
 
     #[test]
@@ -1400,7 +1382,7 @@ mod tests {
         // Create and sign an HTTP request
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         // Extract signature from signed request
         let signature_header = signed_request
@@ -1463,7 +1445,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1527,7 +1509,7 @@ mod tests {
         // Sign the message (signature will be valid)
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1573,69 +1555,6 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_with_valid_signature_but_empty_nonce() {
-        use crate::rfc9421::HttpSigner;
-        use base64::Engine;
-
-        let service = VerificationService::new();
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let now = chrono::Utc::now().timestamp();
-
-        let mut msg = MessageBuilder::new()
-            .agent_did("did:sage:test")
-            .timestamp(now)
-            .nonce("") // Empty nonce
-            .body(b"test".to_vec())
-            .build()
-            .unwrap();
-
-        // Sign the message
-        let signer = HttpSigner::new(keypair.clone());
-        let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
-
-        let signature_header = signed_request
-            .headers()
-            .get("signature")
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let signature_input = signed_request
-            .headers()
-            .get("signature-input")
-            .unwrap()
-            .to_str()
-            .unwrap();
-
-        let sig_start = signature_header.find(':').unwrap() + 1;
-        let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len() - 1]
-        } else {
-            &signature_header[sig_start..]
-        };
-        msg.signature = base64::engine::general_purpose::STANDARD
-            .decode(sig_base64)
-            .unwrap();
-        msg.signature_input = signature_input.to_string();
-
-        // Verify with nonce check enabled
-        let options = VerificationOptions {
-            check_timestamp: false,
-            check_nonce: true,
-            check_order: false,
-            ..Default::default()
-        };
-
-        let result = service
-            .verify(&msg, keypair.public_key(), &options)
-            .unwrap();
-        assert!(!result.verified);
-        assert!(result.signature_valid);
-        assert!(!result.nonce_valid);
-        assert_eq!(result.error, Some("Invalid nonce".to_string()));
-    }
-
-    #[test]
     fn test_verify_full_flow_with_all_checks_passing() {
         use crate::rfc9421::HttpSigner;
         use base64::Engine;
@@ -1655,7 +1574,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1721,7 +1640,7 @@ mod tests {
         // Sign with keypair1
         let signer = HttpSigner::new(keypair1.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1764,12 +1683,7 @@ mod tests {
         use base64::Engine;
 
         let service = VerificationService::new();
-        let algorithms = vec![
-            KeyType::Ed25519,
-            KeyType::P256,
-            KeyType::Secp256k1,
-            KeyType::Rsa2048,
-        ];
+        let algorithms = vec![KeyType::Ed25519, KeyType::P256, KeyType::Secp256k1];
 
         for algo in algorithms {
             let keypair = KeyPair::generate(algo).unwrap();
@@ -1785,7 +1699,7 @@ mod tests {
             // Sign the message
             let signer = HttpSigner::new(keypair.clone());
             let request = service.reconstruct_http_request(&msg).unwrap();
-            let signed_request = signer.sign_request(request).unwrap();
+            let signed_request = signer.sign_request(request, None).unwrap();
 
             let signature_header = signed_request
                 .headers()
@@ -1841,7 +1755,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1900,7 +1814,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()
@@ -1968,7 +1882,7 @@ mod tests {
         // Sign the message
         let signer = HttpSigner::new(keypair.clone());
         let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request).unwrap();
+        let signed_request = signer.sign_request(request, None).unwrap();
 
         let signature_header = signed_request
             .headers()

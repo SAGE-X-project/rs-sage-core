@@ -100,7 +100,6 @@ impl From<KeyType> for SageKeyType {
             KeyType::Ed25519 => SageKeyType::Ed25519,
             KeyType::Secp256k1 => SageKeyType::Secp256k1,
             KeyType::P256 => SageKeyType::Secp256k1, // Map P256 to Secp256k1 for FFI
-            KeyType::Rsa2048 | KeyType::Rsa4096 => SageKeyType::Ed25519, // Map RSA to Ed25519 for FFI
         }
     }
 }

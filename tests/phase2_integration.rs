@@ -93,7 +93,7 @@ fn test_end_to_end_with_did_secp256k1() {
 
     assert!(result.verified);
     assert!(result.signature_valid);
-    assert_eq!(message.algorithm, "ecdsa-secp256k1-sha256");
+    assert_eq!(message.algorithm, "es256k");
 }
 
 /// Test chain-based DID with verification

@@ -1,27 +1,35 @@
-//! RFC 9421 HTTP Message Signatures implementation
+//! RFC 9421 HTTP Message Signatures as profiled by sage-spec
+//! `03-rfc9421.md`: covered components with `;req` binding, `Content-Digest`,
+//! `keyid` carrying the agent DID, nonce replay protection and the SAGE
+//! algorithm identifiers.
 
 pub mod canonicalize;
 pub mod components;
+pub mod dictionary;
+pub mod replay;
 pub mod signer;
 pub mod verifier;
 
-pub use components::{SignatureComponent, SignatureParams};
-pub use signer::HttpSigner;
-pub use verifier::HttpVerifier;
+pub use canonicalize::{content_digest, verify_content_digest};
+pub use components::{
+    format_signature_input, parse_signature_input_value, SignatureComponent, SignatureParams,
+};
+pub use dictionary::{parse_signature_header, parse_signature_input, SignatureInputMember};
+pub use replay::{MemoryReplayGuard, ReplayGuard};
+pub use signer::{
+    algorithm_for, default_request_components, default_response_components, HttpSigner,
+};
+pub use verifier::{HttpVerifier, VerifyOptions, DEFAULT_MAX_AGE};
 
-/// Signature algorithm identifiers for RFC 9421
+/// Signature algorithm identifiers for RFC 9421 (sage-spec `01-crypto.md` §3)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignatureAlgorithm {
-    /// Ed25519 signature algorithm
+    /// `ed25519`
     Ed25519,
-    /// ECDSA P-256 SHA-256
+    /// `ecdsa-p256-sha256`
     EcdsaP256Sha256,
-    /// ECDSA Secp256k1 SHA-256
+    /// `es256k`: ECDSA secp256k1 over Keccak-256 (Ethereum convention)
     EcdsaSecp256k1Sha256,
-    /// RSA PKCS#1 v1.5 with SHA-256
-    RsaPkcs1v15Sha256,
-    /// RSA PSS with SHA-512
-    RsaPssSha512,
 }
 
 impl SignatureAlgorithm {
@@ -30,74 +38,83 @@ impl SignatureAlgorithm {
         match self {
             SignatureAlgorithm::Ed25519 => "ed25519",
             SignatureAlgorithm::EcdsaP256Sha256 => "ecdsa-p256-sha256",
-            SignatureAlgorithm::EcdsaSecp256k1Sha256 => "ecdsa-secp256k1-sha256",
-            SignatureAlgorithm::RsaPkcs1v15Sha256 => "rsa-v1_5-sha256",
-            SignatureAlgorithm::RsaPssSha512 => "rsa-pss-sha512",
+            SignatureAlgorithm::EcdsaSecp256k1Sha256 => "es256k",
+        }
+    }
+
+    /// Parse an identifier string
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "ed25519" => Some(SignatureAlgorithm::Ed25519),
+            "ecdsa-p256-sha256" => Some(SignatureAlgorithm::EcdsaP256Sha256),
+            "es256k" => Some(SignatureAlgorithm::EcdsaSecp256k1Sha256),
+            _ => None,
         }
     }
 }
 
-/// HTTP signature input string builder
+/// Builder for a `Signature-Input` member value.
+#[derive(Debug, Clone, Default)]
 pub struct SignatureInput {
-    components: Vec<String>,
+    components: Vec<SignatureComponent>,
     params: SignatureParams,
 }
 
-impl Default for SignatureInput {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SignatureInput {
-    /// Create a new signature input builder
+    /// Empty builder
     pub fn new() -> Self {
-        Self {
-            components: Vec::new(),
-            params: SignatureParams::default(),
-        }
+        Self::default()
     }
 
-    /// Add a component to sign
+    /// Add a covered component
     pub fn add_component(mut self, component: SignatureComponent) -> Self {
-        self.components.push(component.identifier().to_string());
+        self.components.push(component);
         self
     }
 
-    /// Set the key ID
+    /// Set `keyid`
     pub fn key_id(mut self, key_id: impl Into<String>) -> Self {
         self.params.key_id = Some(key_id.into());
         self
     }
 
-    /// Set the algorithm
+    /// Set `alg`
     pub fn algorithm(mut self, alg: SignatureAlgorithm) -> Self {
         self.params.alg = Some(alg.identifier().to_string());
         self
     }
 
-    /// Set the created timestamp
-    pub fn created(mut self, timestamp: i64) -> Self {
-        self.params.created = Some(timestamp);
+    /// Set `created`
+    pub fn created(mut self, created: i64) -> Self {
+        self.params.created = Some(created);
         self
     }
 
-    /// Set the expires timestamp
-    pub fn expires(mut self, timestamp: i64) -> Self {
-        self.params.expires = Some(timestamp);
+    /// Set `expires`
+    pub fn expires(mut self, expires: i64) -> Self {
+        self.params.expires = Some(expires);
         self
     }
 
-    /// Build the signature input string
-    pub fn build(self) -> String {
-        let components = self.components.join(" ");
-        let params = self.params.to_string();
+    /// Set `nonce`
+    pub fn nonce(mut self, nonce: impl Into<String>) -> Self {
+        self.params.nonce = Some(nonce.into());
+        self
+    }
 
-        if params.is_empty() {
-            format!("({components})")
-        } else {
-            format!("({components});{params}")
-        }
+    /// The components
+    pub fn components(&self) -> &[SignatureComponent] {
+        &self.components
+    }
+
+    /// The parameters
+    pub fn params(&self) -> &SignatureParams {
+        &self.params
+    }
+
+    /// Build the member value: `("@method" …);keyid="…";…`
+    pub fn build(&self) -> String {
+        format_signature_input(&self.components, &self.params)
     }
 }
 
@@ -105,275 +122,34 @@ impl SignatureInput {
 mod tests {
     use super::*;
 
-    // ===== SignatureAlgorithm Tests =====
-
     #[test]
-    fn test_signature_algorithm_ed25519_identifier() {
-        let alg = SignatureAlgorithm::Ed25519;
-        assert_eq!(alg.identifier(), "ed25519");
+    fn identifiers() {
+        assert_eq!(SignatureAlgorithm::Ed25519.identifier(), "ed25519");
+        assert_eq!(
+            SignatureAlgorithm::EcdsaSecp256k1Sha256.identifier(),
+            "es256k"
+        );
+        assert_eq!(
+            SignatureAlgorithm::EcdsaP256Sha256.identifier(),
+            "ecdsa-p256-sha256"
+        );
+        assert_eq!(
+            SignatureAlgorithm::parse("es256k"),
+            Some(SignatureAlgorithm::EcdsaSecp256k1Sha256)
+        );
+        assert_eq!(SignatureAlgorithm::parse("rsa-pss-sha256"), None);
     }
 
     #[test]
-    fn test_signature_algorithm_ecdsa_p256_identifier() {
-        let alg = SignatureAlgorithm::EcdsaP256Sha256;
-        assert_eq!(alg.identifier(), "ecdsa-p256-sha256");
-    }
-
-    #[test]
-    fn test_signature_algorithm_ecdsa_secp256k1_identifier() {
-        let alg = SignatureAlgorithm::EcdsaSecp256k1Sha256;
-        assert_eq!(alg.identifier(), "ecdsa-secp256k1-sha256");
-    }
-
-    #[test]
-    fn test_signature_algorithm_rsa_pkcs1_identifier() {
-        let alg = SignatureAlgorithm::RsaPkcs1v15Sha256;
-        assert_eq!(alg.identifier(), "rsa-v1_5-sha256");
-    }
-
-    #[test]
-    fn test_signature_algorithm_rsa_pss_identifier() {
-        let alg = SignatureAlgorithm::RsaPssSha512;
-        assert_eq!(alg.identifier(), "rsa-pss-sha512");
-    }
-
-    #[test]
-    fn test_signature_algorithm_equality() {
-        let alg1 = SignatureAlgorithm::Ed25519;
-        let alg2 = SignatureAlgorithm::Ed25519;
-        let alg3 = SignatureAlgorithm::EcdsaP256Sha256;
-
-        assert_eq!(alg1, alg2);
-        assert_ne!(alg1, alg3);
-    }
-
-    #[test]
-    fn test_signature_algorithm_clone() {
-        let alg1 = SignatureAlgorithm::Ed25519;
-        let alg2 = alg1;
-
-        assert_eq!(alg1, alg2);
-    }
-
-    // ===== SignatureInput Builder Tests =====
-
-    #[test]
-    fn test_signature_input_new() {
-        let input = SignatureInput::new();
-        assert_eq!(input.components.len(), 0);
-    }
-
-    #[test]
-    fn test_signature_input_default() {
-        let input = SignatureInput::default();
-        assert_eq!(input.components.len(), 0);
-    }
-
-    #[test]
-    fn test_signature_input_add_component() {
-        let input = SignatureInput::new().add_component(SignatureComponent::Method);
-
-        assert_eq!(input.components.len(), 1);
-        assert_eq!(input.components[0], "@method");
-    }
-
-    #[test]
-    fn test_signature_input_add_multiple_components() {
-        let input = SignatureInput::new()
+    fn builder() {
+        let v = SignatureInput::new()
             .add_component(SignatureComponent::Method)
-            .add_component(SignatureComponent::Path)
-            .add_component(SignatureComponent::Header("content-type".to_string()));
-
-        assert_eq!(input.components.len(), 3);
-        assert_eq!(input.components[0], "@method");
-        assert_eq!(input.components[1], "@path");
-        assert_eq!(input.components[2], "content-type");
-    }
-
-    #[test]
-    fn test_signature_input_key_id() {
-        let input = SignatureInput::new().key_id("test-key-123");
-
-        assert_eq!(input.params.key_id, Some("test-key-123".to_string()));
-    }
-
-    #[test]
-    fn test_signature_input_algorithm() {
-        let input = SignatureInput::new().algorithm(SignatureAlgorithm::Ed25519);
-
-        assert_eq!(input.params.alg, Some("ed25519".to_string()));
-    }
-
-    #[test]
-    fn test_signature_input_created() {
-        let input = SignatureInput::new().created(1618884473);
-
-        assert_eq!(input.params.created, Some(1618884473));
-    }
-
-    #[test]
-    fn test_signature_input_expires() {
-        let input = SignatureInput::new().expires(1618884773);
-
-        assert_eq!(input.params.expires, Some(1618884773));
-    }
-
-    #[test]
-    fn test_signature_input_build_empty() {
-        let input = SignatureInput::new();
-        let result = input.build();
-
-        assert_eq!(result, "()");
-    }
-
-    #[test]
-    fn test_signature_input_build_single_component() {
-        let input = SignatureInput::new().add_component(SignatureComponent::Method);
-
-        let result = input.build();
-
-        assert_eq!(result, "(@method)");
-    }
-
-    #[test]
-    fn test_signature_input_build_multiple_components() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Method)
-            .add_component(SignatureComponent::Path);
-
-        let result = input.build();
-
-        assert_eq!(result, "(@method @path)");
-    }
-
-    #[test]
-    fn test_signature_input_build_with_key_id() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Method)
-            .key_id("test-key");
-
-        let result = input.build();
-
-        assert!(result.starts_with("(@method);"));
-        assert!(result.contains("keyid=\"test-key\""));
-    }
-
-    #[test]
-    fn test_signature_input_build_with_algorithm() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Method)
-            .algorithm(SignatureAlgorithm::Ed25519);
-
-        let result = input.build();
-
-        assert!(result.starts_with("(@method);"));
-        assert!(result.contains("alg=\"ed25519\""));
-    }
-
-    #[test]
-    fn test_signature_input_build_with_created() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Method)
-            .created(1618884473);
-
-        let result = input.build();
-
-        assert!(result.starts_with("(@method);"));
-        assert!(result.contains("created=1618884473"));
-    }
-
-    #[test]
-    fn test_signature_input_build_with_expires() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Method)
-            .expires(1618884773);
-
-        let result = input.build();
-
-        assert!(result.starts_with("(@method);"));
-        assert!(result.contains("expires=1618884773"));
-    }
-
-    #[test]
-    fn test_signature_input_build_with_all_params() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Method)
-            .add_component(SignatureComponent::Path)
-            .key_id("test-key")
+            .add_component(SignatureComponent::Header("date".into()))
+            .key_id("did:sage:ethereum:0x1")
             .algorithm(SignatureAlgorithm::Ed25519)
-            .created(1618884473)
-            .expires(1618884773);
-
-        let result = input.build();
-
-        assert!(result.starts_with("(@method @path);"));
-        assert!(result.contains("keyid=\"test-key\""));
-        assert!(result.contains("alg=\"ed25519\""));
-        assert!(result.contains("created=1618884473"));
-        assert!(result.contains("expires=1618884773"));
-    }
-
-    #[test]
-    fn test_signature_input_builder_chain() {
-        let result = SignatureInput::new()
-            .add_component(SignatureComponent::Method)
-            .add_component(SignatureComponent::Path)
-            .add_component(SignatureComponent::Authority)
-            .key_id("my-key")
-            .algorithm(SignatureAlgorithm::EcdsaP256Sha256)
-            .created(1000000)
-            .expires(2000000)
+            .created(1)
+            .nonce("n")
             .build();
-
-        assert!(result.starts_with("(@method @path @authority);"));
-    }
-
-    #[test]
-    fn test_signature_input_with_header_component() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Header("content-type".to_string()))
-            .add_component(SignatureComponent::Header("x-custom".to_string()));
-
-        let result = input.build();
-
-        assert_eq!(result, "(content-type x-custom)");
-    }
-
-    #[test]
-    fn test_signature_input_all_component_types() {
-        let input = SignatureInput::new()
-            .add_component(SignatureComponent::Method)
-            .add_component(SignatureComponent::TargetUri)
-            .add_component(SignatureComponent::Authority)
-            .add_component(SignatureComponent::Scheme)
-            .add_component(SignatureComponent::RequestTarget)
-            .add_component(SignatureComponent::Path)
-            .add_component(SignatureComponent::Query)
-            .add_component(SignatureComponent::Header("content-type".to_string()));
-
-        assert_eq!(input.components.len(), 8);
-    }
-
-    #[test]
-    fn test_signature_input_all_algorithms() {
-        let algorithms = vec![
-            (SignatureAlgorithm::Ed25519, "ed25519"),
-            (SignatureAlgorithm::EcdsaP256Sha256, "ecdsa-p256-sha256"),
-            (
-                SignatureAlgorithm::EcdsaSecp256k1Sha256,
-                "ecdsa-secp256k1-sha256",
-            ),
-            (SignatureAlgorithm::RsaPkcs1v15Sha256, "rsa-v1_5-sha256"),
-            (SignatureAlgorithm::RsaPssSha512, "rsa-pss-sha512"),
-        ];
-
-        for (alg, expected) in algorithms {
-            let input = SignatureInput::new()
-                .add_component(SignatureComponent::Method)
-                .algorithm(alg);
-
-            let result = input.build();
-            assert!(result.contains(&format!("alg=\"{expected}\"")));
-        }
+        assert_eq!(v, "(\"@method\" \"date\");keyid=\"did:sage:ethereum:0x1\";alg=\"ed25519\";created=1;nonce=\"n\"");
     }
 }

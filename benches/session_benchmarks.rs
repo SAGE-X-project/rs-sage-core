@@ -57,10 +57,14 @@ fn bench_session_decrypt(c: &mut Criterion) {
         .unwrap();
 
     let plaintext = b"Benchmark message for decryption performance test with reasonable length";
-    let ciphertext = alice_session.encrypt(plaintext).unwrap();
 
+    // Every record can be opened once (replay window), so produce a fresh one per iteration.
     c.bench_function("session_decrypt", |b| {
-        b.iter(|| bob_session.decrypt(black_box(&ciphertext)).unwrap());
+        b.iter_batched(
+            || alice_session.encrypt(plaintext).unwrap(),
+            |ciphertext| bob_session.decrypt(black_box(&ciphertext)).unwrap(),
+            criterion::BatchSize::SmallInput,
+        );
     });
 }
 
@@ -95,14 +99,17 @@ fn bench_session_decrypt_and_verify(c: &mut Criterion) {
 
     let plaintext = b"Benchmark message for MAC authentication performance test";
     let covered = b"additional-authenticated-data";
-    let (ciphertext, mac) = alice_session.encrypt_and_sign(plaintext, covered).unwrap();
 
     c.bench_function("session_decrypt_and_verify", |b| {
-        b.iter(|| {
-            bob_session
-                .decrypt_and_verify(black_box(&ciphertext), black_box(covered), black_box(&mac))
-                .unwrap()
-        });
+        b.iter_batched(
+            || alice_session.encrypt_and_sign(plaintext, covered).unwrap(),
+            |(ciphertext, mac)| {
+                bob_session
+                    .decrypt_and_verify(black_box(&ciphertext), black_box(covered), black_box(&mac))
+                    .unwrap()
+            },
+            criterion::BatchSize::SmallInput,
+        );
     });
 }
 

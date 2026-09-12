@@ -156,10 +156,6 @@ impl KeyExporter for PublicKey {
 
                         Ok(der)
                     }
-                    PublicKey::Rsa(der_bytes, _) => {
-                        // RSA keys are already in DER format
-                        Ok(der_bytes.clone())
-                    }
                 }
             }
             KeyFormat::Raw => Ok(self.to_bytes()),
@@ -212,12 +208,6 @@ impl KeyExporter for PublicKey {
 
                 Ok(jwk)
             }
-            PublicKey::Rsa(_, _) => {
-                // RSA JWK export not yet implemented
-                Err(Error::Unsupported(
-                    "RSA JWK export not yet implemented".to_string(),
-                ))
-            }
         }
     }
 
@@ -243,19 +233,6 @@ impl KeyExporter for PublicKey {
                     contents: key_bytes.to_vec(),
                 };
                 Ok(pem::encode(&pem))
-            }
-            PublicKey::Rsa(der_bytes, _) => {
-                // RSA public keys are already DER-encoded, just convert to PEM
-                use crate::crypto::rsa::RsaKeyPair;
-                let rsa_pubkey = RsaKeyPair::public_key_from_der(
-                    der_bytes,
-                    crate::crypto::rsa::RsaKeySize::Rsa2048,
-                )?;
-                use rsa::pkcs1::EncodeRsaPublicKey;
-                rsa_pubkey
-                    .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
-                    .map(|p| p.to_string())
-                    .map_err(|e| Error::Serialization(format!("RSA PEM encoding failed: {e}")))
             }
         }
     }
@@ -362,10 +339,6 @@ impl KeyExporter for PrivateKey {
 
                         Ok(der)
                     }
-                    PrivateKey::Rsa(der_bytes, _) => {
-                        // RSA private keys are already in DER format
-                        Ok(der_bytes.clone())
-                    }
                 }
             }
             KeyFormat::Raw => Ok(self.to_bytes()),
@@ -418,9 +391,6 @@ impl KeyExporter for PrivateKey {
 
                 Ok(jwk)
             }
-            PrivateKey::Rsa(_, _) => Err(Error::Unsupported(
-                "RSA JWK export not yet implemented".to_string(),
-            )),
         }
     }
 
@@ -446,15 +416,6 @@ impl KeyExporter for PrivateKey {
                     contents: key_bytes.to_vec(),
                 };
                 Ok(pem::encode(&pem))
-            }
-            PrivateKey::Rsa(der_bytes, _) => {
-                // RSA private keys are already DER-encoded, just convert to PEM
-                use crate::crypto::rsa::RsaKeyPair;
-                let rsa_keypair = RsaKeyPair::private_key_from_der(
-                    der_bytes,
-                    crate::crypto::rsa::RsaKeySize::Rsa2048,
-                )?;
-                rsa_keypair.private_key_to_pem()
             }
         }
     }
@@ -609,30 +570,10 @@ mod tests {
     fn test_secp256k1_raw_export() {
         let keypair = KeyPair::generate(KeyType::Secp256k1).unwrap();
         let raw = keypair.public_key().export(KeyFormat::Raw).unwrap();
-        assert_eq!(raw.len(), 33); // compressed
+        assert_eq!(raw.len(), 65); // uncompressed SEC1
     }
 
     // ===== RSA Tests =====
-    #[test]
-    fn test_rsa_pem_export() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let pub_pem = keypair.public_key().to_pem().unwrap();
-        assert!(pub_pem.contains("-----BEGIN"));
-        assert!(pub_pem.contains("-----END"));
-
-        let priv_pem = keypair.private_key().to_pem().unwrap();
-        assert!(priv_pem.contains("-----BEGIN"));
-        assert!(priv_pem.contains("-----END"));
-    }
-
-    #[test]
-    fn test_rsa_jwk_unsupported() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let result = keypair.public_key().to_jwk();
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::Unsupported(_)));
-    }
-
     // ===== Error Cases =====
     #[test]
     fn test_der_export_supported() {
@@ -662,12 +603,7 @@ mod tests {
 
     #[test]
     fn test_all_keys_pem_export() {
-        let key_types = vec![
-            KeyType::Ed25519,
-            KeyType::Secp256k1,
-            KeyType::P256,
-            KeyType::Rsa2048,
-        ];
+        let key_types = vec![KeyType::Ed25519, KeyType::Secp256k1, KeyType::P256];
         for key_type in key_types {
             let keypair = KeyPair::generate(key_type).unwrap();
             let pem = keypair.public_key().export(KeyFormat::Pem);
@@ -677,12 +613,7 @@ mod tests {
 
     #[test]
     fn test_all_keys_raw_export() {
-        let key_types = vec![
-            KeyType::Ed25519,
-            KeyType::Secp256k1,
-            KeyType::P256,
-            KeyType::Rsa2048,
-        ];
+        let key_types = vec![KeyType::Ed25519, KeyType::Secp256k1, KeyType::P256];
         for key_type in key_types {
             let keypair = KeyPair::generate(key_type).unwrap();
             let raw = keypair.public_key().export(KeyFormat::Raw);
@@ -818,14 +749,6 @@ mod tests {
         assert!(matches!(result.unwrap_err(), Error::Unsupported(_)));
     }
 
-    #[test]
-    fn test_rsa_private_jwk_unsupported() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let result = keypair.private_key().to_jwk();
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::Unsupported(_)));
-    }
-
     // ===== KeyPair Delegation Tests =====
     #[test]
     fn test_keypair_export_delegates_to_private() {
@@ -927,14 +850,6 @@ mod tests {
         let raw = keypair.public_key().export(KeyFormat::Raw).unwrap();
         // P-256 public key is 33 bytes (compressed) or 65 bytes (uncompressed)
         assert!(raw.len() == 33 || raw.len() == 65);
-    }
-
-    #[test]
-    fn test_rsa_raw_export_non_empty() {
-        let keypair = KeyPair::generate(KeyType::Rsa2048).unwrap();
-        let raw = keypair.public_key().export(KeyFormat::Raw).unwrap();
-        // RSA keys are much larger
-        assert!(raw.len() > 100);
     }
 
     // ===== PEM Format Validation Tests =====

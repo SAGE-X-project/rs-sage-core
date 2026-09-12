@@ -219,7 +219,6 @@ impl VerificationMethod {
             PublicKey::Ed25519(_) => "Ed25519VerificationKey2020",
             PublicKey::P256(_) => "JsonWebKey2020",
             PublicKey::Secp256k1(_) => "EcdsaSecp256k1VerificationKey2019",
-            PublicKey::Rsa(_, _) => "JsonWebKey2020",
         };
 
         Self {

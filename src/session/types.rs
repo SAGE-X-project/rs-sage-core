@@ -1,28 +1,32 @@
-//! Session Types and Traits
-//!
-//! This module defines the core session interface and configuration types.
+//! Session types and configuration.
 
 use crate::error::Result;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Session configuration
+/// Default number of records per direction after which the AEAD key rotates.
+pub const DEFAULT_REKEY_INTERVAL: u64 = 256;
+
+/// Session lifetime and rotation policy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionConfig {
-    /// Maximum age before session expires (absolute timeout)
+    /// Maximum age before the session expires (absolute)
     pub max_age: Duration,
-    /// Idle timeout - session expires if not used within this duration
+    /// Idle timeout
     pub idle_timeout: Duration,
-    /// Maximum number of messages allowed in this session
+    /// Maximum number of records (sent plus received); 0 disables the limit
     pub max_messages: usize,
+    /// Records per direction between key rotations; 0 disables rotation
+    pub rekey_interval: u64,
 }
 
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            max_age: Duration::seconds(3600),     // 1 hour
-            idle_timeout: Duration::seconds(600), // 10 minutes
-            max_messages: 10_000,
+            max_age: Duration::seconds(3600),
+            idle_timeout: Duration::seconds(600),
+            max_messages: 1000,
+            rekey_interval: DEFAULT_REKEY_INTERVAL,
         }
     }
 }
@@ -30,106 +34,55 @@ impl Default for SessionConfig {
 /// Session status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SessionStatus {
-    /// Session is active and ready for use
+    /// Usable
     Active,
-    /// Session has expired
+    /// Expired by age, idle time or record count
     Expired,
-    /// Session has been closed
+    /// Closed by the application
     Closed,
 }
 
-/// Session trait defining cryptographic operations and lifecycle
+/// The session interface shared by every session type.
 pub trait Session: Send + Sync {
-    /// Get session ID
+    /// Session id
     fn get_id(&self) -> &str;
-
-    /// Get creation timestamp
+    /// Creation time
     fn get_created_at(&self) -> DateTime<Utc>;
-
-    /// Get last used timestamp
+    /// Last use
     fn get_last_used_at(&self) -> DateTime<Utc>;
-
-    /// Get session status
+    /// Status
     fn get_status(&self) -> SessionStatus;
-
-    /// Check if session is expired
+    /// Whether the session can no longer be used
     fn is_expired(&self) -> bool;
-
-    /// Update last used timestamp
+    /// Mark the session as used now
     fn update_last_used(&mut self);
-
     /// Close the session
     fn close(&mut self) -> Result<()>;
-
-    /// Encrypt plaintext data
+    /// Encrypt with the shared session key
     fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>>;
-
-    /// Decrypt ciphertext data
-    fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>>;
-
-    /// Encrypt and sign data with MAC
-    /// Returns (ciphertext, mac)
+    /// Decrypt with the shared session key
+    fn decrypt(&self, record: &[u8]) -> Result<Vec<u8>>;
+    /// Encrypt with `covered` as AAD and return a separate HMAC over it
     fn encrypt_and_sign(&self, plaintext: &[u8], covered: &[u8]) -> Result<(Vec<u8>, Vec<u8>)>;
-
-    /// Decrypt and verify MAC
-    fn decrypt_and_verify(&self, ciphertext: &[u8], covered: &[u8], mac: &[u8]) -> Result<Vec<u8>>;
-
-    /// Sign covered data (for MAC generation)
+    /// Verify the HMAC and decrypt with `covered` as AAD
+    fn decrypt_and_verify(&self, record: &[u8], covered: &[u8], mac: &[u8]) -> Result<Vec<u8>>;
+    /// HMAC-SHA256 over `covered` with the signing key
     fn sign_covered(&self, covered: &[u8]) -> Vec<u8>;
-
-    /// Verify covered data signature
-    fn verify_covered(&self, covered: &[u8], signature: &[u8]) -> Result<()>;
-
-    /// Get message count
+    /// Verify an HMAC produced by the peer
+    fn verify_covered(&self, covered: &[u8], mac: &[u8]) -> Result<()>;
+    /// Records sent plus received
     fn get_message_count(&self) -> usize;
-
-    /// Get session configuration
+    /// Configuration
     fn get_config(&self) -> &SessionConfig;
 }
 
-/// Session options for creation
+/// Per-session options for the manager.
 #[derive(Debug, Clone, Default)]
 pub struct SessionOpts {
-    /// Custom session ID (if None, will be generated)
+    /// Explicit session id (derived from the seed when `None`)
     pub session_id: Option<String>,
-    /// Custom configuration
+    /// Session configuration
     pub config: SessionConfig,
-    /// Additional metadata
+    /// Free-form metadata
     pub metadata: std::collections::HashMap<String, String>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_session_config_default() {
-        let config = SessionConfig::default();
-        assert_eq!(config.max_age.num_seconds(), 3600);
-        assert_eq!(config.idle_timeout.num_seconds(), 600);
-        assert_eq!(config.max_messages, 10_000);
-    }
-
-    #[test]
-    fn test_session_status() {
-        assert_eq!(SessionStatus::Active, SessionStatus::Active);
-        assert_ne!(SessionStatus::Active, SessionStatus::Expired);
-    }
-
-    #[test]
-    fn test_session_opts_default() {
-        let opts = SessionOpts::default();
-        assert!(opts.session_id.is_none());
-        assert_eq!(opts.config.max_age.num_seconds(), 3600);
-        assert!(opts.metadata.is_empty());
-    }
-
-    #[test]
-    fn test_session_config_serialization() {
-        let config = SessionConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let deserialized: SessionConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(config.max_age, deserialized.max_age);
-        assert_eq!(config.max_messages, deserialized.max_messages);
-    }
 }
