@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroizing;
 mod record010;
-pub use record010::SessionResponse010;
+pub use record010::{http010::HTTPMessage010, SessionResponse010};
 fn bad() -> Error {
     Error::ValidationError("authentication failed".into())
 }
@@ -608,6 +608,8 @@ impl PendingCompletion010 {
 /// Private seed plus immutable public authenticated tuple. Not a dispatch API.
 /// Responder state stays provisional until open_request atomically confirms it.
 pub struct AuthenticatedCompletion010 {
+    http_target: String,
+    http_authority: String,
     endpoint: uuid::Uuid,
     a: Pinned,
     b: Pinned,
@@ -643,6 +645,8 @@ fn owned(
     tuple.insert("sid".into(), result.sid);
     let records = RecordSession010::new(&result.seed, &result.th, initiator)?;
     Ok(AuthenticatedCompletion010 {
+        http_target: String::new(),
+        http_authority: String::new(),
         endpoint,
         a,
         b,

@@ -1,4 +1,6 @@
 use super::*;
+pub(super) mod http010;
+use http010::{HTTPContext010, HTTPProof010};
 
 fn request_aad(w: &Raw) -> Vec<u8> {
     let a: BTreeMap<_, _> = w
@@ -122,6 +124,17 @@ impl AuthenticatedCompletion010 {
         plaintext: &[u8],
         ttl: i64,
     ) -> Result<Vec<u8>> {
+        if !self.http_target.is_empty() {
+            return Err(bad());
+        }
+        self.seal_request_inner(e, plaintext, ttl)
+    }
+    fn seal_request_inner(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        plaintext: &[u8],
+        ttl: i64,
+    ) -> Result<Vec<u8>> {
         let start = self.begin_record(e)?;
         if (!self.initiator && !self.confirmed)
             || !(1..=300).contains(&ttl)
@@ -189,6 +202,7 @@ impl AuthenticatedCompletion010 {
         self.sent.insert(
             id,
             RecordRequest010 {
+                http: None,
                 wire: result.clone(),
                 terminal: false,
             },
@@ -200,12 +214,28 @@ impl AuthenticatedCompletion010 {
     /// under exclusive access, releasing plaintext only on complete success.
     /// Later application rejection must not undo acceptance. This is not dispatch.
     pub fn open_request(&mut self, e: &mut CompletionEndpoint010, bytes: &[u8]) -> Result<Vec<u8>> {
-        let start = self.begin_record(e)?;
+        if !self.http_target.is_empty() {
+            return Err(bad());
+        }
+        self.open_request_inner(e, bytes, None)
+    }
+    fn open_request_inner(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        bytes: &[u8],
+        proof: Option<&HTTPProof010>,
+    ) -> Result<Vec<u8>> {
+        let sampled = self.begin_record(e)?;
+        let start = proof.map_or(sampled, |p| p.start);
         let (w, wire) = session_request(bytes, start.unix)?;
+        if let Some(p) = proof {
+            self.verify_http(p, &w)?;
+        }
         let plaintext = self.accept_record(e, start, &w, &wire, false)?;
         self.received.insert(
             string(&w, "id"),
             RecordRequest010 {
+                http: None,
                 wire: canonical(&w),
                 terminal: false,
             },
@@ -311,6 +341,7 @@ impl AuthenticatedCompletion010 {
 }
 
 pub(super) struct RecordRequest010 {
+    http: Option<HTTPContext010>,
     wire: Vec<u8>,
     terminal: bool,
 }
@@ -346,6 +377,19 @@ impl AuthenticatedCompletion010 {
     /// session. The retained signed request supplies the correlation hash. Retries
     /// reuse the returned bytes; a second emission is rejected. Errors never downgrade.
     pub fn seal_response(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        message_id: &str,
+        data: &[u8],
+        error: Option<&str>,
+        ttl: i64,
+    ) -> Result<Vec<u8>> {
+        if !self.http_target.is_empty() {
+            return Err(bad());
+        }
+        self.seal_response_inner(e, message_id, data, error, ttl)
+    }
+    fn seal_response_inner(
         &mut self,
         e: &mut CompletionEndpoint010,
         message_id: &str,
@@ -437,7 +481,19 @@ impl AuthenticatedCompletion010 {
         e: &mut CompletionEndpoint010,
         bytes: &[u8],
     ) -> Result<SessionResponse010> {
-        let start = self.begin_record(e)?;
+        if !self.http_target.is_empty() {
+            return Err(bad());
+        }
+        self.open_response_inner(e, bytes, None)
+    }
+    fn open_response_inner(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        bytes: &[u8],
+        proof: Option<&HTTPProof010>,
+    ) -> Result<SessionResponse010> {
+        let sampled = self.begin_record(e)?;
+        let start = proof.map_or(sampled, |p| p.start);
         if !self.initiator && !self.confirmed {
             return Err(bad());
         }
@@ -449,6 +505,9 @@ impl AuthenticatedCompletion010 {
             || string(&w, "nonce") == string(&request, "nonce")
         {
             return Err(bad());
+        }
+        if let Some(p) = proof {
+            self.verify_http(p, &w)?;
         }
         let data = self.accept_record(e, start, &w, &record, true)?;
         self.sent.get_mut(&message_id).ok_or_else(bad)?.terminal = true;
