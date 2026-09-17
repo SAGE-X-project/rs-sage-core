@@ -16,6 +16,7 @@ pub mod rfc9421;
 
 pub mod did;
 pub mod hpke;
+pub mod registry010;
 pub mod session;
 pub mod validation;
 
