@@ -18,7 +18,7 @@ type Fields = BTreeMap<String, String>;
 fn invalid() -> Error {
     Error::CryptoError("invalid 0.10.0 HPKE derivation".into())
 }
-fn fields(raw: &[u8], extra: &[&str]) -> Result<Fields> {
+pub(super) fn fields(raw: &[u8], extra: &[&str]) -> Result<Fields> {
     if raw.len() > 16384 {
         return Err(invalid());
     }
@@ -50,7 +50,7 @@ fn fields(raw: &[u8], extra: &[&str]) -> Result<Fields> {
     }
     Ok(m)
 }
-fn uuid(s: &str) -> bool {
+pub(super) fn uuid(s: &str) -> bool {
     uuid::Uuid::parse_str(s)
         .map(|v| {
             v.get_version_num() == 4
@@ -67,7 +67,7 @@ fn agent(s: &str) -> bool {
         && s.bytes()
             .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
 }
-fn did(s: &str) -> bool {
+pub(super) fn did(s: &str) -> bool {
     let p: Vec<_> = s.split(':').collect();
     if s.len() > 256 || p.len() < 5 || p[0] != "did" || p[1] != "sage" || !agent(p[p.len() - 1]) {
         return false;
@@ -101,7 +101,7 @@ fn did(s: &str) -> bool {
         _ => false,
     }
 }
-fn key(s: &str, owner: &str) -> bool {
+pub(super) fn key(s: &str, owner: &str) -> bool {
     s.len() <= 289
         && s.strip_prefix(&format!("{owner}#"))
             .map(|n| {
@@ -112,14 +112,14 @@ fn key(s: &str, owner: &str) -> bool {
             })
             .unwrap_or(false)
 }
-fn binary(s: &str, len: usize) -> Result<Vec<u8>> {
+pub(super) fn binary(s: &str, len: usize) -> Result<Vec<u8>> {
     let b = URL_SAFE_NO_PAD.decode(s).map_err(|_| invalid())?;
     if b.len() != len || URL_SAFE_NO_PAD.encode(&b) != s {
         return Err(invalid());
     }
     Ok(b)
 }
-fn binding(m: &Fields) -> Result<Fields> {
+pub(super) fn binding(m: &Fields) -> Result<Fields> {
     if m["v"] != "0.10.0"
         || m["suite"] != "hpke-base+x25519+hkdf-sha256"
         || m["combiner"] != "e2e-x25519-hkdf-v1"
@@ -137,7 +137,7 @@ fn binding(m: &Fields) -> Result<Fields> {
         .map(|n| ((*n).to_string(), m[*n].clone()))
         .collect())
 }
-fn canonical(m: &Fields) -> Result<Vec<u8>> {
+pub(super) fn canonical(m: &Fields) -> Result<Vec<u8>> {
     crate::jcs::canonicalize(&serde_json::to_vec(m).map_err(|_| invalid())?).map_err(|_| invalid())
 }
 /// Public context bytes recomputed locally from the validated closed B object.
@@ -166,7 +166,7 @@ fn domains(b: &Fields) -> Result<Domains010> {
 pub fn build_domains_010(raw: &[u8]) -> Result<Domains010> {
     domains(&binding(&fields(raw, &[])?)?)
 }
-fn initiation(raw: &[u8]) -> Result<(Fields, Domains010)> {
+pub(super) fn initiation(raw: &[u8]) -> Result<(Fields, Domains010)> {
     let m = fields(raw, &["task", "enc", "ephC"])?;
     let b = binding(&m)?;
     if m["task"] != "hpke/init@0.10.0" {
