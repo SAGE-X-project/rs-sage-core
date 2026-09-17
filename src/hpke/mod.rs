@@ -27,6 +27,7 @@
 
 pub mod client;
 pub mod common;
+pub mod completion010;
 pub mod derivation010;
 pub mod nonce_store;
 pub mod resolver;
