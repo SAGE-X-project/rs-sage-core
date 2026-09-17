@@ -566,3 +566,205 @@ fn authenticated_record_lifetime_and_bounds() {
         assert_eq!(server.state(), "CLOSED");
     }
 }
+
+fn response_mutation(
+    raw: &[u8],
+    request: &[u8],
+    kind: &str,
+    other: &str,
+    e: &CompletionEndpoint010,
+) -> Vec<u8> {
+    let mut w: Value = serde_json::from_slice(raw).unwrap();
+    let q: Value = serde_json::from_slice(request).unwrap();
+    match kind {
+        "request-hash" => w["request_hash"] = json!(B64.encode([0; 32])),
+        "message-id" => w["message_id"] = json!("11111111-1111-4111-8111-111111111111"),
+        "cross-request" => w["message_id"] = json!(other),
+        "same-id" => w["id"] = q["id"].clone(),
+        "same-nonce" => w["nonce"] = q["nonce"].clone(),
+        "recipient" => w[kind] = json!(BOB),
+        "did" => w[kind] = json!(ALICE),
+        "kid" => w[kind] = json!(format!("{BOB}#different")),
+        "role" => w[kind] = json!("initiator"),
+        "context_id" => w[kind] = json!("11111111-1111-4111-8111-111111111111"),
+        "session_id" => w[kind] = json!(B64.encode([0; 16])),
+        "signature" => {
+            w[kind] = json!(B64.encode([0; 64]));
+            return canonical(&w);
+        }
+        "tag" => {
+            let mut v = B64.decode(w["data"].as_str().unwrap()).unwrap();
+            *v.last_mut().unwrap() ^= 1;
+            w["data"] = json!(B64.encode(v))
+        }
+        "missing-error" => {
+            w["success"] = json!(false);
+            w.as_object_mut().unwrap().remove("error");
+        }
+        "unknown-error" => {
+            w["success"] = json!(false);
+            w["error"] = json!("other")
+        }
+        "success-error" => {
+            w["success"] = json!(true);
+            w["error"] = json!("policy_denied")
+        }
+        "success-type" => w["success"] = json!("true"),
+        "unknown-field" => w["extra"] = json!("value"),
+        "plain-encoding" => w["encoding"] = json!("plain"),
+        "duplicate-field" => {
+            let mut v = raw[..raw.len() - 1].to_vec();
+            v.extend(br#", "success":true}"#);
+            return v;
+        }
+        _ => return raw.to_vec(),
+    }
+    w.as_object_mut().unwrap().remove("signature");
+    signed(
+        w,
+        b"sage-wire-response|0.10.0\n",
+        e.signing.as_ref().unwrap(),
+    )
+}
+#[test]
+fn session_response_scenarios() {
+    let f: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/session-response010.json"
+    ))
+    .unwrap();
+    for case in f["cases"].as_array().unwrap() {
+        let kind = case.as_str().unwrap();
+        let (mut a, mut b, c, _tmp) = pair();
+        if kind == "key-expiry-during-commit" {
+            c.0.borrow_mut().expiry = 101
+        }
+        let (mut p, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+        let (mut server, r) = b.respond(&q, 300).unwrap();
+        let mut client = p.complete(&mut a, &r).unwrap();
+        let mut request = client.seal_request(&mut a, b"request", 300).unwrap();
+        server.open_request(&mut b, &request).unwrap();
+        if kind == "reverse" {
+            std::mem::swap(&mut a, &mut b);
+            std::mem::swap(&mut client, &mut server);
+            request = client.seal_request(&mut a, b"reverse", 300).unwrap();
+            server.open_request(&mut b, &request).unwrap();
+        }
+        let q: Value = serde_json::from_slice(&request).unwrap();
+        let id = q["id"].as_str().unwrap();
+        let error = if [
+            "authentication_failed",
+            "policy_denied",
+            "operation_failed",
+            "unavailable",
+        ]
+        .contains(&kind)
+        {
+            Some(kind)
+        } else {
+            None
+        };
+        let data = if kind == "empty-data" {
+            b"".as_slice()
+        } else {
+            b"result".as_slice()
+        };
+        let response = server.seal_response(&mut b, id, data, error, 300).unwrap();
+        assert!(server.seal_response(&mut b, id, data, error, 300).is_err());
+        let mut other_id = String::new();
+        let mut other_response = Vec::new();
+        if ["cross-request", "out-of-order"].contains(&kind) {
+            let other = client.seal_request(&mut a, b"other", 300).unwrap();
+            server.open_request(&mut b, &other).unwrap();
+            let m: Value = serde_json::from_slice(&other).unwrap();
+            other_id = m["id"].as_str().unwrap().into();
+            other_response = server
+                .seal_response(&mut b, &other_id, b"other-result", None, 300)
+                .unwrap();
+        }
+        let changed = response_mutation(&response, &request, kind, &other_id, &b);
+        let accept =
+            error.is_some() || ["valid", "empty-data", "reverse", "out-of-order"].contains(&kind);
+        let mut closed = false;
+        match kind {
+            "duplicate-terminal" => {
+                client.open_response(&mut a, &response).unwrap();
+            }
+            "out-of-order" => assert_eq!(
+                client.open_response(&mut a, &other_response).unwrap().data,
+                b"other-result"
+            ),
+            "store-error" => c.0.borrow_mut().mode = kind.into(),
+            "store-delay" | "revoke-init" | "revoke-resp" | "revoke-kem" | "source-error" => {
+                c.0.borrow_mut().mode = kind.into();
+                closed = true
+            }
+            "key-expiry-during-commit" => {
+                c.0.borrow_mut().mode = "utc-delay".into();
+                closed = true
+            }
+            "closed" => {
+                client.close();
+                closed = true
+            }
+            "expired" => c.0.borrow_mut().utc = 400,
+            _ => {}
+        }
+        let before = c.0.borrow().records;
+        let result = client.open_response(&mut a, &changed);
+        assert_eq!(result.is_ok(), accept, "{kind}");
+        if accept {
+            let r = result.unwrap();
+            assert_eq!(r.message_id, id);
+            assert_eq!(r.success, error.is_none());
+            assert_eq!(r.error, error.unwrap_or(""));
+            assert_eq!(r.data, data);
+            assert!(client.open_response(&mut a, &response).is_err());
+        } else {
+            assert_eq!(c.0.borrow().records, before, "{kind}: partial replay");
+            if closed {
+                assert_eq!(client.state(), "CLOSED", "{kind}")
+            } else if !["duplicate-terminal", "expired"].contains(&kind) {
+                c.0.borrow_mut().mode.clear();
+                assert_eq!(
+                    client.open_response(&mut a, &response).unwrap().data,
+                    data,
+                    "{kind}: consumed pending/sequence"
+                )
+            }
+        }
+    }
+}
+
+#[test]
+fn session_response_retained_copy_and_admission() {
+    let (mut a, mut b, _c, _tmp) = pair();
+    let (mut p, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    let (mut server, r) = b.respond(&q, 300).unwrap();
+    let mut client = p.complete(&mut a, &r).unwrap();
+    let mut q = client.seal_request(&mut a, b"request", 300).unwrap();
+    assert!(server
+        .seal_response(
+            &mut b,
+            "11111111-1111-4111-8111-111111111111",
+            b"",
+            None,
+            300
+        )
+        .is_err());
+    server.open_request(&mut b, &q).unwrap();
+    let m: Value = serde_json::from_slice(&q).unwrap();
+    let id = m["id"].as_str().unwrap();
+    q.fill(0);
+    for code in ["", "unknown"] {
+        assert!(server
+            .seal_response(&mut b, id, b"", Some(code), 300)
+            .is_err())
+    }
+    assert!(server
+        .seal_response(&mut b, id, &vec![0; 16349], None, 300)
+        .is_err());
+    let r = server
+        .seal_response(&mut b, id, &vec![0; 16348], None, 300)
+        .unwrap();
+    assert_eq!(client.open_response(&mut a, &r).unwrap().data.len(), 16348);
+}
