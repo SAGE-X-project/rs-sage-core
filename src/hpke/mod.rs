@@ -29,6 +29,7 @@ pub mod client;
 pub mod common;
 pub mod nonce_store;
 pub mod resolver;
+pub mod schedule010;
 pub mod server;
 pub mod types;
 
@@ -39,6 +40,7 @@ pub use common::{
 };
 pub use nonce_store::NonceStore;
 pub use resolver::{DidDocumentKemResolver, MemoryKeyResolver};
+pub use schedule010::{combine_secrets_010, make_ack_tag_010, verify_ack_tag_010};
 pub use server::{HpkeServer, HpkeServerConfig, HpkeServerSession};
 pub use types::{
     CookieSource, CookieVerifier, DefaultInfoBuilder, HpkeInitPayload, InfoBuilder, KemKeyResolver,
