@@ -5,6 +5,7 @@ const ALICE: &str = "did:sage:web:agent.example:alice";
 const BOB: &str = "did:sage:web:agent.example:bob";
 #[derive(Default)]
 struct Control {
+    records: u64,
     expiry: i64,
     mono: i64,
     utc: i64,
@@ -102,6 +103,44 @@ struct Replay {
     seen: HashSet<String>,
 }
 impl ReplayStore010 for Replay {
+    fn reserve_record(
+        &mut self,
+        r: Replay010,
+        validate: &mut dyn FnMut() -> Result<()>,
+    ) -> Result<()> {
+        let prefix = format!("{}|{}", r.sender, r.recipient);
+        let ids = [
+            format!("{prefix}|id|{}", r.id),
+            format!("{prefix}|nonce|{}", r.nonce),
+        ];
+        if self.control.0.borrow().mode == "transport-id" {
+            self.seen.insert(ids[0].clone());
+        }
+        if self.control.0.borrow().mode == "transport-nonce" {
+            self.seen.insert(ids[1].clone());
+        }
+        if ids.iter().any(|id| self.seen.contains(id)) {
+            return Err(bad());
+        }
+        {
+            let mut c = self.control.0.borrow_mut();
+            if c.mode == "store-error" {
+                return Err(bad());
+            }
+            if c.mode == "utc-delay" {
+                c.utc += 1;
+                c.mono += 1000
+            }
+            if c.mode == "store-delay" {
+                c.mono += 5001
+            }
+        }
+        validate()?;
+        self.seen.extend(ids);
+        self.control.0.borrow_mut().records += 1;
+        Ok(())
+    }
+
     fn reserve(&mut self, r: Replay010) -> Result<()> {
         let mut c = self.control.0.borrow_mut();
         if c.mode == "store-error" {
@@ -356,4 +395,174 @@ fn key_expires_during_commit() {
     assert!(p.complete(&mut a, &response).is_err());
     assert_eq!(p.state(), "CLOSED");
     r.close();
+}
+
+#[test]
+fn authenticated_record_scenarios() {
+    let f: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/authenticated-record010.json"
+    ))
+    .unwrap();
+    for case in f["cases"].as_array().unwrap() {
+        let kind = case.as_str().unwrap();
+        let (mut a, mut b, c, _tmp) = pair();
+        if kind == "key-expiry-during-commit" {
+            c.0.borrow_mut().expiry = 101
+        }
+        let (mut pending, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+        let (mut server, r) = b.respond(&q, 300).unwrap();
+        let mut client = pending.complete(&mut a, &r).unwrap();
+        assert!(server.seal_request(&mut b, b"denied", 300).is_err());
+        assert_eq!(server.state(), "RESPONSE_SENT");
+        let first = client.seal_request(&mut a, b"first", 300).unwrap();
+        let mut w = first.clone();
+        let mut want = b"first".to_vec();
+        if ["nonzero-first", "out-of-order"].contains(&kind) {
+            w = client.seal_request(&mut a, b"second", 300).unwrap();
+            want = b"second".to_vec()
+        }
+        let good = w.clone();
+        let mut m: Value = serde_json::from_slice(&w).unwrap();
+        let mut mutated = true;
+        match kind {
+            "signature" => {
+                m["signature"] = json!(B64.encode([0; 64]));
+                w = canonical(&m);
+                mutated = false
+            }
+            "tag" => {
+                let mut v = B64.decode(m["payload"].as_str().unwrap()).unwrap();
+                *v.last_mut().unwrap() ^= 1;
+                m["payload"] = json!(B64.encode(v));
+            }
+            "did" => m[kind] = json!(BOB),
+            "recipient" => m[kind] = json!(ALICE),
+            "kid" => m[kind] = json!(format!("{ALICE}#different")),
+            "role" => m[kind] = json!("responder"),
+            "context_id" => m[kind] = json!("11111111-1111-4111-8111-111111111111"),
+            "session_id" => m[kind] = json!(B64.encode([0; 16])),
+            "version" => m[kind] = json!("0.9.0"),
+            "unknown-field" => m["extra"] = json!("value"),
+            "duplicate-field" => {
+                w.pop();
+                w.extend(br#", "version":"0.10.0"}"#);
+                mutated = false
+            }
+            _ => mutated = false,
+        }
+        if mutated {
+            m.as_object_mut().unwrap().remove("signature");
+            w = signed(
+                m,
+                b"sage-wire-request|0.10.0\n",
+                a.signing.as_ref().unwrap(),
+            )
+        }
+        let mut accept = false;
+        let mut closed = false;
+        match kind {
+            "valid" | "nonzero-first" | "out-of-order" | "application-reject" | "unrelated" => {
+                accept = true;
+                if kind == "unrelated" {
+                    c.0.borrow_mut().mode = kind.into()
+                }
+            }
+            "duplicate" | "idle-expiry" => {
+                server.open_request(&mut b, &w).unwrap();
+                if kind == "idle-expiry" {
+                    c.0.borrow_mut().mono = 600000;
+                    closed = true
+                }
+            }
+            "store-error" | "transport-id" | "transport-nonce" => {
+                c.0.borrow_mut().mode = kind.into()
+            }
+            "store-delay" | "revoke-init" | "revoke-resp" | "revoke-kem" | "changed-material"
+            | "source-error" | "clock-error" => {
+                c.0.borrow_mut().mode = kind.into();
+                closed = true
+            }
+            "pending-mono-expiry" => {
+                c.0.borrow_mut().mono = 300000;
+                closed = true
+            }
+            "pending-utc-expiry" => {
+                c.0.borrow_mut().utc = 400;
+                closed = true
+            }
+            "key-expiry-during-commit" => {
+                c.0.borrow_mut().mode = "utc-delay".into();
+                closed = true
+            }
+            "closed" => {
+                server.close();
+                closed = true
+            }
+            _ => {}
+        }
+        let before = c.0.borrow().records;
+        let result = server.open_request(&mut b, &w);
+        assert_eq!(result.is_ok(), accept, "{kind}");
+        if accept {
+            assert_eq!(result.unwrap(), want);
+            assert_eq!(server.state(), "ESTABLISHED");
+            assert_eq!(c.0.borrow().records, before + 1);
+            assert!(server.open_request(&mut b, &w).is_err());
+            if kind == "out-of-order" {
+                assert_eq!(server.open_request(&mut b, &first).unwrap(), b"first")
+            }
+            let reverse = server.seal_request(&mut b, b"rejection", 300).unwrap();
+            assert_eq!(client.open_request(&mut a, &reverse).unwrap(), b"rejection");
+        } else {
+            assert_eq!(c.0.borrow().records, before, "{kind}: partial acceptance");
+            if closed {
+                assert_eq!(server.state(), "CLOSED", "{kind}")
+            } else if !["duplicate", "transport-id", "transport-nonce"].contains(&kind) {
+                assert_eq!(server.state(), "RESPONSE_SENT");
+                c.0.borrow_mut().mode.clear();
+                assert_eq!(
+                    server.open_request(&mut b, &good).unwrap(),
+                    want,
+                    "{kind}: consumed sequence"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn authenticated_record_lifetime_and_bounds() {
+    for kind in ["absolute", "idle", "bounds"] {
+        let (mut a, mut b, c, _tmp) = pair();
+        let (mut p, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+        let (mut server, r) = b.respond(&q, 300).unwrap();
+        let mut client = p.complete(&mut a, &r).unwrap();
+        if kind == "absolute" {
+            c.0.borrow_mut().mono = 200000
+        }
+        if kind == "bounds" {
+            assert!(client.seal_request(&mut a, &vec![0; 16349], 300).is_err());
+            let w = client.seal_request(&mut a, &vec![0; 16348], 300).unwrap();
+            assert_eq!(server.open_request(&mut b, &w).unwrap().len(), 16348);
+            continue;
+        }
+        let w = client.seal_request(&mut a, b"first", 300).unwrap();
+        server.open_request(&mut b, &w).unwrap();
+        if kind == "absolute" {
+            for now in (500000..=3500000).step_by(500000) {
+                c.0.borrow_mut().mono = now;
+                server.seal_request(&mut b, b"traffic", 300).unwrap();
+            }
+            c.0.borrow_mut().mono = 3600000;
+            assert!(server.seal_request(&mut b, b"", 300).is_err());
+        } else {
+            c.0.borrow_mut().mono = 599999;
+            let mut m: Value = serde_json::from_slice(&w).unwrap();
+            m["signature"] = json!(B64.encode([0; 64]));
+            assert!(server.open_request(&mut b, &canonical(&m)).is_err());
+            c.0.borrow_mut().mono = 600000;
+            assert!(server.check(&mut b).is_err());
+        }
+        assert_eq!(server.state(), "CLOSED");
+    }
 }

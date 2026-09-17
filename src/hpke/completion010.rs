@@ -1,7 +1,8 @@
 //! Authenticated metadata-free plain handshake carriage. HTTP binding, durable
-//! transport replay storage and record dispatch are separate integrations.
+//! transport replay storage and application dispatch are separate integrations.
 use super::derivation010::{self as d, Derivation010, Initiator010};
 use super::{respond_fresh_010, start_initiator_010, verify_ack_tag_010};
+use crate::session::RecordSession010;
 use crate::{
     error::{Error, Result},
     registry010::{Clock, Gate, Key, Pinned, Stamp},
@@ -18,6 +19,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroizing;
+mod record010;
 fn bad() -> Error {
     Error::ValidationError("authentication failed".into())
 }
@@ -196,6 +198,20 @@ pub struct Replay010 {
 pub trait ReplayStore010 {
     /// Commit authenticated replay denial state. Never a peer-provided boolean.
     fn reserve(&mut self, entry: Replay010) -> Result<()>;
+    /// Atomically reserve ID and nonce for a verified session request. Stage all
+    /// fallible/blocking durable work before calling validate exactly once at
+    /// final publication. A failed validate or storage operation publishes neither
+    /// entry. Success must durably publish both, with no fallible work after the
+    /// gate. Never reenter the endpoint. Exclusive session access spans this call
+    /// and sequence/confirmation publication; restart discards session state.
+    /// Implementations without this transaction contract reject record receive.
+    fn reserve_record(
+        &mut self,
+        _entry: Replay010,
+        _validate: &mut dyn FnMut() -> Result<()>,
+    ) -> Result<()> {
+        Err(bad())
+    }
 }
 fn reservation(m: &Raw) -> Result<Replay010> {
     Ok(Replay010 {
@@ -379,7 +395,7 @@ impl CompletionEndpoint010 {
         Ok((pending, request))
     }
     /// Verify the signed request and exact current keys; emit independently signed
-    /// completion and response. The returned result cannot send or execute records.
+    /// completion and response. The result cannot send until its first record confirms it.
     pub fn respond(
         &mut self,
         request: &[u8],
@@ -589,17 +605,19 @@ impl PendingCompletion010 {
     }
 }
 /// Private seed plus immutable public authenticated tuple. Not a dispatch API.
-/// Responder state stays provisional until a separate atomic first-record binding.
+/// Responder state stays provisional until open_request atomically confirms it.
 pub struct AuthenticatedCompletion010 {
     endpoint: uuid::Uuid,
     a: Pinned,
     b: Pinned,
     tuple: Fields,
-    seed: Zeroizing<Vec<u8>>,
     created: Stamp,
     expires: i64,
     initiator: bool,
     closed: bool,
+    confirmed: bool,
+    active: Stamp,
+    records: Option<RecordSession010>,
 }
 fn owned(
     endpoint: uuid::Uuid,
@@ -620,16 +638,19 @@ fn owned(
     }
     tuple.insert("th".into(), B64.encode(result.th));
     tuple.insert("sid".into(), result.sid);
+    let records = RecordSession010::new(&result.seed, &result.th, initiator)?;
     Ok(AuthenticatedCompletion010 {
         endpoint,
         a,
         b,
         tuple,
-        seed: result.seed,
         created,
         expires,
         initiator,
         closed: false,
+        confirmed: false,
+        active: created,
+        records: Some(records),
     })
 }
 impl AuthenticatedCompletion010 {
@@ -641,7 +662,7 @@ impl AuthenticatedCompletion010 {
     pub fn state(&self) -> &'static str {
         if self.closed {
             "CLOSED"
-        } else if self.initiator {
+        } else if self.initiator || self.confirmed {
             "ESTABLISHED"
         } else {
             "RESPONSE_SENT"
@@ -649,7 +670,9 @@ impl AuthenticatedCompletion010 {
     }
     /// Erase the owned seed and retire the result.
     pub fn close(&mut self) {
-        self.seed = Zeroizing::new(Vec::new());
+        if let Some(r) = self.records.as_mut() {
+            r.close();
+        }
         self.closed = true;
     }
     /// Revalidate both signing keys and KEM, closing on failure. Does not confirm
@@ -660,18 +683,12 @@ impl AuthenticatedCompletion010 {
                 return Err(bad());
             }
             let start = e.sample()?;
-            if start.mono_ms < self.created.mono_ms
-                || start.mono_ms - self.created.mono_ms >= 600000
-                || (!self.initiator && !live(start, self.created, self.expires))
-            {
-                return Err(bad());
-            }
+            self.record_live(start)?;
             e.current(&self.a, &self.b)?;
             let end = e.sample()?;
             if end.mono_ms - start.mono_ms > 5000
                 || !pinned_live(end.unix, &self.a, &self.b)
-                || end.mono_ms - self.created.mono_ms >= 600000
-                || (!self.initiator && !live(end, self.created, self.expires))
+                || self.record_live(end).is_err()
             {
                 return Err(bad());
             }
