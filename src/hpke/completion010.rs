@@ -359,7 +359,10 @@ impl CompletionEndpoint010 {
             self.signing.as_ref().ok_or_else(bad)?,
         );
         let end = self.sample()?;
-        if end.mono_ms - start.mono_ms > 5000 || end.unix >= start.unix + ttl {
+        if end.mono_ms - start.mono_ms > 5000
+            || !pinned_live(end.unix, &a, &b)
+            || end.unix >= start.unix + ttl
+        {
             return Err(bad());
         }
         let init = d::initiation(&initiation)?.0;
@@ -441,12 +444,18 @@ impl CompletionEndpoint010 {
             self.signing.as_ref().ok_or_else(bad)?,
         );
         let end = self.sample()?;
-        if end.mono_ms - start.mono_ms > 5000 || end.unix >= expires {
+        if end.mono_ms - start.mono_ms > 5000
+            || !pinned_live(end.unix, &a, &b)
+            || end.unix >= expires
+        {
             return Err(bad());
         }
         self.replay.reserve(reservation(&w)?)?;
         let end = self.sample()?;
-        if end.mono_ms - start.mono_ms > 5000 || end.unix >= expires {
+        if end.mono_ms - start.mono_ms > 5000
+            || !pinned_live(end.unix, &a, &b)
+            || end.unix >= expires
+        {
             return Err(bad());
         }
         Ok((
@@ -459,6 +468,12 @@ impl CompletionEndpoint010 {
         self.signing = None;
         self.kem = Zeroizing::new(Vec::new());
     }
+}
+fn pinned_live(now: i64, a: &Pinned, b: &Pinned) -> bool {
+    std::iter::once(a.signing())
+        .chain(std::iter::once(b.signing()))
+        .chain(b.kem())
+        .all(|k| k.expires.is_none_or(|x| now < x))
 }
 fn live(now: Stamp, start: Stamp, expires: i64) -> bool {
     now.mono_ms >= start.mono_ms
@@ -547,6 +562,7 @@ impl PendingCompletion010 {
         let expires = number(&w, "expires")?;
         let end = e.sample()?;
         if end.mono_ms - start.mono_ms > 5000
+            || !pinned_live(end.unix, &self.a, &self.b)
             || !live(end, self.emitted, self.expires)
             || end.unix >= expires
         {
@@ -555,6 +571,7 @@ impl PendingCompletion010 {
         e.replay.reserve(reservation(&w)?)?;
         let end = e.sample()?;
         if end.mono_ms - start.mono_ms > 5000
+            || !pinned_live(end.unix, &self.a, &self.b)
             || !live(end, self.emitted, self.expires)
             || end.unix >= expires
         {
@@ -652,6 +669,7 @@ impl AuthenticatedCompletion010 {
             e.current(&self.a, &self.b)?;
             let end = e.sample()?;
             if end.mono_ms - start.mono_ms > 5000
+                || !pinned_live(end.unix, &self.a, &self.b)
                 || end.mono_ms - self.created.mono_ms >= 600000
                 || (!self.initiator && !live(end, self.created, self.expires))
             {

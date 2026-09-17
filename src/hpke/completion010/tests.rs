@@ -5,6 +5,7 @@ const ALICE: &str = "did:sage:web:agent.example:alice";
 const BOB: &str = "did:sage:web:agent.example:bob";
 #[derive(Default)]
 struct Control {
+    expiry: i64,
     mono: i64,
     utc: i64,
     mode: String,
@@ -71,6 +72,11 @@ impl Source for Controls {
             k.material = hex::encode(SigningKey::from_bytes(&[5; 32]).verifying_key().to_bytes());
             keys.push(k)
         }
+        if c.expiry != 0 {
+            for k in &mut keys {
+                k.expires = Some(c.expiry);
+            }
+        }
         let digest = hex::encode(Sha256::digest(canonical(&keys)));
         Ok(Snapshot {
             source: "fixture-authority".into(),
@@ -113,6 +119,10 @@ impl ReplayStore010 for Replay {
             return Err(bad());
         }
         self.seen.extend(ids);
+        if c.mode == "utc-delay" {
+            c.utc += 1;
+            c.mono += 1000;
+        }
         if c.mode == "store-delay" {
             c.mono += 5001
         }
@@ -334,4 +344,16 @@ fn lifecycle() {
             assert_eq!(s.check(&mut a).is_ok(), mode == "unrelated")
         }
     }
+}
+
+#[test]
+fn key_expires_during_commit() {
+    let (mut a, mut b, c, _tmp) = pair();
+    c.0.borrow_mut().expiry = 101;
+    let (mut p, request) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    let (mut r, response) = b.respond(&request, 300).unwrap();
+    c.0.borrow_mut().mode = "utc-delay".into();
+    assert!(p.complete(&mut a, &response).is_err());
+    assert_eq!(p.state(), "CLOSED");
+    r.close();
 }
