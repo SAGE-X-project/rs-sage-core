@@ -970,3 +970,190 @@ fn http_session_scenarios() {
         assert!(client.open_http_response(&mut a, &r).is_err());
     }
 }
+
+const HTTP_TARGET: &str = "https://localhost:8443/messages";
+#[test]
+fn http_handshake_scenarios() {
+    let f: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/http-handshake010.json"
+    ))
+    .unwrap();
+    for kind in f["cases"].as_array().unwrap() {
+        let kind = kind.as_str().unwrap();
+        let (mut a, mut b, c, _tmp) = pair();
+        a.bind_http(HTTP_TARGET).unwrap();
+        b.bind_http(HTTP_TARGET).unwrap();
+        let (mut p, q) = a.start_http(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+        if kind == "bare-bypass" {
+            assert!(a.start(BOB, &format!("{BOB}#signing-1"), 300).is_err());
+            assert!(b.respond(&q.body, 300).is_err());
+        }
+        if kind.starts_with("request-") {
+            let name = match kind {
+                "request-signature" => "signature",
+                "request-digest" => "body-digest",
+                "request-duplicate" => "duplicate-signature",
+                _ => kind,
+            };
+            assert!(b.respond_http(&mutate_http(&q, name), 300).is_err());
+        }
+        let raw = encode_http_010(&q, HTTP_TARGET).unwrap();
+        let parsed = parse_http_010(&raw, HTTP_TARGET, false).unwrap();
+        let (mut server, mut r) = b.respond_http(&parsed, 300).unwrap();
+        if kind == "first-record" {
+            assert!(server.seal_http_request(&mut b, b"", 300).is_err());
+        }
+        if kind == "duplicate-initiation" {
+            assert!(b.respond_http(&q, 300).is_err());
+        }
+        if kind == "bare-bypass" {
+            assert!(p.complete(&mut a, &r.body).is_err());
+        }
+        let mut reject = false;
+        match kind {
+            "response-signature" => {
+                r = mutate_http(&r, "signature");
+                reject = true
+            }
+            "response-status" => {
+                r = mutate_http(&r, "response-status-tamper");
+                reject = true
+            }
+            "response-digest" => {
+                r = mutate_http(&r, "body-digest");
+                reject = true
+            }
+            "response-request-signature" => {
+                let mut other = q.clone();
+                other
+                    .headers
+                    .iter_mut()
+                    .find(|p| p[0] == "signature")
+                    .unwrap()[1]
+                    .push_str("different");
+                record010::http010::resign_test(&mut r, &b, Some(&other));
+                reject = true
+            }
+            "inner-completion" => {
+                r.body = changed(&q.body, &r.body, "inner-signature");
+                record010::http010::resign_test(&mut r, &b, Some(&q));
+                reject = true
+            }
+            "revoke-resp" | "store-delay" | "store-error" => {
+                c.0.borrow_mut().mode = kind.into();
+                reject = true
+            }
+            "expired" => {
+                c.0.borrow_mut().utc = 400;
+                reject = true
+            }
+            "closed-pending" => {
+                p.close();
+                reject = true
+            }
+            _ => {}
+        }
+        let result = p.complete_http(&mut a, &r);
+        if reject {
+            assert!(result.is_err(), "{kind}");
+            assert_eq!(p.state(), "CLOSED");
+            continue;
+        }
+        let mut client = result.unwrap();
+        assert!(p.complete_http(&mut a, &r).is_err());
+        assert!(client.seal_request(&mut a, b"", 300).is_err());
+        let request = client.seal_http_request(&mut a, b"request", 300).unwrap();
+        assert!(server.open_request(&mut b, &request.body).is_err());
+        assert_eq!(
+            server.open_http_request(&mut b, &request).unwrap(),
+            b"request"
+        );
+        assert_eq!(server.state(), "ESTABLISHED");
+        let w: Value = serde_json::from_slice(&request.body).unwrap();
+        let code = if kind == "error-response" {
+            Some("operation_failed")
+        } else {
+            None
+        };
+        let response = server
+            .seal_http_response(&mut b, w["id"].as_str().unwrap(), b"result", code, 300, 200)
+            .unwrap();
+        let raw = encode_http_010(&response, HTTP_TARGET).unwrap();
+        let parsed = parse_http_010(&raw, HTTP_TARGET, true).unwrap();
+        let result = client.open_http_response(&mut a, &parsed).unwrap();
+        assert_eq!(result.success, code.is_none());
+        assert_eq!(result.data, b"result");
+    }
+}
+#[test]
+fn http_framing_rejections() {
+    let (mut a, _b, _c, _tmp) = pair();
+    a.bind_http(HTTP_TARGET).unwrap();
+    let (_p, m) = a.start_http(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    let original = String::from_utf8(encode_http_010(&m, HTTP_TARGET).unwrap()).unwrap();
+    let (head, body) = original.split_once("\r\n\r\n").unwrap();
+    let length = head
+        .split("\r\n")
+        .find(|l| l.starts_with("Content-Length:"))
+        .unwrap();
+    let first = head.split_once("\r\n").unwrap().0;
+    let padding = 32768 - (head.len() - first.len()) - 10;
+    let exact = format!("{head}\r\nPadding:{}", " ".repeat(padding));
+    assert!(parse_http_010(
+        format!("{exact}\r\n\r\n{body}").as_bytes(),
+        HTTP_TARGET,
+        false
+    )
+    .is_ok());
+    assert!(parse_http_010(
+        format!("{exact} \r\n\r\n{body}").as_bytes(),
+        HTTP_TARGET,
+        false
+    )
+    .is_err());
+    let mut cases = vec![
+        format!("{head}\r\n{length}"),
+        format!("{head}\r\nContent-Length: 1"),
+        head.replace(&format!("\r\n{length}"), ""),
+        head.replace("Content-Length: ", "Content-Length: 0"),
+        head.replace("\r\nHost: localhost:8443", ""),
+        head.replace("Host: localhost:8443", "Host: other.example"),
+        head.replace("POST /messages", &format!("POST {HTTP_TARGET}")),
+        head.replace("POST /messages", "POST /other"),
+        head.replace("HTTP/1.1", "HTTP/1.0"),
+        head.replace("Connection: close", "Connection: keep-alive"),
+    ];
+    for h in [
+        "Transfer-Encoding: chunked",
+        "Trailer: signature",
+        "Content-Encoding: identity",
+        "HOST: localhost:8443",
+        " continued",
+        "Name : value",
+        "Name: a\tb",
+        "Upgrade: websocket",
+        "Expect: 100-continue",
+    ] {
+        cases.push(format!("{head}\r\n{h}"));
+    }
+    for h in cases {
+        assert!(
+            parse_http_010(format!("{h}\r\n\r\n{body}").as_bytes(), HTTP_TARGET, false).is_err()
+        );
+    }
+    for raw in [
+        original[..original.len() - 1].to_owned(),
+        format!("{original}x"),
+        original.replace("\r\n", "\n"),
+    ] {
+        assert!(parse_http_010(raw.as_bytes(), HTTP_TARGET, false).is_err());
+    }
+    let mut duplicate = m.clone();
+    duplicate.headers.push(m.headers[5].clone());
+    assert!(encode_http_010(&duplicate, HTTP_TARGET).is_err());
+    let mut injection = m;
+    injection
+        .headers
+        .push(["extra".into(), "value\r\nInjected: yes".into()]);
+    assert!(encode_http_010(&injection, HTTP_TARGET).is_err());
+}

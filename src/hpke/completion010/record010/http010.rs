@@ -38,7 +38,7 @@ mod content {
     }
 }
 #[derive(Clone)]
-pub(super) struct HTTPContext010 {
+pub(in crate::hpke::completion010) struct HTTPContext010 {
     method: String,
     target: String,
     authority: String,
@@ -46,20 +46,20 @@ pub(super) struct HTTPContext010 {
     signature: String,
     version: String,
 }
-pub(super) struct HTTPProof010 {
+pub(in crate::hpke::completion010) struct HTTPProof010 {
     message: HTTPMessage010,
-    headers: Fields,
+    pub(in crate::hpke::completion010) headers: Fields,
     params: Fields,
     input: String,
     signature: Vec<u8>,
-    pub(super) start: Stamp,
+    pub(in crate::hpke::completion010) start: Stamp,
 }
 const REQUEST: &str = "\"@method\" \"@target-uri\" \"@authority\" \"content-type\" \"content-digest\" \"x-sage-did\" \"x-sage-version\"";
 const RESPONSE: &str = "\"@status\" \"@method\";req \"@target-uri\";req \"@authority\";req \"content-digest\";req \"signature\";req \"x-sage-version\";req \"content-type\" \"content-digest\" \"x-sage-did\" \"x-sage-version\"";
-fn ascii(v: &str) -> bool {
+pub(in crate::hpke::completion010) fn ascii(v: &str) -> bool {
     v.bytes().all(|b| (32..=126).contains(&b))
 }
-fn token(v: &str) -> bool {
+pub(in crate::hpke::completion010) fn token(v: &str) -> bool {
     !v.is_empty()
         && v.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
@@ -67,7 +67,7 @@ fn token(v: &str) -> bool {
 fn digest(b: &[u8]) -> String {
     format!("sha-256=:{}:", STANDARD.encode(Sha256::digest(b)))
 }
-fn headers(m: &HTTPMessage010) -> Result<Fields> {
+pub(in crate::hpke::completion010) fn headers(m: &HTTPMessage010) -> Result<Fields> {
     if m.body.len() > 32768 || m.headers.len() > 256 {
         return Err(bad());
     }
@@ -188,7 +188,7 @@ fn base(m: &HTTPMessage010, h: &Fields, input: &str, q: Option<&HTTPContext010>)
     add("\"@signature-params\"", input);
     lines.join("\n").into_bytes()
 }
-fn context(m: &HTTPMessage010, h: &Fields) -> HTTPContext010 {
+pub(in crate::hpke::completion010) fn context(m: &HTTPMessage010, h: &Fields) -> HTTPContext010 {
     HTTPContext010 {
         method: m.method.clone(),
         target: m.target.clone(),
@@ -202,21 +202,8 @@ impl AuthenticatedCompletion010 {
     /// Permanently select canonical HTTPS POST carriage before any records.
     /// Bare record APIs reject afterwards. The endpoint is trusted configuration.
     pub fn bind_http(&mut self, target: &str) -> Result<()> {
-        let u: http::Uri = target.parse().map_err(|_| bad())?;
-        let authority = u.authority().ok_or_else(bad)?.as_str();
-        if u.scheme_str() != Some("https")
-            || authority.is_empty()
-            || authority != authority.to_ascii_lowercase()
-            || authority.ends_with(":443")
-            || authority.contains('@')
-            || target.contains('#')
-            || !ascii(target)
-            || target.contains(['"', '\\', ' '])
-            || !target
-                .strip_prefix(&format!("https://{authority}"))
-                .is_some_and(|p| p.starts_with('/'))
-            || u != target
-            || self.closed
+        let authority = endpoint(target)?;
+        if self.closed
             || !self.http_target.is_empty()
             || !self.sent.is_empty()
             || !self.received.is_empty()
@@ -224,7 +211,7 @@ impl AuthenticatedCompletion010 {
             return Err(bad());
         }
         self.http_target = target.into();
-        self.http_authority = authority.into();
+        self.http_authority = authority;
         Ok(())
     }
     fn prepare_http(
@@ -233,73 +220,9 @@ impl AuthenticatedCompletion010 {
         response: bool,
         start: Stamp,
     ) -> Result<HTTPProof010> {
-        if self.http_target.is_empty()
-            || (!response
-                && (m.method != "POST"
-                    || m.target != self.http_target
-                    || m.authority != self.http_authority
-                    || m.status != 0))
-            || (response
-                && (!m.method.is_empty()
-                    || !m.target.is_empty()
-                    || !m.authority.is_empty()
-                    || !(200..=599).contains(&m.status)
-                    || m.status == 204))
-        {
-            return Err(bad());
-        }
-        let h = headers(m)?;
-        let v = h.get("signature-input").ok_or_else(bad)?;
-        let params = input(v, response)?;
-        let value = h.get("signature").ok_or_else(bad)?;
-        let encoded = value
-            .strip_prefix("sig1=:")
-            .and_then(|s| s.strip_suffix(':'))
-            .ok_or_else(bad)?;
-        let signature = STANDARD.decode(encoded).map_err(|_| bad())?;
-        if signature.len() != 64 || STANDARD.encode(&signature) != encoded {
-            return Err(bad());
-        }
-        Ok(HTTPProof010 {
-            message: m.clone(),
-            params,
-            input: v[5..].into(),
-            headers: h,
-            signature,
-            start,
-        })
+        prepare(&self.http_target, &self.http_authority, m, response, start)
     }
     pub(super) fn verify_http(&self, p: &HTTPProof010, w: &Raw) -> Result<()> {
-        for (param, field) in [
-            ("keyid", "kid"),
-            ("created", "created"),
-            ("expires", "expires"),
-            ("nonce", "nonce"),
-        ] {
-            let value = if matches!(field, "created" | "expires") {
-                w[field].get().into()
-            } else {
-                string(w, field)
-            };
-            if p.params.get(param) != Some(&value) {
-                return Err(bad());
-            }
-        }
-        if p.headers["x-sage-did"] != string(w, "did") {
-            return Err(bad());
-        }
-        for (k, f) in [
-            ("x-sage-message-id", "id"),
-            ("x-sage-context-id", "context_id"),
-            ("x-sage-task-id", "task_id"),
-        ] {
-            if p.headers
-                .get(k)
-                .is_some_and(|v| string(w, f).is_empty() || *v != string(w, f))
-            {
-                return Err(bad());
-            }
-        }
         let q = if p.message.status != 0 {
             Some(
                 self.sent
@@ -315,11 +238,7 @@ impl AuthenticatedCompletion010 {
         } else {
             self.a.signing()
         };
-        verify(
-            &base(&p.message, &p.headers, &p.input, q),
-            &p.signature,
-            key,
-        )
+        verify_proof(p, w, key, q)
     }
     fn sign_http(
         &self,
@@ -328,55 +247,7 @@ impl AuthenticatedCompletion010 {
         status: u16,
         q: Option<&HTTPContext010>,
     ) -> Result<HTTPMessage010> {
-        let w: Raw = serde_json::from_slice(&body).map_err(|_| bad())?;
-        let mut m = HTTPMessage010 {
-            method: String::new(),
-            target: String::new(),
-            authority: String::new(),
-            status,
-            headers: vec![],
-            body,
-        };
-        let components = if q.is_none() {
-            m.method = "POST".into();
-            m.target = self.http_target.clone();
-            m.authority = self.http_authority.clone();
-            REQUEST
-        } else {
-            RESPONSE
-        };
-        let input=format!("({components});keyid=\"{}\";alg=\"ed25519\";created={};expires={};nonce=\"{}\";tag=\"sage-0.10.0\"",string(&w,"kid"),w["created"].get(),w["expires"].get(),string(&w,"nonce"));
-        let mut h = Fields::from([
-            ("content-type".into(), "application/json".into()),
-            ("content-digest".into(), digest(&m.body)),
-            ("x-sage-did".into(), string(&w, "did")),
-            ("x-sage-version".into(), "0.10.0".into()),
-            ("signature-input".into(), format!("sig1={input}")),
-        ]);
-        h.insert(
-            "signature".into(),
-            format!(
-                "sig1=:{}:",
-                STANDARD.encode(
-                    e.signing
-                        .as_ref()
-                        .ok_or_else(bad)?
-                        .sign(&base(&m, &h, &input, q))
-                        .to_bytes()
-                )
-            ),
-        );
-        for k in [
-            "content-type",
-            "content-digest",
-            "x-sage-did",
-            "x-sage-version",
-            "signature-input",
-            "signature",
-        ] {
-            m.headers.push([k.into(), h[k].clone()]);
-        }
-        Ok(m)
+        sign(e, &self.http_target, &self.http_authority, body, status, q)
     }
     fn http_end(&mut self, e: &mut CompletionEndpoint010, start: Stamp, ttl: i64) -> Result<()> {
         let r = (|| {
@@ -548,4 +419,168 @@ fn admission_bounds() {
     ] {
         assert!(input(&v, false).is_err());
     }
+}
+
+pub(in crate::hpke::completion010) fn endpoint(target: &str) -> Result<String> {
+    let u: http::Uri = target.parse().map_err(|_| bad())?;
+    let authority = u.authority().ok_or_else(bad)?.as_str();
+    if u.scheme_str() != Some("https")
+        || authority.is_empty()
+        || authority != authority.to_ascii_lowercase()
+        || authority.ends_with(":443")
+        || authority.contains('@')
+        || target.contains('#')
+        || !ascii(target)
+        || target.contains(['"', '\\', ' '])
+        || !target
+            .strip_prefix(&format!("https://{authority}"))
+            .is_some_and(|p| p.starts_with('/'))
+        || u != target
+    {
+        return Err(bad());
+    }
+    Ok(authority.into())
+}
+pub(in crate::hpke::completion010) fn prepare(
+    target: &str,
+    authority: &str,
+    m: &HTTPMessage010,
+    response: bool,
+    start: Stamp,
+) -> Result<HTTPProof010> {
+    if target.is_empty()
+        || (!response
+            && (m.method != "POST"
+                || m.target != target
+                || m.authority != authority
+                || m.status != 0))
+        || (response
+            && (!m.method.is_empty()
+                || !m.target.is_empty()
+                || !m.authority.is_empty()
+                || !(200..=599).contains(&m.status)
+                || m.status == 204))
+    {
+        return Err(bad());
+    }
+    let h = headers(m)?;
+    let v = h.get("signature-input").ok_or_else(bad)?;
+    let params = input(v, response)?;
+    let value = h.get("signature").ok_or_else(bad)?;
+    let encoded = value
+        .strip_prefix("sig1=:")
+        .and_then(|s| s.strip_suffix(':'))
+        .ok_or_else(bad)?;
+    let signature = STANDARD.decode(encoded).map_err(|_| bad())?;
+    if signature.len() != 64 || STANDARD.encode(&signature) != encoded {
+        return Err(bad());
+    }
+    Ok(HTTPProof010 {
+        message: m.clone(),
+        params,
+        input: v[5..].into(),
+        headers: h,
+        signature,
+        start,
+    })
+}
+pub(in crate::hpke::completion010) fn verify_proof(
+    p: &HTTPProof010,
+    w: &Raw,
+    key: &Key,
+    q: Option<&HTTPContext010>,
+) -> Result<()> {
+    for (param, field) in [
+        ("keyid", "kid"),
+        ("created", "created"),
+        ("expires", "expires"),
+        ("nonce", "nonce"),
+    ] {
+        let value = if matches!(field, "created" | "expires") {
+            w[field].get().into()
+        } else {
+            string(w, field)
+        };
+        if p.params.get(param) != Some(&value) {
+            return Err(bad());
+        }
+    }
+    if p.headers["x-sage-did"] != string(w, "did") {
+        return Err(bad());
+    }
+    for (k, f) in [
+        ("x-sage-message-id", "id"),
+        ("x-sage-context-id", "context_id"),
+        ("x-sage-task-id", "task_id"),
+    ] {
+        if p.headers
+            .get(k)
+            .is_some_and(|v| string(w, f).is_empty() || *v != string(w, f))
+        {
+            return Err(bad());
+        }
+    }
+    verify(
+        &base(&p.message, &p.headers, &p.input, q),
+        &p.signature,
+        key,
+    )
+}
+pub(in crate::hpke::completion010) fn sign(
+    e: &CompletionEndpoint010,
+    target: &str,
+    authority: &str,
+    body: Vec<u8>,
+    status: u16,
+    q: Option<&HTTPContext010>,
+) -> Result<HTTPMessage010> {
+    let w: Raw = serde_json::from_slice(&body).map_err(|_| bad())?;
+    let mut m = HTTPMessage010 {
+        method: String::new(),
+        target: String::new(),
+        authority: String::new(),
+        status,
+        headers: vec![],
+        body,
+    };
+    let components = if q.is_none() {
+        m.method = "POST".into();
+        m.target = target.into();
+        m.authority = authority.into();
+        REQUEST
+    } else {
+        RESPONSE
+    };
+    let input=format!("({components});keyid=\"{}\";alg=\"ed25519\";created={};expires={};nonce=\"{}\";tag=\"sage-0.10.0\"",string(&w,"kid"),w["created"].get(),w["expires"].get(),string(&w,"nonce"));
+    let mut h = Fields::from([
+        ("content-type".into(), "application/json".into()),
+        ("content-digest".into(), digest(&m.body)),
+        ("x-sage-did".into(), string(&w, "did")),
+        ("x-sage-version".into(), "0.10.0".into()),
+        ("signature-input".into(), format!("sig1={input}")),
+    ]);
+    h.insert(
+        "signature".into(),
+        format!(
+            "sig1=:{}:",
+            STANDARD.encode(
+                e.signing
+                    .as_ref()
+                    .ok_or_else(bad)?
+                    .sign(&base(&m, &h, &input, q))
+                    .to_bytes()
+            )
+        ),
+    );
+    for k in [
+        "content-type",
+        "content-digest",
+        "x-sage-did",
+        "x-sage-version",
+        "signature-input",
+        "signature",
+    ] {
+        m.headers.push([k.into(), h[k].clone()]);
+    }
+    Ok(m)
 }
