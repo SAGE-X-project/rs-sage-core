@@ -19,7 +19,10 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroizing;
+mod http_handshake010;
 mod record010;
+pub use http_handshake010::{encode_http_010, parse_http_010};
+use record010::http010::{HTTPContext010, HTTPProof010};
 pub use record010::{http010::HTTPMessage010, SessionResponse010};
 fn bad() -> Error {
     Error::ValidationError("authentication failed".into())
@@ -231,6 +234,9 @@ fn reservation(m: &Raw) -> Result<Replay010> {
 /// Owns local credentials and serializes operations through exclusive borrowing.
 /// Use the same durable replay store across transports and process restarts.
 pub struct CompletionEndpoint010 {
+    http_target: String,
+    http_authority: String,
+    used: bool,
     registry: Gate,
     clock: Box<dyn Clock>,
     replay: Box<dyn ReplayStore010>,
@@ -258,6 +264,9 @@ impl CompletionEndpoint010 {
         }
         let seed: &[u8; 32] = seed.try_into().map_err(|_| bad())?;
         Ok(Self {
+            http_target: String::new(),
+            http_authority: String::new(),
+            used: false,
             registry,
             clock,
             replay,
@@ -327,6 +336,18 @@ impl CompletionEndpoint010 {
         resp_kid: &str,
         ttl: i64,
     ) -> Result<(PendingCompletion010, Vec<u8>)> {
+        if !self.http_target.is_empty() {
+            return Err(bad());
+        }
+        self.start_inner(recipient, resp_kid, ttl)
+    }
+    fn start_inner(
+        &mut self,
+        recipient: &str,
+        resp_kid: &str,
+        ttl: i64,
+    ) -> Result<(PendingCompletion010, Vec<u8>)> {
+        self.used = true;
         let start = self.sample()?;
         if !(1..=300).contains(&ttl) {
             return Err(bad());
@@ -384,6 +405,7 @@ impl CompletionEndpoint010 {
         }
         let init = d::initiation(&initiation)?.0;
         let pending = PendingCompletion010 {
+            http: None,
             endpoint: self.identity,
             state: Some(state),
             request: request.clone(),
@@ -402,10 +424,23 @@ impl CompletionEndpoint010 {
         request: &[u8],
         ttl: i64,
     ) -> Result<(AuthenticatedCompletion010, Vec<u8>)> {
+        if !self.http_target.is_empty() {
+            return Err(bad());
+        }
+        self.respond_inner(request, ttl, None)
+    }
+    fn respond_inner(
+        &mut self,
+        request: &[u8],
+        ttl: i64,
+        proof: Option<&HTTPProof010>,
+    ) -> Result<(AuthenticatedCompletion010, Vec<u8>)> {
+        self.used = true;
         let start = self.sample()?;
         if !(1..=300).contains(&ttl) || self.kem.len() != 32 {
             return Err(bad());
         }
+        let start = proof.map_or(start, |p| p.start);
         let (w, body) = wire(request, false, start.unix)?;
         let (m, _) = d::initiation(&body)?;
         if body != canonical(&m)
@@ -421,6 +456,9 @@ impl CompletionEndpoint010 {
         }
         let (a, b) = self.selected(&m)?;
         verify_wire(&w, false, a.signing())?;
+        if let Some(p) = proof {
+            record010::http010::verify_proof(p, &w, a.signing(), None)?;
+        }
         let kem: [u8; 32] = self.kem.as_slice().try_into().map_err(|_| bad())?;
         if x25519(kem, X25519_BASEPOINT_BYTES).as_slice()
             != hex::decode(&b.kem().ok_or_else(bad)?.material).map_err(|_| bad())?
@@ -500,6 +538,7 @@ fn live(now: Stamp, start: Stamp, expires: i64) -> bool {
 }
 /// Owns one emitted initiation and private derivation state; no Clone/restore API.
 pub struct PendingCompletion010 {
+    http: Option<HTTPContext010>,
     endpoint: uuid::Uuid,
     state: Option<Initiator010>,
     request: Vec<u8>,
@@ -529,6 +568,17 @@ impl PendingCompletion010 {
         e: &mut CompletionEndpoint010,
         response: &[u8],
     ) -> Result<AuthenticatedCompletion010> {
+        if self.http.is_some() || !e.http_target.is_empty() {
+            return Err(bad());
+        }
+        self.complete_inner(e, response, None)
+    }
+    fn complete_inner(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        response: &[u8],
+        proof: Option<&HTTPProof010>,
+    ) -> Result<AuthenticatedCompletion010> {
         let state = self.state.take().ok_or_else(bad)?;
         if e.identity != self.endpoint {
             return Err(bad());
@@ -537,7 +587,11 @@ impl PendingCompletion010 {
         if !live(start, self.emitted, self.expires) {
             return Err(bad());
         }
+        let start = proof.map_or(start, |p| p.start);
         let (w, body) = wire(response, true, start.unix)?;
+        if let Some(p) = proof {
+            record010::http010::verify_proof(p, &w, self.b.signing(), self.http.as_ref())?;
+        }
         let (request, _) = wire(&self.request, false, self.emitted.unix)?;
         if string(&w, "message_id") != string(&request, "id")
             || string(&w, "request_hash") != B64.encode(Sha256::digest(canonical(&request)))
