@@ -112,7 +112,59 @@ pub(in crate::hpke::completion010) fn headers(m: &HTTPMessage010) -> Result<Fiel
     }
     Ok(h)
 }
+// Parse only the fixed profile component list, then serialize it with RFC 8941
+// spacing and implicit true booleans. Do not reorder or rewrite quoted values.
+fn canonical_input(v: &str, response: bool) -> Result<String> {
+    if v.len() > 8192 || !ascii(v) {
+        return Err(bad());
+    }
+    let components = if response { RESPONSE } else { REQUEST };
+    let mut rest = v
+        .strip_prefix("sig1=(")
+        .ok_or_else(bad)?
+        .trim_start_matches(' ');
+    for (i, item) in components.split(' ').enumerate() {
+        if i > 0 {
+            rest = rest
+                .strip_prefix(' ')
+                .ok_or_else(bad)?
+                .trim_start_matches(' ');
+        }
+        let name = item.strip_suffix(";req").unwrap_or(item);
+        rest = rest.strip_prefix(name).ok_or_else(bad)?;
+        if item.ends_with(";req") {
+            rest = rest
+                .strip_prefix(';')
+                .ok_or_else(bad)?
+                .trim_start_matches(' ');
+            rest = rest.strip_prefix("req").ok_or_else(bad)?;
+            rest = rest.strip_prefix("=?1").unwrap_or(rest);
+        }
+    }
+    rest = rest
+        .trim_start_matches(' ')
+        .strip_prefix(')')
+        .ok_or_else(bad)?;
+    let mut out = format!("sig1=({components})");
+    let mut quoted = false;
+    let mut chars = rest.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '"' {
+            quoted = !quoted;
+        }
+        out.push(c);
+        if c == ';' && !quoted {
+            while chars.peek() == Some(&' ') {
+                chars.next();
+            }
+        }
+    }
+    Ok(out)
+}
+
 fn input(v: &str, response: bool) -> Result<Fields> {
+    let normalized = canonical_input(v, response)?;
+    let v = normalized.as_str();
     let prefix = format!("sig1=({})", if response { RESPONSE } else { REQUEST });
     let mut rest = v.strip_prefix(&prefix).ok_or_else(bad)?;
     let mut out = Fields::new();
@@ -415,7 +467,7 @@ fn admission_bounds() {
         good.replace(";created=100", ";created=1.0"),
         good.replace(";tag=\"sage-0.10.0\"", ""),
         good.replace(";nonce=\"", ";nonce=\"\\"),
-        good.replace(";alg=", "; alg="),
+        good.replace(";alg=", ";\talg="),
     ] {
         assert!(input(&v, false).is_err());
     }
@@ -465,7 +517,8 @@ pub(in crate::hpke::completion010) fn prepare(
     }
     let h = headers(m)?;
     let v = h.get("signature-input").ok_or_else(bad)?;
-    let params = input(v, response)?;
+    let normalized = canonical_input(v, response)?;
+    let params = input(&normalized, response)?;
     let value = h.get("signature").ok_or_else(bad)?;
     let encoded = value
         .strip_prefix("sig1=:")
@@ -478,7 +531,7 @@ pub(in crate::hpke::completion010) fn prepare(
     Ok(HTTPProof010 {
         message: m.clone(),
         params,
-        input: v[5..].into(),
+        input: normalized[5..].into(),
         headers: h,
         signature,
         start,
@@ -583,4 +636,37 @@ pub(in crate::hpke::completion010) fn sign(
         m.headers.push([k.into(), h[k].clone()]);
     }
     Ok(m)
+}
+
+#[cfg(test)]
+#[test]
+fn serialization_vectors() {
+    let f: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/http-serialization010.json"
+    ))
+    .unwrap();
+    for c in f["structured_fields"].as_array().unwrap() {
+        let v = c["input"].as_str().unwrap();
+        let response = c["response"].as_bool().unwrap();
+        let accept = c["accept"].as_bool().unwrap();
+        assert_eq!(input(v, response).is_ok(), accept, "{}", c["id"]);
+        if accept {
+            assert_eq!(
+                canonical_input(v, response).unwrap(),
+                c["canonical"].as_str().unwrap()
+            );
+        }
+    }
+    for c in f["uris"].as_array().unwrap() {
+        let result = endpoint(c["target"].as_str().unwrap());
+        assert_eq!(
+            result.is_ok(),
+            c["accept"].as_bool().unwrap(),
+            "{}",
+            c["target"]
+        );
+        if let Ok(authority) = result {
+            assert_eq!(authority, c["authority"].as_str().unwrap());
+        }
+    }
 }
