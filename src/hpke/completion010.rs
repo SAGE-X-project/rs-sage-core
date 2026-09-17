@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroizing;
 mod record010;
+pub use record010::SessionResponse010;
 fn bad() -> Error {
     Error::ValidationError("authentication failed".into())
 }
@@ -618,6 +619,8 @@ pub struct AuthenticatedCompletion010 {
     confirmed: bool,
     active: Stamp,
     records: Option<RecordSession010>,
+    sent: BTreeMap<String, record010::RecordRequest010>,
+    received: BTreeMap<String, record010::RecordRequest010>,
 }
 fn owned(
     endpoint: uuid::Uuid,
@@ -651,6 +654,8 @@ fn owned(
         confirmed: false,
         active: created,
         records: Some(records),
+        sent: BTreeMap::new(),
+        received: BTreeMap::new(),
     })
 }
 impl AuthenticatedCompletion010 {
@@ -670,6 +675,8 @@ impl AuthenticatedCompletion010 {
     }
     /// Erase the owned seed and retire the result.
     pub fn close(&mut self) {
+        self.sent.clear();
+        self.received.clear();
         if let Some(r) = self.records.as_mut() {
             r.close();
         }
