@@ -27,6 +27,7 @@
 
 pub mod client;
 pub mod common;
+pub mod derivation010;
 pub mod nonce_store;
 pub mod resolver;
 pub mod schedule010;
@@ -37,6 +38,10 @@ pub use client::{HpkeClient, HpkeClientConfig, HpkeClientSession, HpkeClientStat
 pub use common::{
     combine_secrets, derive_traffic_keys, hmac_expand, is_all_zero_32, kem_open, kem_seal,
     make_ack_tag, sha256_hash, sha256_hash_hex, verify_ack_tag, zero_bytes,
+};
+pub use derivation010::{
+    build_domains_010, derive_responder_010, respond_fresh_010, start_initiator_010, Derivation010,
+    Domains010, Initiator010,
 };
 pub use nonce_store::NonceStore;
 pub use resolver::{DidDocumentKemResolver, MemoryKeyResolver};
