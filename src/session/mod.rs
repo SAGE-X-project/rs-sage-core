@@ -20,3 +20,6 @@ pub use derive::{
 pub use manager::{SessionManager, SessionManagerConfig};
 pub use secure_session::{SecureSession, HEADER_SIZE, NONCE_SIZE, REPLAY_WINDOW_SIZE, SEQ_SIZE};
 pub use types::{Session, SessionConfig, SessionOpts, SessionStatus, DEFAULT_REKEY_INTERVAL};
+
+mod record010;
+pub use record010::RecordSession010;
