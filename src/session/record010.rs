@@ -68,9 +68,12 @@ impl RecordSession010 {
         self.closed = true;
     }
     fn live(&mut self) -> Result<()> {
+        self.live_at(Instant::now())
+    }
+    fn live_at(&mut self, now: Instant) -> Result<()> {
         if self.closed
-            || self.created.elapsed() >= Duration::from_secs(3600)
-            || self.active.elapsed() >= Duration::from_secs(600)
+            || now.duration_since(self.created) >= Duration::from_secs(3600)
+            || now.duration_since(self.active) >= Duration::from_secs(600)
         {
             self.close();
             return Err(invalid("record session is closed or expired"));
@@ -287,11 +290,14 @@ mod tests {
         assert_eq!(*receiver.seed, [0; 32]);
         for absolute in [false, true] {
             let mut s = RecordSession010::new(&[1; 32], &[2; 32], true).unwrap();
-            if absolute {
-                s.created = Instant::now() - Duration::from_secs(3600);
+            let deadline = if absolute {
+                s.active = s.created + Duration::from_secs(3500);
+                s.created + Duration::from_secs(3600)
             } else {
-                s.active = Instant::now() - Duration::from_secs(600);
-            }
+                s.active + Duration::from_secs(600)
+            };
+            assert!(s.live_at(deadline - Duration::from_nanos(1)).is_ok());
+            assert!(s.live_at(deadline).is_err());
             assert!(s.seal(b"", b"").is_err());
             assert!(s.closed);
         }
