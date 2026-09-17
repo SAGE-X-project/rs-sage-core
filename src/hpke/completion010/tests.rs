@@ -768,3 +768,205 @@ fn session_response_retained_copy_and_admission() {
         .unwrap();
     assert_eq!(client.open_response(&mut a, &r).unwrap().data.len(), 16348);
 }
+
+fn mutate_http(m: &HTTPMessage010, kind: &str) -> HTTPMessage010 {
+    let mut m = m.clone();
+    match kind {
+        "request-method" => m.method = "GET".into(),
+        "request-target" => m.target.push_str("?other=1"),
+        "request-authority" => m.authority = "other.example".into(),
+        "response-status" => m.status = 204,
+        "response-status-tamper" => m.status = 201,
+        "body-digest" => m.body.push(b' '),
+        "duplicate-signature"
+        | "duplicate-input"
+        | "duplicate-digest"
+        | "duplicate-type"
+        | "duplicate-sage" => {
+            let k = match kind {
+                "duplicate-signature" => "signature",
+                "duplicate-input" => "signature-input",
+                "duplicate-digest" => "content-digest",
+                "duplicate-type" => "content-type",
+                _ => "x-sage-did",
+            };
+            let p = m.headers.iter().find(|p| p[0] == k).unwrap();
+            m.headers.push([k.to_uppercase(), p[1].clone()]);
+        }
+        _ => {
+            let set = match kind {
+                "content-type" => Some(("content-type", "application/json; charset=utf-8")),
+                "content-encoding" => Some(("content-encoding", "identity")),
+                "transfer-encoding" => Some(("transfer-encoding", "chunked")),
+                "trailer" => Some(("trailer", "signature")),
+                "content-length" => Some(("content-length", "1")),
+                "header-control" => Some(("extra", "a\nb")),
+                "version" => Some(("x-sage-version", "1.0")),
+                "did" => Some(("x-sage-did", "did:sage:web:agent.example:other")),
+                "projection" => Some(("x-sage-context-id", "other")),
+                "metadata" => Some(("x-sage-meta-key", "value")),
+                _ => None,
+            };
+            if let Some((k, v)) = set {
+                if let Some(p) = m.headers.iter_mut().find(|p| p[0] == k) {
+                    p[1] = v.into()
+                } else {
+                    m.headers.push([k.into(), v.into()])
+                }
+            }
+            for p in &mut m.headers {
+                if p[0] == "signature" {
+                    match kind {
+                        "signature" => p[1] = format!("sig1=:{}==:", "A".repeat(86)),
+                        "multiple-signatures" => p[1] = format!("{}, {}", p[1], p[1]),
+                        "noncanonical-base64" => p[1] = p[1].replace("=:", ":"),
+                        _ => {}
+                    }
+                }
+                if p[0] == "signature-input" {
+                    p[1] = match kind {
+                        "unknown-parameter" => format!("{};extra=1", p[1]),
+                        "duplicate-parameter" => format!("{};tag=\"sage-0.10.0\"", p[1]),
+                        "wrong-tag" => p[1].replace("sage-0.10.0", "sage-1.0"),
+                        "wrong-keyid" => p[1].replace("#signing-1", "#other"),
+                        "wrong-nonce" => p[1].replace(";nonce=\"", ";nonce=\"A"),
+                        "wrong-created" => p[1].replace(";created=100", ";created=101"),
+                        "wrong-alg" => p[1].replace("ed25519", "rsa-pss-sha512"),
+                        "coverage" => p[1].replace("\"@method\"", "\"@path\""),
+                        _ => p[1].clone(),
+                    };
+                }
+            }
+        }
+    }
+    m
+}
+#[test]
+fn http_session_scenarios() {
+    let f: Value =
+        serde_json::from_str(include_str!("../../../tests/fixtures/http-session010.json")).unwrap();
+    for v in f["cases"].as_array().unwrap() {
+        let kind = v.as_str().unwrap();
+        let (mut a, mut b, c, _tmp) = pair();
+        let (mut p, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+        let (mut server, r) = b.respond(&q, 300).unwrap();
+        let mut client = p.complete(&mut a, &r).unwrap();
+        client.bind_http("https://agent.example/messages").unwrap();
+        server.bind_http("https://agent.example/messages").unwrap();
+        let mut q = client.seal_http_request(&mut a, b"request", 300).unwrap();
+        let invalid = kind.starts_with("request-")
+            || kind.starts_with("duplicate-")
+            || kind.starts_with("wrong-")
+            || kind.starts_with("content-")
+            || [
+                "body-digest",
+                "header-control",
+                "unknown-parameter",
+                "transfer-encoding",
+                "trailer",
+                "version",
+                "did",
+                "projection",
+                "metadata",
+                "signature",
+                "multiple-signatures",
+                "noncanonical-base64",
+                "coverage",
+            ]
+            .contains(&kind);
+        if invalid {
+            assert!(
+                server
+                    .open_http_request(&mut b, &mutate_http(&q, kind))
+                    .is_err(),
+                "{kind}"
+            );
+            assert_eq!(server.state(), "RESPONSE_SENT");
+        }
+        if kind == "bare-bypass" {
+            assert!(server.open_request(&mut b, &q.body).is_err());
+            assert!(client.seal_request(&mut a, b"", 300).is_err());
+        }
+        assert_eq!(server.open_http_request(&mut b, &q).unwrap(), b"request");
+        assert!(server.open_http_request(&mut b, &q).is_err());
+        if kind == "reverse" {
+            std::mem::swap(&mut a, &mut b);
+            std::mem::swap(&mut client, &mut server);
+            q = client.seal_http_request(&mut a, b"request", 300).unwrap();
+            server.open_http_request(&mut b, &q).unwrap();
+        }
+        let w: Value = serde_json::from_slice(&q.body).unwrap();
+        let id = w["id"].as_str().unwrap();
+        let data = if kind == "empty" {
+            b"".as_slice()
+        } else {
+            b"result".as_slice()
+        };
+        let error = if kind == "error" {
+            Some("policy_denied")
+        } else {
+            None
+        };
+        let mut r = server
+            .seal_http_response(&mut b, id, data, error, 300, 200)
+            .unwrap();
+        assert!(server
+            .seal_http_response(&mut b, id, data, error, 300, 200)
+            .is_err());
+        if kind == "response-status" || kind == "response-status-tamper" {
+            assert!(client
+                .open_http_response(&mut a, &mutate_http(&r, kind))
+                .is_err());
+        }
+        if kind == "reordered-parameters" {
+            for p in &mut r.headers {
+                if p[0] == "signature-input" {
+                    let (prefix, rest) = p[1].split_once(");").unwrap();
+                    let fields: Vec<_> = rest.split(';').rev().collect();
+                    p[1] = format!("{prefix});{}", fields.join(";"));
+                }
+            }
+            record010::http010::resign_test(&mut r, &b, Some(&q));
+        }
+        if kind == "inner-signature" {
+            let mut bad = r.clone();
+            let mut body: Value = serde_json::from_slice(&bad.body).unwrap();
+            body["signature"] = json!("A".repeat(86));
+            bad.body = canonical(&body);
+            record010::http010::resign_test(&mut bad, &b, Some(&q));
+            assert!(client.open_http_response(&mut a, &bad).is_err());
+        }
+        if kind == "response-request-signature" {
+            let mut altered = q.clone();
+            altered
+                .headers
+                .iter_mut()
+                .find(|p| p[0] == "signature")
+                .unwrap()[1]
+                .push_str("wrong");
+            let mut bad = r.clone();
+            record010::http010::resign_test(&mut bad, &b, Some(&altered));
+            assert!(client.open_http_response(&mut a, &bad).is_err());
+        }
+        if ["store-error", "store-delay", "revoke-resp"].contains(&kind) {
+            c.0.borrow_mut().mode = kind.into();
+            assert!(client.open_http_response(&mut a, &r).is_err());
+            c.0.borrow_mut().mode.clear();
+            if kind != "store-error" {
+                assert_eq!(client.state(), "CLOSED");
+                continue;
+            }
+        }
+        if kind == "expired" {
+            c.0.borrow_mut().utc = 400;
+            assert!(client.open_http_response(&mut a, &r).is_err());
+            continue;
+        }
+        let v = client.open_http_response(&mut a, &r).unwrap();
+        assert_eq!(v.message_id, id);
+        assert_eq!(v.success, error.is_none());
+        assert_eq!(v.error, error.unwrap_or(""));
+        assert_eq!(v.data, data);
+        assert!(client.open_http_response(&mut a, &r).is_err());
+    }
+}
