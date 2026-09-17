@@ -151,6 +151,16 @@ impl RecordSession010 {
     /// Authenticate and accept once. Exclusive mutable access serializes replay
     /// acceptance; applications remain responsible for ordered business effects.
     pub fn open(&mut self, wire: &[u8], caller_aad: &[u8]) -> Result<Vec<u8>> {
+        self.open_checked(wire, caller_aad, || Ok(()))
+    }
+    /// Authenticate before the trusted acceptance gate; failed gates consume no sequence.
+    /// The exclusive borrow spans authentication, the gate and replay publication.
+    pub(crate) fn open_checked(
+        &mut self,
+        wire: &[u8],
+        caller_aad: &[u8],
+        accept: impl FnOnce() -> Result<()>,
+    ) -> Result<Vec<u8>> {
         self.live()?;
         if wire.len() < 36 || wire.len() > MAX_WIRE || caller_aad.len() > MAX_AAD {
             return Err(invalid("record size limit"));
@@ -187,6 +197,10 @@ impl RecordSession010 {
             )
             .map_err(|_| Error::Verification("record authentication failed".into()))?;
         if let Err(error) = self.live() {
+            plaintext.zeroize();
+            return Err(error);
+        }
+        if let Err(error) = accept() {
             plaintext.zeroize();
             return Err(error);
         }
