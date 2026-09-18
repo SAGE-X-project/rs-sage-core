@@ -1157,3 +1157,34 @@ fn http_framing_rejections() {
         .push(["extra".into(), "value\r\nInjected: yes".into()]);
     assert!(encode_http_010(&injection, HTTP_TARGET).is_err());
 }
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn durable_completion() {
+    let (mut a, mut b, c, tmp) = pair();
+    let ja = Rc::new(RefCell::new(
+        ReplayJournal010::open(&tmp.path().join("replay-a"), true, Box::new(c.clone())).unwrap(),
+    ));
+    let jb = Rc::new(RefCell::new(
+        ReplayJournal010::open(&tmp.path().join("replay-b"), true, Box::new(c.clone())).unwrap(),
+    ));
+    a.replay = Box::new(ja.clone());
+    b.replay = Box::new(jb.clone());
+    {
+        let mut time = c.0.borrow_mut();
+        time.utc = 460;
+        time.mono = 360000;
+    }
+    let (mut pending, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    let (mut server, r) = b.respond(&q, 300).unwrap();
+    let mut client = pending.complete(&mut a, &r).unwrap();
+    let q = client.seal_request(&mut a, b"durable", 300).unwrap();
+    assert_eq!(server.open_request(&mut b, &q).unwrap(), b"durable");
+    assert!(server.open_request(&mut b, &q).is_err());
+    client.close();
+    server.close();
+    a.close();
+    b.close();
+    ja.borrow_mut().close().unwrap();
+    jb.borrow_mut().close().unwrap();
+}
