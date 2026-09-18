@@ -244,7 +244,15 @@ impl VerificationService {
 
     /// Verifies the message timestamp
     fn verify_timestamp(&self, message: &Message, options: &VerificationOptions) -> Result<bool> {
-        let now = chrono::Utc::now().timestamp();
+        self.verify_timestamp_at(message, options, chrono::Utc::now().timestamp())
+    }
+
+    fn verify_timestamp_at(
+        &self,
+        message: &Message,
+        options: &VerificationOptions,
+        now: i64,
+    ) -> Result<bool> {
         let message_time = message.timestamp;
 
         // Check if message is not from the future
@@ -1736,62 +1744,34 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_timestamp_at_max_age_boundary() {
-        use crate::rfc9421::HttpSigner;
-        use base64::Engine;
-
+    fn test_verify_timestamp_boundaries_at_fixed_time() {
         let service = VerificationService::new();
-        let keypair = KeyPair::generate(KeyType::Ed25519).unwrap();
-        let now = chrono::Utc::now().timestamp();
-
-        // Message exactly at max_age boundary (1 hour ago)
-        let mut msg = MessageBuilder::new()
-            .agent_did("did:sage:test")
-            .timestamp(now - 3600)
-            .nonce("test-nonce")
-            .build()
-            .unwrap();
-
-        // Sign the message
-        let signer = HttpSigner::new(keypair.clone());
-        let request = service.reconstruct_http_request(&msg).unwrap();
-        let signed_request = signer.sign_request(request, None).unwrap();
-
-        let signature_header = signed_request
-            .headers()
-            .get("signature")
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let signature_input = signed_request
-            .headers()
-            .get("signature-input")
-            .unwrap()
-            .to_str()
-            .unwrap();
-
-        let sig_start = signature_header.find(':').unwrap() + 1;
-        let sig_base64 = if signature_header.ends_with(':') {
-            &signature_header[sig_start..signature_header.len() - 1]
-        } else {
-            &signature_header[sig_start..]
-        };
-        msg.signature = base64::engine::general_purpose::STANDARD
-            .decode(sig_base64)
-            .unwrap();
-        msg.signature_input = signature_input.to_string();
-
+        let now = 1_700_000_000;
         let options = VerificationOptions {
             check_timestamp: true,
             max_age_secs: Some(3600),
             ..Default::default()
         };
-
-        let result = service
-            .verify(&msg, keypair.public_key(), &options)
-            .unwrap();
-        assert!(result.verified); // Should be valid at boundary
-        assert!(result.timestamp_valid);
+        for (offset, expected) in [
+            (-3601, false),
+            (-3600, true),
+            (-3599, true),
+            (59, true),
+            (60, true),
+            (61, false),
+        ] {
+            let msg = MessageBuilder::new()
+                .agent_did("did:sage:test")
+                .timestamp(now + offset)
+                .nonce("test-nonce")
+                .build()
+                .unwrap();
+            assert_eq!(
+                service.verify_timestamp_at(&msg, &options, now).unwrap(),
+                expected,
+                "timestamp offset {offset}"
+            );
+        }
     }
 
     #[test]
