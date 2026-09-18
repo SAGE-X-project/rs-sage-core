@@ -109,3 +109,15 @@ fn manifest_file_limit() {
         assert_eq!(manifest_commitment(&raw).is_ok(), n == 4096)
     }
 }
+
+#[test]
+fn canonical_public_key_encoding() {
+    let mut p = [0xff; 32];
+    p[0] = 0xed;
+    p[31] = 0x7f;
+    assert!(!canonical_edwards_y(p));
+    p[31] |= 0x80;
+    assert!(!canonical_edwards_y(p));
+    p[0] = 0xec;
+    assert!(canonical_edwards_y(p));
+}

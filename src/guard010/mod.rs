@@ -428,11 +428,21 @@ fn intent_envelope(raw: &[u8]) -> Result<(Value, Vec<u8>)> {
     ensure(x > c && x - c <= 300)?;
     Ok((e, b))
 }
+// Dalek accepts ZIP-215 public encodings on construction; Guard requires
+// canonical RFC 8032 y coordinates. Strict verification rejects low-order points.
+fn canonical_edwards_y(mut bytes: [u8; 32]) -> bool {
+    bytes[31] &= 0x7f;
+    let mut modulus = [0xff; 32];
+    modulus[0] = 0xed;
+    modulus[31] = 0x7f;
+    bytes.iter().rev().cmp(modulus.iter().rev()).is_lt()
+}
 fn authenticate(a: &mut dyn Authority, e: &Value, kind: &str, domain: &str) -> Result<()> {
     let v = &e[kind];
     times(v, a.now()?)?;
-    let key = VerifyingKey::from_bytes(&a.active_key(text(v, "issuer"), text(v, "keyid"))?)
-        .map_err(|_| Invalid)?;
+    let bytes = a.active_key(text(v, "issuer"), text(v, "keyid"))?;
+    ensure(canonical_edwards_y(bytes))?;
+    let key = VerifyingKey::from_bytes(&bytes).map_err(|_| Invalid)?;
     let sig = Signature::from_slice(&b64(text(e, "proof"), 64)?).map_err(|_| Invalid)?;
     let msg = [format!("{domain}|0.10.0\0").as_bytes(), &encode(v)?].concat();
     key.verify_strict(&msg, &sig).map_err(|_| Invalid)?;
