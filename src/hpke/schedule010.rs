@@ -33,7 +33,7 @@ pub fn combine_secrets_010(
     let result = expand(&prk, b"sage-hpke-combiner|0.10.0", th);
     // Best effort: HKDF/HMAC library internals may retain additional copies.
     use zeroize::Zeroize;
-    prk.as_mut_slice().zeroize();
+    prk[..].zeroize();
     result
 }
 

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Dependency compatibility
+- Upgrade `chacha20poly1305` to 0.11 with explicit `zeroize` support to retain
+  key erasure on drop. Record nonces use fixed-size array construction.
+- Upgrade `http` to 1.5. Callers passing HTTP request, response or header types
+  to the public Rust API must also use `http` 1.x; the Inspector adapter is
+  updated alongside the core. Existing wire encodings remain unchanged.
+
 ### Changed (sage-spec alignment, crypto)
 - secp256k1 signatures follow the Ethereum convention of sage-spec 01-crypto:
   Keccak-256 digest, RFC 6979, low-S, 65-byte `r || s || v` on the wire
