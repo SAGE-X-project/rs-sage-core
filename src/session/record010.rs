@@ -134,7 +134,7 @@ impl RecordSession010 {
         let aad = self.aad(direction, seq, caller_aad);
         let encrypted = cipher
             .encrypt(
-                Nonce::from_slice(&nonce),
+                &Nonce::from(nonce),
                 Payload {
                     msg: plaintext,
                     aad: &aad,
@@ -189,7 +189,7 @@ impl RecordSession010 {
         let aad = self.aad(direction, seq, caller_aad);
         let mut plaintext = cipher
             .decrypt(
-                Nonce::from_slice(&nonce),
+                &Nonce::from(nonce),
                 Payload {
                     msg: &wire[20..],
                     aad: &aad,
@@ -336,5 +336,14 @@ mod tests {
             a.close();
             b.close();
         }
+    }
+}
+
+#[cfg(test)]
+mod dependency_tests {
+    #[test]
+    fn cipher_retains_zeroize_on_drop() {
+        fn requires_key_erasure<T: zeroize::ZeroizeOnDrop>() {}
+        requires_key_erasure::<chacha20poly1305::ChaCha20Poly1305>();
     }
 }
