@@ -27,6 +27,8 @@ pub use record010::{http010::HTTPMessage010, SessionResponse010};
 fn bad() -> Error {
     Error::ValidationError("authentication failed".into())
 }
+mod replay_journal010;
+pub use replay_journal010::ReplayJournal010;
 type Raw = BTreeMap<String, Box<RawValue>>;
 type Fields = BTreeMap<String, String>;
 fn canonical(v: &impl Serialize) -> Vec<u8> {
@@ -204,8 +206,9 @@ pub trait ReplayStore010 {
     fn reserve(&mut self, entry: Replay010) -> Result<()>;
     /// Atomically reserve ID and nonce for a verified session request. Stage all
     /// fallible/blocking durable work before calling validate exactly once at
-    /// final publication. A failed validate or storage operation publishes neither
-    /// entry. Success must durably publish both, with no fallible work after the
+    /// final acceptance. Failed validation must not release plaintext or consume
+    /// session state, but staged durable denial may remain to reject retries.
+    /// Success requires both denial keys durable, with no fallible work after the
     /// gate. Never reenter the endpoint. Exclusive session access spans this call
     /// and sequence/confirmation publication; restart discards session state.
     /// Implementations without this transaction contract reject record receive.
