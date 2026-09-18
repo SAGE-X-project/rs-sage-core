@@ -522,3 +522,8 @@ mod tests;
 
 mod ledger;
 pub use ledger::{GuardLedger, Reservation};
+
+mod dispatch;
+pub use dispatch::{Component, DispatchGate, DispatchReceipt, Invocation};
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod dispatch_tests;
