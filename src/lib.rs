@@ -10,6 +10,7 @@
 pub mod core;
 pub mod crypto;
 pub mod error;
+pub mod execution010;
 pub mod formats;
 pub mod jcs;
 pub mod rfc9421;
