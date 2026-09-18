@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 /// Maximum bytes in a Guard JSON input.
-pub const MAX_BYTES: usize = 1 << 20;
+const MAX_BYTES: usize = 1 << 20;
 /// Uniform authentication or input validation failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("guard authentication failed")]
