@@ -65,7 +65,7 @@ impl GuardLedger {
         self.store.close().map_err(|_| Invalid)
     }
 }
-fn reservation_entry(v: &VerifiedIntent) -> Result<Entry> {
+pub(super) fn reservation_entry(v: &VerifiedIntent) -> Result<Entry> {
     let (e, _) = intent_envelope(&v.canonical)?;
     let i = &e["intent"];
     Ok(Entry {
