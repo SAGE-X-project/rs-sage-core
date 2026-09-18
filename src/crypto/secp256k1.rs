@@ -2,7 +2,8 @@
 
 use crate::error::{Error, Result};
 use k256::ecdsa::{Signature as EcdsaSignature, SigningKey, VerifyingKey};
-use rand::rngs::OsRng;
+// These curve APIs require rand_core 0.6. Use their compatible OS RNG.
+use k256::elliptic_curve::rand_core::OsRng;
 
 /// Generate a new Secp256k1 signing key
 pub fn generate_signing_key() -> SigningKey {

@@ -5,7 +5,7 @@
 use crate::error::{Error, Result};
 use crate::hpke::types::*;
 use hkdf::Hkdf;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use hpke::{
     aead::ChaCha20Poly1305, kdf::HkdfSha256, kem::X25519HkdfSha256, Deserializable,
     Kem as KemTrait, OpModeR, OpModeS, Serializable,
@@ -83,7 +83,7 @@ pub fn hmac_expand(key: &[u8], label: &[u8], out_len: usize) -> Vec<u8> {
     let mut counter: u32 = 1;
     while out.len() < out_len {
         let mut mac =
-            <HmacSha256 as Mac>::new_from_slice(key).expect("HMAC accepts any key length");
+            <HmacSha256 as KeyInit>::new_from_slice(key).expect("HMAC accepts any key length");
         mac.update(label);
         mac.update(&counter.to_be_bytes());
         out.extend_from_slice(&mac.finalize().into_bytes());
@@ -130,7 +130,7 @@ pub fn make_ack_tag(
         th.update(b);
     }
     let transcript = th.finalize();
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(&ack_key)
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(&ack_key)
         .map_err(|e| Error::CryptoError(format!("HMAC init failed: {e}")))?;
     mac.update(ACK_MSG_LABEL);
     for s in [ctx_id, nonce, kid] {
@@ -196,7 +196,7 @@ mod tests {
         let a = hmac_expand(b"k", b"l", 32);
         let b = hmac_expand(b"k", b"l", 40);
         assert_eq!(&b[..32], &a[..]);
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(b"k").unwrap();
+        let mut mac = <HmacSha256 as KeyInit>::new_from_slice(b"k").unwrap();
         mac.update(b"l");
         mac.update(&1u32.to_be_bytes());
         assert_eq!(a, mac.finalize().into_bytes().to_vec());

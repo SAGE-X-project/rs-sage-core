@@ -10,8 +10,9 @@ use crate::crypto::{Algorithm, Signature, Signer, Verifier};
 use crate::error::{Error, Result};
 use hex;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
-use rand::rngs::OsRng;
-use rand::RngCore;
+// Curve key generation requires rand_core 0.6.
+use k256::elliptic_curve::rand_core::OsRng;
+use rand::TryRng;
 use serde::{Deserialize, Serialize};
 
 /// Key types supported by SAGE
@@ -248,7 +249,9 @@ impl KeyPair {
         let private_key = match key_type {
             KeyType::Ed25519 => {
                 let mut bytes = [0u8; 32];
-                OsRng.fill_bytes(&mut bytes);
+                rand::rngs::SysRng
+                    .try_fill_bytes(&mut bytes)
+                    .map_err(|e| Error::CryptoError(format!("OS randomness unavailable: {e}")))?;
                 PrivateKey::Ed25519(bytes)
             }
             KeyType::Secp256k1 => {

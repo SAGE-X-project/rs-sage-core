@@ -9,7 +9,7 @@ use crate::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
-use rand::RngCore;
+use rand::TryRng;
 use serde::{
     de::{MapAccess, Visitor},
     Deserializer, Serialize,
@@ -176,7 +176,7 @@ fn envelope(
     times: (i64, i64),
 ) -> Result<Value> {
     let mut nonce = [0; 16];
-    rand::rngs::OsRng
+    rand::rngs::SysRng
         .try_fill_bytes(&mut nonce)
         .map_err(|_| bad())?;
     let mut v = json!({"version":"0.10.0","id":uuid::Uuid::new_v4().to_string(),"did":did,"recipient":recipient,"kid":kid,"context_id":ctx,"role":if response{"responder"}else{"initiator"},"created":times.0,"expires":times.1,"nonce":B64.encode(nonce),"encoding":"plain"});
@@ -376,7 +376,7 @@ impl CompletionEndpoint010 {
         }
         let ctx = uuid::Uuid::new_v4().to_string();
         let mut nonce = [0; 16];
-        rand::rngs::OsRng
+        rand::rngs::SysRng
             .try_fill_bytes(&mut nonce)
             .map_err(|_| bad())?;
         let binding = json!({"v":"0.10.0","ctx":ctx,"initDid":self.did,"respDid":recipient,"initKid":self.kid,"respKid":resp_kid,"kemKid":format!("{}#{}",recipient,kem.name),"suite":"hpke-base+x25519+hkdf-sha256","combiner":"e2e-x25519-hkdf-v1","nonce":B64.encode(nonce)});

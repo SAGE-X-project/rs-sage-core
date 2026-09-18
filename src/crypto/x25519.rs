@@ -28,7 +28,7 @@
 
 use crate::error::{Error, Result};
 use ed25519_dalek::SigningKey;
-use rand::RngCore;
+use rand::TryRng;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 
 /// X25519 key pair for Diffie-Hellman key exchange
@@ -56,7 +56,9 @@ impl X25519KeyPair {
     /// ```
     pub fn generate() -> Self {
         let mut secret = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut secret);
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut secret)
+            .expect("OS randomness unavailable");
 
         // Compute public key using x25519 with base point
         let public = x25519(secret, X25519_BASEPOINT_BYTES);

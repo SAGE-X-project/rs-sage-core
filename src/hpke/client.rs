@@ -6,7 +6,7 @@ use crate::hpke::common::{
     combine_secrets, is_all_zero_32, kem_seal, make_ack_tag, verify_ack_tag,
 };
 use crate::hpke::types::*;
-use rand::RngCore;
+use rand::TryRng;
 use std::sync::Arc;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroizing;
@@ -113,7 +113,9 @@ impl HpkeClient {
         let export_ctx = self.info_builder.build_export_context(ctx_id);
         let (enc, exporter) = kem_seal(&peer_kem, &info, &export_ctx)?;
         let mut eph_secret = Zeroizing::new([0u8; 32]);
-        rand::rngs::OsRng.fill_bytes(&mut *eph_secret);
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut *eph_secret)
+            .map_err(|e| Error::CryptoError(format!("OS randomness unavailable: {e}")))?;
         let eph_c = x25519(*eph_secret, X25519_BASEPOINT_BYTES).to_vec();
         let cookie = self.cookie_source.as_ref().and_then(|s| {
             match s.get_cookie(ctx_id, &self.did, peer_did) {
