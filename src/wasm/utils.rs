@@ -5,8 +5,8 @@ use super::*;
 /// Generate random bytes
 #[wasm_bindgen(js_name = generateRandomBytes)]
 pub fn generate_random_bytes(length: usize) -> Vec<u8> {
-    use rand::RngCore;
-    let mut rng = rand::thread_rng();
+    use rand::Rng;
+    let mut rng = rand::rng();
     let mut bytes = vec![0u8; length];
     rng.fill_bytes(&mut bytes);
     bytes

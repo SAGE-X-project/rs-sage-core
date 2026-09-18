@@ -36,8 +36,8 @@ pub unsafe extern "C" fn sage_generate_nonce(out_nonce: *mut c_uchar, len: size_
         return SageErrorCode::InvalidInput.into();
     }
 
-    use rand::RngCore;
-    let mut rng = rand::thread_rng();
+    use rand::Rng;
+    let mut rng = rand::rng();
     let nonce_slice = slice::from_raw_parts_mut(out_nonce, len);
     rng.fill_bytes(nonce_slice);
 

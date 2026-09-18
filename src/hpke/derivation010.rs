@@ -2,7 +2,7 @@
 use super::{combine_secrets_010, kem_open, kem_seal, make_ack_tag_010};
 use crate::error::{Error, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rand::RngCore;
+use rand::TryRng;
 use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
 use sha2::{Digest, Sha256};
@@ -244,7 +244,7 @@ pub fn derive_responder_010(
 pub fn respond_fresh_010(raw: &[u8], kem_private: &[u8]) -> Result<Derivation010> {
     initiation(raw)?;
     let mut private = Zeroizing::new([0; 32]);
-    rand::rngs::OsRng
+    rand::rngs::SysRng
         .try_fill_bytes(&mut *private)
         .map_err(|_| invalid())?;
     derive_responder_010(
@@ -269,7 +269,7 @@ pub fn start_initiator_010(raw: &[u8], kem_public: &[u8]) -> Result<(Initiator01
     let pk: &[u8; 32] = kem_public.try_into().map_err(|_| invalid())?;
     let (enc, exporter) = kem_seal(pk, &dom.info, &dom.export_context).map_err(|_| invalid())?;
     let mut private = Zeroizing::new([0; 32]);
-    rand::rngs::OsRng
+    rand::rngs::SysRng
         .try_fill_bytes(&mut *private)
         .map_err(|_| invalid())?;
     m.insert("task".into(), "hpke/init@0.10.0".into());
@@ -330,7 +330,7 @@ mod tests {
         let f = fixture();
         let b = hex::decode(f["cases"][0]["input"]["binding_hex"].as_str().unwrap()).unwrap();
         let mut private = [0; 32];
-        rand::rngs::OsRng.fill_bytes(&mut private);
+        rand::rngs::SysRng.try_fill_bytes(&mut private).unwrap();
         let public = x25519(private, X25519_BASEPOINT_BYTES);
         (b, private, public)
     }

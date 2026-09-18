@@ -14,7 +14,8 @@ use p256::ecdsa::{
     signature::{Signer as P256Signer, Verifier as P256Verifier},
     Signature as P256Signature, SigningKey, VerifyingKey,
 };
-use rand::rngs::OsRng;
+// These curve APIs require rand_core 0.6. Use their compatible OS RNG.
+use p256::elliptic_curve::rand_core::OsRng;
 use sha2::{Digest, Sha256};
 
 /// P-256 ECDSA key pair

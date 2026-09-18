@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Dependency compatibility
+- Upgrade direct dependencies to `rand` 0.10, `sha2` 0.11, `hmac` 0.13 and
+  `hkdf` 0.13 together. HMAC initialization uses `KeyInit`; key derivation
+  and authentication retain the existing wire formats and SHA-256 algorithms.
+- Use the new system RNG interface for raw key material and handshake nonces,
+  preserving error returns in fallible APIs. Curve key generation and X25519
+  benchmarks use the compatible `rand_core` 0.6 OS RNG exposed by `k256`.
+  Older digest/RNG versions remain transitive dependencies of the curve crates;
+  their browser randomness backend remains enabled for WASM builds.
 - Upgrade `chacha20poly1305` to 0.11 with explicit `zeroize` support to retain
   key erasure on drop. Record nonces use fixed-size array construction.
 - Upgrade `http` to 1.5. Callers passing HTTP request, response or header types

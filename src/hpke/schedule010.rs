@@ -1,7 +1,7 @@
 //! Transcript-bound 0.10.0 seed and ACK schedule, separate from the v1 handshake.
 use crate::error::{Error, Result};
 use hkdf::Hkdf;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;

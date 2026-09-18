@@ -2,13 +2,14 @@
 
 use crate::error::{Error, Result};
 use ed25519_dalek::{Signature as Ed25519Signature, SigningKey, VerifyingKey};
-use rand::{rngs::OsRng, RngCore};
+use rand::{rngs::SysRng, TryRng};
 
 /// Generate a new Ed25519 signing key
 pub fn generate_signing_key() -> SigningKey {
-    let mut rng = OsRng;
+    let mut rng = SysRng;
     let mut bytes = [0u8; 32];
-    rng.fill_bytes(&mut bytes);
+    rng.try_fill_bytes(&mut bytes)
+        .expect("OS randomness unavailable");
     SigningKey::from_bytes(&bytes)
 }
 

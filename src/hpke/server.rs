@@ -5,7 +5,7 @@ use crate::error::{Error, Result};
 use crate::hpke::common::{combine_secrets, is_all_zero_32, kem_open, make_ack_tag, sha256_hash};
 use crate::hpke::nonce_store::NonceStore;
 use crate::hpke::types::*;
-use rand::RngCore;
+use rand::TryRng;
 use std::sync::Arc;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroizing;
@@ -181,7 +181,9 @@ impl HpkeServer {
             .try_into()
             .map_err(|_| Error::Verification("ephC must be 32 bytes".into()))?;
         let mut eph_s_secret = Zeroizing::new([0u8; 32]);
-        rand::rngs::OsRng.fill_bytes(&mut *eph_s_secret);
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut *eph_s_secret)
+            .map_err(|e| Error::CryptoError(format!("OS randomness unavailable: {e}")))?;
         let eph_s = x25519(*eph_s_secret, X25519_BASEPOINT_BYTES);
         let ss = Zeroizing::new(x25519(*eph_s_secret, eph_c_arr));
         if is_all_zero_32(&*ss) {

@@ -20,7 +20,7 @@ use chacha20poly1305::{
 use chrono::{DateTime, Utc};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
-use rand::RngCore;
+use rand::TryRng;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
@@ -326,7 +326,9 @@ impl SecureSession {
         let mut out = vec![0u8; HEADER_SIZE];
         out[..SEQ_SIZE].copy_from_slice(&seq.to_be_bytes());
         let mut nonce_bytes = [0u8; NONCE_SIZE];
-        rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut nonce_bytes)
+            .map_err(|e| Error::CryptoError(format!("OS randomness unavailable: {e}")))?;
         out[SEQ_SIZE..HEADER_SIZE].copy_from_slice(&nonce_bytes);
         let nonce = Nonce::from(nonce_bytes);
         let mut bound = Vec::with_capacity(SEQ_SIZE + aad.len());
@@ -434,13 +436,13 @@ impl SecureSession {
     }
 
     fn sign_with(key: &[u8; 32], covered: &[u8]) -> Vec<u8> {
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(key).expect("HMAC key size");
+        let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key).expect("HMAC key size");
         mac.update(covered);
         mac.finalize().into_bytes().to_vec()
     }
 
     fn verify_with(key: &[u8; 32], covered: &[u8], tag: &[u8]) -> Result<()> {
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(key).expect("HMAC key size");
+        let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key).expect("HMAC key size");
         mac.update(covered);
         mac.verify_slice(tag)
             .map_err(|_| Error::Verification("MAC verification failed".into()))
