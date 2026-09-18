@@ -2,7 +2,9 @@
 use super::*;
 use crate::execution010::{Entry, Ledger};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+mod publication;
+pub use publication::ResultSigner;
 
 /// Trusted pinned immutable loaded instance, never a peer-supplied identifier.
 /// Check validates its protected baseline, measured instance and tool binding.
@@ -25,8 +27,26 @@ pub struct Invocation {
     tool: String,
     manifest: String,
     digest: String,
+    completion: Completion,
+}
+/// Opaque accepted-execution token, bound to one gate and exact canonical intent.
+/// A recovered UNKNOWN cannot be completed, even with a retained token.
+#[derive(Clone)]
+pub struct Completion {
+    owner: Arc<()>,
+    canonical: Vec<u8>,
+}
+struct ReplyPermit {
+    owner: Arc<()>,
+    canonical: Vec<u8>,
+    used: bool,
 }
 impl Invocation {
+    /// Retain only in the trusted worker; permits recording, never re-execution.
+    pub fn completion(&self) -> Completion {
+        self.completion.clone()
+    }
+
     /// Complete canonical authenticated envelope including proof.
     pub fn canonical_intent(&self) -> &[u8] {
         &self.canonical
@@ -54,6 +74,7 @@ pub struct DispatchReceipt {
     committed: bool,
     state: String,
     digest: String,
+    reply: ReplyPermit,
 }
 impl DispatchReceipt {
     /// Whether this invocation durably created the reservation.
@@ -74,6 +95,7 @@ impl DispatchReceipt {
     }
 }
 struct State {
+    owner: Arc<()>,
     store: Option<Ledger>,
     recipient: String,
     authority: Box<dyn Authority + Send>,
@@ -103,6 +125,7 @@ impl DispatchGate {
         let store = Ledger::open(path, create).map_err(|_| Invalid)?;
         Ok(Self {
             state: Mutex::new(State {
+                owner: Arc::new(()),
                 store: Some(store),
                 recipient: recipient.into(),
                 authority,
@@ -185,6 +208,10 @@ fn dispatch(s: &mut State, raw: &[u8], pending: &mut Option<Entry>) -> Result<Di
         tool: text(intent, "tool").into(),
         manifest: text(intent, "manifest_digest").into(),
         digest: v.digest(),
+        completion: Completion {
+            owner: s.owner.clone(),
+            canonical: v.canonical.clone(),
+        },
     };
     s.component.check(&i.manifest, &i.tool)?;
     let mut e = super::ledger::reservation_entry(&v)?;
@@ -201,6 +228,11 @@ fn dispatch(s: &mut State, raw: &[u8], pending: &mut Option<Entry>) -> Result<Di
             committed: false,
             state: stored.state,
             digest: v.digest(),
+            reply: ReplyPermit {
+                owner: s.owner.clone(),
+                canonical: v.canonical.clone(),
+                used: false,
+            },
         });
     }
     *pending = Some(e.clone());
@@ -229,5 +261,10 @@ fn dispatch(s: &mut State, raw: &[u8], pending: &mut Option<Entry>) -> Result<Di
         committed: true,
         state: "EXECUTING".into(),
         digest: v.digest(),
+        reply: ReplyPermit {
+            owner: s.owner.clone(),
+            canonical: v.canonical.clone(),
+            used: false,
+        },
     })
 }

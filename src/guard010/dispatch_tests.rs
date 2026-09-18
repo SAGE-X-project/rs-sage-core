@@ -67,6 +67,7 @@ impl IntentPolicy for Services {
 }
 #[derive(Default)]
 struct Observed {
+    completion: Option<Completion>,
     commits: usize,
     checks: usize,
     envelope: Vec<u8>,
@@ -127,6 +128,7 @@ impl Component for Sink {
         {
             let mut o = self.observed.lock().unwrap();
             o.commits += 1;
+            o.completion = Some(i.completion());
             o.envelope = i.canonical_intent().into();
             o.arguments = i.arguments().into();
             o.digest = i.intent_digest().into();
@@ -465,3 +467,5 @@ fn storage_capacity_failure_retires_gate() {
         gate.close().unwrap();
     }
 }
+
+mod publication_tests;
