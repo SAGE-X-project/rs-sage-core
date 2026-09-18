@@ -265,6 +265,27 @@ impl Ledger {
         }
         Ok(changed)
     }
+    /// Atomically reserve a new identity or read the exact existing identity in
+    /// any state, without transitioning it. Authentication and result validation
+    /// remain caller duties. Exclusive mutable access serializes both indexes.
+    pub fn reserve(&mut self, e: Entry) -> Result<(Entry, bool), Error> {
+        if self.failed || self.file.is_none() {
+            return Err(Error::Unavailable);
+        }
+        if !valid(&e) || e.state != "RESERVED" {
+            return Err(Error::Denied);
+        }
+        if let Some(old) = self.entries.get(&(e.issuer.clone(), e.call_id.clone())) {
+            if !identity(old, &e) {
+                return Err(Error::Denied);
+            }
+            return Ok((old.clone(), false));
+        }
+        self.check(&e)?;
+        self.append(e.clone())?;
+        Ok((e, true))
+    }
+
     /// Read storage state only. Freshness, live identity/policy and result expiry
     /// must be checked by the caller before each authenticated retrieval.
     pub fn lookup(&self, issuer: &str, call: &str) -> Result<Option<Entry>, Error> {

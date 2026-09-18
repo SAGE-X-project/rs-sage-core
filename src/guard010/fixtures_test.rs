@@ -1,7 +1,7 @@
 use crate::guard010::{self as g, Authority, Bindings, IntentPolicy, Outstanding};
 use serde_json::{json, Value};
 // Test-only trusted-service seams. These controls are not production authority.
-struct Fixture(Value);
+pub(super) struct Fixture(pub(super) Value);
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v[k].as_str().unwrap_or("")
 }

@@ -155,3 +155,50 @@ fn reject_noncanonical_history() {
         assert!(Ledger::open(&p, false).is_err());
     }
 }
+
+#[test]
+fn reserve_reads_all_existing_states_without_transitions() {
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        return;
+    }
+    for state in ["RESERVED", "EXECUTING", "COMPLETED", "REJECTED", "UNKNOWN"] {
+        let d = tempfile::tempdir().unwrap();
+        let mut l = Ledger::open(&d.path().join("journal"), true).unwrap();
+        let e = base();
+        assert!(l.reserve(e.clone()).unwrap().1);
+        let mut want = e.clone();
+        if matches!(state, "EXECUTING" | "COMPLETED") {
+            want.state = "EXECUTING".into();
+            l.commit(want.clone()).unwrap();
+        }
+        want.state = state.into();
+        if matches!(state, "COMPLETED" | "REJECTED") {
+            want.result_hex = "7b7d".into();
+        }
+        l.commit(want.clone()).unwrap();
+        let (size, rows) = (l.size, l.rows);
+        let (got, changed) = l.reserve(e.clone()).unwrap();
+        assert!(!changed);
+        assert_eq!(got, want);
+        assert_eq!((l.size, l.rows), (size, rows));
+        let mut bad = e;
+        bad.nonce = "other".into();
+        assert!(l.reserve(bad).is_err());
+        l.close().unwrap();
+    }
+}
+#[test]
+fn failed_reservation_does_not_publish_identity() {
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("journal");
+    let mut l = Ledger::open(&p, true).unwrap();
+    l.file = Some(File::open(&p).unwrap());
+    assert!(l.reserve(base()).is_err());
+    assert!(!l.entries.contains_key(&("issuer".into(), "call".into())));
+    assert!(l.failed);
+    assert!(l.close().is_err());
+    assert!(p.with_extension("lock").exists());
+}
