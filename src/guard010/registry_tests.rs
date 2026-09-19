@@ -157,7 +157,7 @@ fn registry_authority_final_dispatch() {
         let (a, c, f) = setup();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("journal");
-        let gate = DispatchGate::open(
+        let opened = DispatchGate::open(
             &path,
             true,
             text(&f, "expected_recipient"),
@@ -167,8 +167,17 @@ fn registry_authority_final_dispatch() {
                 control: c.clone(),
                 mode,
             }),
-        )
-        .unwrap();
+        );
+        if !cfg!(any(target_os = "linux", target_os = "macos")) {
+            assert!(
+                opened.is_err(),
+                "unsupported durable storage must deny setup"
+            );
+            assert_eq!(c.0.lock().unwrap().effects, 0);
+            assert!(!path.exists());
+            continue;
+        }
+        let gate = opened.unwrap();
         let result = gate.dispatch(&hex::decode(text(&f, "envelope_hex")).unwrap());
         let want = mode == "valid" || mode == "boundary";
         assert_eq!(result.is_ok(), want, "{mode}");
