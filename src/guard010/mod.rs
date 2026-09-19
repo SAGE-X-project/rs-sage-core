@@ -550,3 +550,12 @@ pub use mcp::{check_mcp_version, parse_mcp_result, MCP_VERSION};
 
 #[cfg(test)]
 mod mcp_tests;
+
+mod mcp_rpc;
+pub use mcp_rpc::{
+    mcp_request, mcp_tool, parse_mcp_request, MCPClientSender, MCPEndpoint, MCPReceipt,
+    MCPWireSender,
+};
+
+#[cfg(test)]
+mod mcp_rpc_tests;

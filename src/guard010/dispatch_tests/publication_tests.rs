@@ -394,3 +394,80 @@ fn unknown_and_reject_capacity_never_release_terminal() {
         gate.close().unwrap();
     }
 }
+
+#[test]
+fn rpc_session_gate_and_one_response() {
+    let suite: Value = serde_json::from_str(include_str!("../testdata/guard-rpc.json")).unwrap();
+    for case in suite["requests"].as_array().unwrap() {
+        let (_d, _p, g, o) = setup();
+        let g = Arc::new(g);
+        let ep = MCPEndpoint::new(text(case, "version"), g.clone());
+        if text(case, "version") != MCP_VERSION {
+            assert!(ep.is_err());
+            continue;
+        }
+        let ep = ep.unwrap();
+        let raw = hex::decode(text(case, "wire_hex")).unwrap();
+        let r = ep.dispatch(text(&suite, "id"), &raw);
+        assert_eq!(
+            r.is_ok(),
+            case["accept"].as_bool().unwrap(),
+            "{}",
+            case["id"]
+        );
+        assert_eq!(
+            o.lock().unwrap().commits,
+            usize::from(case["accept"] == true)
+        );
+        let valid = mcp_request(MCP_VERSION, text(&suite, "id"), &super::raw()).unwrap();
+        assert!(ep.dispatch(text(&suite, "id"), &valid).is_err());
+        if let Ok(mut r) = r {
+            let foreign = MCPEndpoint::new(MCP_VERSION, g.clone()).unwrap();
+            assert!(foreign.reply(&mut r, &mut signer()).is_err());
+            let pending = ep.reply(&mut r, &mut signer()).unwrap();
+            let pending: Value = serde_json::from_slice(&pending).unwrap();
+            assert_eq!(pending["id"], suite["id"]);
+            assert!(ep.reply(&mut r, &mut signer()).is_err());
+            g.finish(&token(&o), br#"{"value":"ok"}"#, &mut signer())
+                .unwrap();
+            let id = "00000000-0000-4000-8000-000000000102";
+            let raw = mcp_request(MCP_VERSION, id, &super::raw()).unwrap();
+            let mut next = ep.dispatch(id, &raw).unwrap();
+            assert!(!next.committed());
+            assert_eq!(next.state(), "COMPLETED");
+            ep.close().unwrap();
+            assert!(ep.reply(&mut next, &mut signer()).is_err());
+        }
+        g.close().unwrap();
+    }
+}
+#[test]
+fn rpc_session_capacity_and_parallel_identity() {
+    let (_d, _p, g, o) = setup();
+    let g = Arc::new(g);
+    let ep = Arc::new(MCPEndpoint::new(MCP_VERSION, g.clone()).unwrap());
+    let id = "00000000-0000-4000-8000-000000000101";
+    let raw = mcp_request(MCP_VERSION, id, &raw()).unwrap();
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let ep = ep.clone();
+            let raw = raw.clone();
+            std::thread::spawn(move || ep.dispatch(id, &raw).is_ok())
+        })
+        .collect();
+    let accepted = handles
+        .into_iter()
+        .map(|h| usize::from(h.join().unwrap()))
+        .sum::<usize>();
+    assert_eq!(accepted, 1);
+    assert_eq!(o.lock().unwrap().commits, 1);
+    for n in 0..1023 {
+        assert!(ep
+            .dispatch(&format!("00000000-0000-4000-8000-{:012}", n + 1000), b"{}")
+            .is_err());
+    }
+    let id = "00000000-0000-4000-8000-000000003000";
+    let next = mcp_request(MCP_VERSION, id, &super::raw()).unwrap();
+    assert!(ep.dispatch(id, &next).is_err());
+    g.close().unwrap();
+}
