@@ -11,7 +11,7 @@ fn frozen_independent_vectors() {
     let mut count = 0;
     for c in cases() {
         let op = c["operation"].as_str().unwrap();
-        if !op.starts_with("sage.guard.") || op == "sage.guard.mcp.result" {
+        if !op.starts_with("sage.guard.") {
             continue;
         }
         let (verdict, output) = super::fixtures_test::observe(op, c["input"].clone()).unwrap();
@@ -23,7 +23,7 @@ fn frozen_independent_vectors() {
         );
         count += 1;
     }
-    assert_eq!(count, 78);
+    assert_eq!(count, 94);
 }
 #[test]
 fn strict_json_boundaries() {

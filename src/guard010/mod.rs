@@ -100,7 +100,15 @@ pub fn canonicalize(raw: &[u8]) -> Result<Vec<u8>> {
     canonicalize_limit(raw, 4096)
 }
 fn canonicalize_limit(raw: &[u8], limit: usize) -> Result<Vec<u8>> {
-    ensure(raw.len() <= MAX_BYTES)?;
+    canonicalize_bounds(raw, limit, MAX_BYTES, 32)
+}
+fn canonicalize_bounds(
+    raw: &[u8],
+    limit: usize,
+    max_bytes: usize,
+    max_depth: usize,
+) -> Result<Vec<u8>> {
+    ensure(raw.len() <= max_bytes)?;
     let s = std::str::from_utf8(raw).map_err(|_| Invalid)?;
     let (mut string, mut escape, mut depth) = (false, false, 0usize);
     for b in raw {
@@ -117,7 +125,7 @@ fn canonicalize_limit(raw: &[u8], limit: usize) -> Result<Vec<u8>> {
                 b'"' => string = true,
                 b'[' | b'{' => {
                     depth += 1;
-                    ensure(depth <= 32)?
+                    ensure(depth <= max_depth)?
                 }
                 b']' | b'}' => depth = depth.checked_sub(1).ok_or(Invalid)?,
                 _ => {}
@@ -150,7 +158,7 @@ fn canonicalize_limit(raw: &[u8], limit: usize) -> Result<Vec<u8>> {
     }
     walk(&v, &mut 0, limit)?;
     let b = crate::jcs::to_string(&v).map_err(|_| Invalid)?.into_bytes();
-    ensure(b.len() <= MAX_BYTES)?;
+    ensure(b.len() <= max_bytes)?;
     Ok(b)
 }
 
@@ -536,3 +544,9 @@ pub use client::{
 };
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod client_tests;
+
+mod mcp;
+pub use mcp::{check_mcp_version, parse_mcp_result, MCP_VERSION};
+
+#[cfg(test)]
+mod mcp_tests;
