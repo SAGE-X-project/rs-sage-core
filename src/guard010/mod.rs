@@ -564,3 +564,6 @@ mod registry;
 pub use registry::RegistryAuthority;
 #[cfg(test)]
 mod registry_tests;
+
+mod mcp_session;
+pub use mcp_session::{open_mcp_session_request, seal_mcp_session_request, MCPSessionCall};
