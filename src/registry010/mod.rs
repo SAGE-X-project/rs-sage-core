@@ -121,19 +121,17 @@ pub trait Store {
         -> Result<()>;
 }
 /// One owner serializes operations; each method obtains a new observation.
-pub struct Gate<
-    S: Source + ?Sized = dyn Source,
-    C: Clock + ?Sized = dyn Clock,
-    T: Store + ?Sized = dyn Store,
-> {
+pub struct RegistryGate<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> {
     cfg: Config,
     source: Box<S>,
     clock: Box<C>,
     store: Box<T>,
     last: Option<Stamp>,
 }
+/// A gate with existing single-threaded trusted dependencies.
+pub type Gate = RegistryGate<dyn Source, dyn Clock, dyn Store>;
 /// A gate whose trusted dependencies can move into a serialized Guard owner.
-pub type SendGate = Gate<dyn Source + Send, dyn Clock + Send, dyn Store + Send>;
+pub type SendGate = RegistryGate<dyn Source + Send, dyn Clock + Send, dyn Store + Send>;
 impl Gate {
     /// Construct with explicitly trusted dependencies. No default positive cache.
     pub fn new(
@@ -156,7 +154,7 @@ impl SendGate {
         Self::from_parts(cfg, source, clock, store)
     }
 }
-impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> Gate<S, C, T> {
+impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C, T> {
     fn from_parts(cfg: Config, source: Box<S>, clock: Box<C>, store: Box<T>) -> Result<Self> {
         if [&cfg.source, &cfg.registry, &cfg.network]
             .iter()
