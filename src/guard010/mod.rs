@@ -529,3 +529,10 @@ pub use dispatch::{
 };
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod dispatch_tests;
+
+mod client;
+pub use client::{
+    Client, ClientClock, ClientDelivery, ClientInvocation, ClientSender, ClientServices,
+};
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod client_tests;
