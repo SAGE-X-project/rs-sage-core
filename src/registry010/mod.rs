@@ -121,13 +121,17 @@ pub trait Store {
         -> Result<()>;
 }
 /// One owner serializes operations; each method obtains a new observation.
-pub struct Gate {
+pub struct RegistryGate<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> {
     cfg: Config,
-    source: Box<dyn Source>,
-    clock: Box<dyn Clock>,
-    store: Box<dyn Store>,
+    source: Box<S>,
+    clock: Box<C>,
+    store: Box<T>,
     last: Option<Stamp>,
 }
+/// A gate with existing single-threaded trusted dependencies.
+pub type Gate = RegistryGate<dyn Source, dyn Clock, dyn Store>;
+/// A gate whose trusted dependencies can move into a serialized Guard owner.
+pub type SendGate = RegistryGate<dyn Source + Send, dyn Clock + Send, dyn Store + Send>;
 impl Gate {
     /// Construct with explicitly trusted dependencies. No default positive cache.
     pub fn new(
@@ -136,6 +140,22 @@ impl Gate {
         clock: Box<dyn Clock>,
         store: Box<dyn Store>,
     ) -> Result<Self> {
+        Self::from_parts(cfg, source, clock, store)
+    }
+}
+impl SendGate {
+    /// Construct a movable gate without changing existing single-threaded clients.
+    pub fn new_send(
+        cfg: Config,
+        source: Box<dyn Source + Send>,
+        clock: Box<dyn Clock + Send>,
+        store: Box<dyn Store + Send>,
+    ) -> Result<Self> {
+        Self::from_parts(cfg, source, clock, store)
+    }
+}
+impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C, T> {
+    fn from_parts(cfg: Config, source: Box<S>, clock: Box<C>, store: Box<T>) -> Result<Self> {
         if [&cfg.source, &cfg.registry, &cfg.network]
             .iter()
             .any(|v| v.is_empty() || v.len() > 256 || v.contains(['\0', '\r', '\n']))
@@ -257,6 +277,17 @@ impl Gate {
     /// Exact signing URL, with optional first usable ASCII-ordered X25519 selection.
     /// No trial verification or substitution of another signing key.
     pub fn select(&mut self, did: &str, signing_url: &str, require_kem: bool) -> Result<Pinned> {
+        self.select_with_time(did, signing_url, require_kem)
+            .map(|(p, _)| p)
+    }
+    /// Return selected keys and final trusted observation time for this operation.
+    /// Neither value authorizes a later operation without a new read.
+    pub fn select_with_time(
+        &mut self,
+        did: &str,
+        signing_url: &str,
+        require_kem: bool,
+    ) -> Result<(Pinned, Stamp)> {
         let (s, now) = self.read(did)?;
         if s.state != "active" {
             return Err(rejected());
@@ -282,12 +313,15 @@ impl Gate {
         } else {
             None
         };
-        Ok(Pinned {
-            did: did.into(),
-            registry: self.cfg.registry.clone(),
-            signing,
-            kem,
-        })
+        Ok((
+            Pinned {
+                did: did.into(),
+                registry: self.cfg.registry.clone(),
+                signing,
+                kem,
+            },
+            now,
+        ))
     }
     /// Revalidate original keys without changing selection. A session owner must
     /// close its session on failure. This check does not itself own session state.

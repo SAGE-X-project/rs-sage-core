@@ -559,3 +559,8 @@ pub use mcp_rpc::{
 
 #[cfg(test)]
 mod mcp_rpc_tests;
+
+mod registry;
+pub use registry::RegistryAuthority;
+#[cfg(test)]
+mod registry_tests;
