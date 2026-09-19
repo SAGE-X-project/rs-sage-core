@@ -241,3 +241,17 @@ The host still implements authenticated MCP initialization, protected transport,
 trusted Source resolution and complete interception without alternate direct routes.
 Request wrappers allow 2 MiB and response wrappers 9 MiB; nested Guard and MCP
 representation limits remain enforced on original bytes before canonicalization.
+
+### Registry-backed authority
+
+`RegistryAuthority` owns a `registry010::SendGate` for one configured issuer/keyid.
+`active_key` and `now` each perform a fresh `select_with_time`, including final Guard
+checks after policy, storage and component validation. Key material and expiry are
+pinned for the binding lifetime; key replacement requires trusted reconstruction.
+Use separate bindings for intent and result principals. The existing single-threaded
+`Gate::new` remains available; `SendGate::new_send` requires movable dependencies.
+
+The Source still validates complete records and proofs, and the Store provides
+durable watermarks. This adapter is not a resolver or host isolation. Callbacks and
+handoffs must be bounded by the host. Fresh observations do not foresee subsequent
+revocation or undo committed effects. Measure the extra reads in deployment latency.
