@@ -255,3 +255,21 @@ The Source still validates complete records and proofs, and the Store provides
 durable watermarks. This adapter is not a resolver or host isolation. Callbacks and
 handoffs must be bounded by the host. Fresh observations do not foresee subsequent
 revocation or undo committed effects. Measure the extra reads in deployment latency.
+
+### Non-HTTP MCP session carriage
+
+`seal_mcp_session_request` and `open_mcp_session_request` bind exact RPC bytes and
+inner issuer/recipient to an existing authenticated signed AEAD session. The returned
+`MCPSessionCall` retains the distinct outer message ID, inner RPC ID and session ID.
+Its one-response permit rejects cross-call replies and enforces the original intent
+digest and pending/completed/error mapping. The existing 16348-byte plaintext limit
+applies; there are no new wire fields or cryptographic algorithms.
+
+Call sealing from the authorized client handoff, dispatch received `id()`/`request()`
+through `MCPEndpoint`, and pass opened replies to `Client::accept_mcp_response` for
+inner Guard proof verification and durable consumption. Transport binding alone
+never authorizes a tool or authenticates the inner proof. The host supplies trusted
+MCP initialization, exclusive routing and bounded handoff. These helpers reject
+HTTP-bound sessions; HTTP intent carriage needs a separate mapping. Cryptographic
+acceptance and consumed response permits are not rolled back on application failure.
+Do not silently fall back to an unprotected call.

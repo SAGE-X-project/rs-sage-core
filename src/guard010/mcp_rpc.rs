@@ -47,7 +47,7 @@ pub fn parse_mcp_request(version: &str, expected_id: &str, raw: &[u8]) -> Result
     ensure(a.len() == 1)?;
     Ok(intent_envelope(field(&a, "envelope")?)?.1)
 }
-fn response(version: &str, id: &str, raw: &[u8]) -> Result<Vec<u8>> {
+pub(super) fn response(version: &str, id: &str, raw: &[u8]) -> Result<Vec<u8>> {
     check_mcp_version(version)?;
     ensure(uuid(id))?;
     let m = rpc_object(raw, 9 * MAX_BYTES)?;

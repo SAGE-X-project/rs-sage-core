@@ -771,3 +771,22 @@ impl AuthenticatedCompletion010 {
 
 #[cfg(test)]
 mod tests;
+
+impl AuthenticatedCompletion010 {
+    /// Local/peer identity of this authenticated non-HTTP session. This snapshot
+    /// is not current authority; record operations revalidate before releasing data.
+    pub fn participants(&self) -> Result<(String, String)> {
+        if self.closed
+            || !self.http_target.is_empty()
+            || self.tuple.get("sid").is_none_or(String::is_empty)
+        {
+            return Err(bad());
+        }
+        let (local, peer) = if self.initiator {
+            ("initDid", "respDid")
+        } else {
+            ("respDid", "initDid")
+        };
+        Ok((self.tuple[local].clone(), self.tuple[peer].clone()))
+    }
+}
