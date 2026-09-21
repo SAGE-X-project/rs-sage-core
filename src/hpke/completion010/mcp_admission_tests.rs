@@ -108,6 +108,7 @@ struct Sink {
     hook: Hook,
     run_hook: Hook,
     output_size: AtomicUsize,
+    cancellation: Mutex<Option<g::mcp_admission::Cancellation>>,
 }
 impl Executor for Sink {
     fn check(&self, manifest: &str, tool: &str) -> g::Result<()> {
@@ -123,11 +124,16 @@ impl Executor for Sink {
         }
         Ok(())
     }
-    fn run(&self, i: &g::Invocation) -> g::Result<Vec<u8>> {
+    fn run(
+        &self,
+        i: &g::Invocation,
+        cancellation: &g::mcp_admission::Cancellation,
+    ) -> g::Result<Vec<u8>> {
         let received: Value = serde_json::from_slice(i.canonical_intent()).unwrap();
         assert_eq!(received["intent"]["issuer"], ALICE);
         assert_eq!(received["intent"]["recipient"], BOB);
         assert_eq!(i.arguments(), br#"{"path":"public.txt"}"#);
+        *self.cancellation.lock().unwrap() = Some(cancellation.clone());
         self.effects.fetch_add(1, Ordering::SeqCst);
         if let Some(hook) = self.run_hook.lock().unwrap().as_mut() {
             hook()?;
@@ -584,3 +590,6 @@ fn admission_requires_ready_owner_from_this_gate() {
 
 #[path = "mcp_reply_tests.rs"]
 mod mcp_reply_tests;
+
+#[path = "mcp_worker_tests.rs"]
+mod mcp_worker_tests;

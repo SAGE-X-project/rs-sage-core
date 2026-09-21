@@ -1,20 +1,45 @@
 //! Private non-HTTP admission. No caller-supplied READY flags or work capabilities.
 //! All clocks share the original endpoint monotonic domain. Providers are trusted,
-//! bounded and non-reentrant. Host scheduling and production transport remain external.
+//! bounded and non-reentrant. Full owner supervision and production transport remain external.
 use super::*;
 use crate::guard010::mcp_setup::{MCPSetup, SetupClose};
 use crate::hpke::completion010::{CompletionEndpoint010, NonHTTPOwner010};
 use crate::registry010::{Clock, Stamp};
 use std::collections::VecDeque;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// One pinned immutable instance. Run returns only after the actual effect ends;
 /// detached execution, name resolution and unbounded callbacks are forbidden.
+/// Poll cancellation during work and perform bounded cleanup before returning.
 pub(crate) trait Executor: Send + Sync {
     fn check(&self, manifest: &str, tool: &str) -> Result<()>;
-    fn run(&self, invocation: &Invocation) -> Result<Vec<u8>>;
+    fn run(&self, invocation: &Invocation, cancellation: &Cancellation) -> Result<Vec<u8>>;
 }
 mod reply;
+pub(crate) mod workers;
+
+/// Cooperative cancellation never releases the charged resource. Executors must
+/// return only after their actual work and all dependent cleanup have ended.
+#[derive(Clone, Default)]
+pub(crate) struct Cancellation(Arc<AtomicBool>);
+impl Cancellation {
+    pub(crate) fn cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+    fn cancel(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+struct Job {
+    cancellation: Cancellation,
+    close: SetupClose,
+    operation: Arc<()>,
+    deadline: i64,
+    claim_before: Option<i64>,
+    worker_before: Option<i64>,
+}
+
 pub(crate) use reply::ProtectedReply;
 
 pub(crate) struct Admission {
@@ -62,6 +87,7 @@ struct Work {
     deadline: i64,
     close: SetupClose,
     operation: Arc<()>,
+    job: Arc<Mutex<Job>>,
 }
 struct Queue {
     retired: bool,
@@ -69,6 +95,10 @@ struct Queue {
     outputs: usize,
     items: VecDeque<Work>,
     last: Option<Stamp>,
+    jobs: Vec<Arc<Mutex<Job>>>,
+    output_jobs: Vec<Arc<Mutex<Job>>>,
+    hosted: bool,
+    worker_ms: i64,
 }
 /// Construction pins configuration for the gate lifetime. Retirement is permanent;
 /// replacement requires stopping/cleaning this gate and reopening the same ledger.
@@ -123,6 +153,10 @@ impl MCPGate {
                 outputs: 0,
                 items: VecDeque::with_capacity(capacity),
                 last: None,
+                jobs: Vec::with_capacity(capacity),
+                output_jobs: Vec::with_capacity(capacity),
+                hosted: false,
+                worker_ms: 300_000,
             }),
             authority,
             result_authority: Mutex::new(result_authority),
@@ -149,12 +183,17 @@ impl MCPGate {
     /// Queued work retains capacity until a worker performs conservative cleanup.
     pub(crate) fn retire(&self) -> Result<()> {
         let _c = self.coordinator.lock().map_err(|_| Invalid)?;
-        self.queue.lock().map_err(|_| Invalid)?.retired = true;
+        let mut q = self.queue.lock().map_err(|_| Invalid)?;
+        q.retired = true;
+        for job in &q.jobs {
+            job.lock().map_err(|_| Invalid)?.cancellation.cancel();
+        }
         Ok(())
     }
-    fn release(&self) {
+    fn release(&self, job: &Arc<Mutex<Job>>) {
         if let Ok(_c) = self.coordinator.lock() {
             if let Ok(mut q) = self.queue.lock() {
+                q.jobs.retain(|old| !Arc::ptr_eq(old, job));
                 q.occupied = q.occupied.saturating_sub(1);
             }
         }
@@ -175,7 +214,7 @@ impl MCPGate {
             .now()
             .map_err(|_| Invalid)?;
         ensure(
-            t.mono_ms >= 0
+            (0..=i64::MAX / 1_000_000).contains(&t.mono_ms)
                 && (0..=9007199254740691).contains(&t.unix)
                 && q.last
                     .is_none_or(|old| t.mono_ms >= old.mono_ms && t.unix >= old.unix),
@@ -192,7 +231,7 @@ impl MCPGate {
         endpoint: &mut CompletionEndpoint010,
         wire: &[u8],
     ) -> Result<Admission> {
-        let mut held = false;
+        let mut held = None;
         let result = catch_unwind(AssertUnwindSafe(|| {
             let (started, operation, deadline) = {
                 let _c = self.coordinator.lock().map_err(|_| Invalid)?;
@@ -203,8 +242,18 @@ impl MCPGate {
                 let deadline = start.mono_ms.checked_add(self.request_ms).ok_or(Invalid)?;
                 owner.bind_deadline(deadline)?;
                 q.occupied += 1;
-                held = true;
-                (start, owner.operation()?, deadline)
+                let operation = owner.operation()?;
+                let job = Arc::new(Mutex::new(Job {
+                    cancellation: Cancellation::default(),
+                    close: owner.closer(),
+                    operation: operation.clone(),
+                    deadline,
+                    claim_before: None,
+                    worker_before: None,
+                }));
+                q.jobs.push(job.clone());
+                held = Some(job);
+                (start, operation, deadline)
             };
             let raw = owner.open_protected(endpoint, wire)?;
             let root: Value = serde_json::from_slice(&raw).map_err(|_| Invalid)?;
@@ -289,7 +338,10 @@ impl MCPGate {
                 times(body, now.unix)?;
                 if created {
                     let claim_before = now.mono_ms.checked_add(self.claim_ms).ok_or(Invalid)?;
+                    let job = held.as_ref().ok_or(Invalid)?.clone();
+                    job.lock().map_err(|_| Invalid)?.claim_before = Some(claim_before);
                     q.items.push_back(Work {
+                        job,
                         invocation,
                         entry,
                         claim_before,
@@ -297,7 +349,7 @@ impl MCPGate {
                         close: owner.closer(),
                         operation: operation.clone(),
                     });
-                    held = false; // queue now owns capacity, including actual execution/cleanup
+                    held = None; // queue now owns capacity, including actual execution/cleanup
                     pending = None;
                 }
                 let receipt = DispatchReceipt {
@@ -361,8 +413,8 @@ impl MCPGate {
         if result.is_err() {
             owner.fail();
         }
-        if held {
-            self.release();
+        if let Some(job) = held {
+            self.release(&job);
         }
         result
     }
@@ -370,15 +422,34 @@ impl MCPGate {
     /// retirement are serialized. Transport closure after admission is not rollback.
     /// Capacity is retained through actual termination and result/UNKNOWN persistence.
     pub(crate) fn run_one(&self, signer: &mut dyn ResultSigner) -> Result<bool> {
+        self.run_worker(signer, false)
+    }
+    fn run_worker(&self, signer: &mut dyn ResultSigner, hosted: bool) -> Result<bool> {
         let (work, allowed, expired) = {
             let _c = self.coordinator.lock().map_err(|_| Invalid)?;
             let mut q = self.queue.lock().map_err(|_| Invalid)?;
+            ensure(q.hosted == hosted)?;
             let Some(work) = q.items.pop_front() else {
                 return Ok(false);
             };
             let sample =
                 catch_unwind(AssertUnwindSafe(|| self.sample(&mut q))).unwrap_or(Err(Invalid));
-            let allowed = sample.is_ok_and(|now| now.mono_ms < work.claim_before) && !q.retired;
+            let mut job = work.job.lock().map_err(|_| Invalid)?;
+            let allowed = sample.is_ok_and(|now| now.mono_ms < work.claim_before)
+                && !q.retired
+                && !job.cancellation.cancelled();
+            job.claim_before = None;
+            if allowed {
+                job.worker_before = Some(
+                    sample
+                        .as_ref()
+                        .map_err(|_| Invalid)?
+                        .mono_ms
+                        .checked_add(q.worker_ms)
+                        .ok_or(Invalid)?,
+                );
+            }
+            drop(job);
             if sample.is_err() {
                 q.retired = true;
             }
@@ -388,9 +459,12 @@ impl MCPGate {
         if expired {
             work.close.close_operation(&work.operation);
         }
+        let cancellation = work.job.lock().map_err(|_| Invalid)?.cancellation.clone();
         let output = if allowed {
-            catch_unwind(AssertUnwindSafe(|| self.executor.run(&work.invocation)))
-                .unwrap_or(Err(Invalid))
+            catch_unwind(AssertUnwindSafe(|| {
+                self.executor.run(&work.invocation, &cancellation)
+            }))
+            .unwrap_or(Err(Invalid))
         } else {
             Err(Invalid)
         };
@@ -429,7 +503,7 @@ impl MCPGate {
         if expired {
             work.close.close_operation(&work.operation);
         }
-        self.release();
+        self.release(&work.job);
         result.map(|_| true)
     }
     #[cfg(test)]

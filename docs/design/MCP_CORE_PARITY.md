@@ -3,7 +3,7 @@
 This is a source comparison and implementation work list, not protocol conformance
 or a replacement for historical Inspector reports. Inputs are Go
 `872307563416f144cc863d26b594b0ce7da1f2bd`, Rust baseline
-`6c62fc6c94908fdf66367f019b0ed76c8cc86cc0`, and this Rust reply/client change.
+`cc7c650b131093439f391d99e521600f6db030a8`, and this Rust gate scheduling change.
 The normative reference is sage-spec `520e5ed9a896ff8ba8ade776484f41084957aaa2`,
 `profiles/non-http-mcp-security.md`.
 
@@ -16,7 +16,7 @@ The normative reference is sage-spec `520e5ed9a896ff8ba8ade776484f41084957aaa2`,
 | Lifetime setup and protected request-ID history | Present | Shared setup and protected request history on both server and client |
 | Owner-aware durable admission and execution queue | Present | Internal gate added: authenticated owner, durable fence, final checks, bounded shared queue and single-consumer claim |
 | Protected reply publication and owned client delivery | Present | Internal one-shot protected replies and durable owned-client exchanges added |
-| Fixed workers and independent deadline cancellation | Present | Pending |
+| Fixed workers and independent deadline cancellation | Present | Gate execution workers and active admission/reply monitoring added; full owner/client host pending |
 | Bounded stream, connection and listener ownership | Present | Pending; loopback test carriage is not a production binding |
 
 Go's implementations remain internal integrations under bounded trusted-provider
@@ -24,7 +24,8 @@ assumptions. Their existence does not prove immutable component loading, deploye
 registry validation or whole-host mediation. Rust's clock, registry and endpoint
 APIs currently use exclusive mutable access. An independent cancellation scheduler
 must not wait for that same access behind a provider call; the ownership primitive
-introduced here does not solve that scheduling requirement.
+does not solve that scheduling requirement alone. The gate monitor uses its own
+bounded local clock and shared close state without borrowing that endpoint.
 
 The internal admission gate pins its authority, policy and executor for its lifetime.
 It creates server setup with the gate coordinator already attached; an earlier close
@@ -60,19 +61,36 @@ shared pool coordinator before returning output. A failure after terminal persis
 can lose delivery, but reopen cannot redeliver it. Preparation and exchange quotas
 survive owner closure until journal, provider and dependency cleanup actually end.
 
-These APIs still need a fixed host worker pool, independent cancellation scheduler
-and production stream/connection ownership. Blocking providers must remain bounded
+The gate scheduler starts exactly the configured number of effect/cleanup workers
+and one independent monitor before any protected work. Worker signers are pinned at
+construction, duplicate attachment and external manual claims are rejected, and no
+request spawns a worker. Active admission, queued/running work and active reply
+callbacks retain bounded monitor records. Claim expiry cancels an unclaimed job;
+worker expiry requests cooperative cancellation. Request expiry closes only the
+matching transport operation. Running work can still publish its exact first outcome.
+The monitor never acquires execution, registry, endpoint, signer or storage locks.
+Clock failure or rollback retires the gate. Cancellation retains quota until the
+actual callback and durable cleanup end. Stop reports timeout without unlocking the
+ledger; callers can wait again, then close storage after all charged work ends.
+
+This is gate scheduling, not whole-owner supervision. Setup's original 30-second
+deadline, session/key/idle lifetime surveillance, client preparation/exchange pools,
+and pending reply permits between callbacks still need bounded host registration.
+Production stream/connection ownership also remains pending. Blocking providers must remain bounded
 and non-reentrant; an active synchronous callback can retain quota until it returns.
 Retained quota is fail-closed degradation, not proof of timely cleanup. Administrative
 replacement requires retiring and cleaning the old gate before reopening its durable
 scope. No in-place configuration replacement or public owner reset is exposed.
 
-Next add independent scheduling and owned transport, then cross-core Inspector
+Next add full owner/client scheduling and owned transport, then cross-core Inspector
 adapters. Local tests cover real encrypted sessions and journals, completed/pending
 responses, polling without re-execution, old worker completion during a newer poll,
 closure after durable acceptance, reopen without redelivery, invalid result authority,
 failed/oversized replies, 5000/5001 ms observation age, shared quotas through blocked
 receive and failed constructor cleanup, and bounded TCP request/response exchanges.
+Scheduling regressions use inert callbacks and bounded local threads: blocked
+component validation and reply send, independent worker/request deadline equality,
+queue expiry, clock rollback, stop timeout/retry and old-operation isolation.
 These are implementation tests, not catalog PASS results or a production binding.
 
 ## Inspector disposition
