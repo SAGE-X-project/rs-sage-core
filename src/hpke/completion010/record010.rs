@@ -101,6 +101,7 @@ impl AuthenticatedCompletion010 {
         Ok(())
     }
     fn begin_record(&mut self, e: &mut CompletionEndpoint010) -> Result<Stamp> {
+        self.record_used = true;
         let r = (|| {
             if self.endpoint != e.identity {
                 return Err(bad());

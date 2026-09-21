@@ -122,3 +122,27 @@ additional tests cover corruption, writer exclusion, capacity, storage errors
 and a real authenticated handshake plus first-record replay rejection. Inspector
 runs actual journal processes and cross-language reopen tests separately from
 full protocol or deployment conformance.
+
+## Exclusive non-HTTP ownership
+
+`AuthenticatedCompletion010::into_non_http` consumes an unused session into
+`NonHTTPOwner010`. Closed, HTTP-bound, previously attempted record sessions and
+sessions supplied with the wrong or retired endpoint are rejected and consumed.
+There is no clone, inner-session export, HTTP rebinding or history-reset API.
+Rust move checking prevents continued use of the old handle. Dropping or explicitly
+closing the owner erases record keys; the shared endpoint remains host-owned.
+
+The owner preserves original creation time, pinned identities and record state.
+`local_now` samples only the trusted local clock and enforces monotonic/wall-clock
+watermarks, key expiry, session lifetime and idle limits. `observe` also revalidates
+registry state and returns the local validation start, never a transferable grant.
+Clock or provider unwinding inside the owner closes its keys. Aborting panics and
+blocked providers cannot be forcibly terminated by this API.
+
+This is an ownership primitive for a trusted adapter, not negotiated MCP readiness
+or a dispatch API. Exclusive endpoint access is still required; no independent
+cancellation scheduler is established. Unit tests cover rejected transfers, clock
+and authority failure, replay retention and closure. A compile-fail doctest checks
+move ownership, and a benign loopback TCP test performs the actual signed handshake
+and encrypted request/response. Production Rust MCP framing and host integration
+remain pending; see [the core comparison](../../docs/design/MCP_CORE_PARITY.md).

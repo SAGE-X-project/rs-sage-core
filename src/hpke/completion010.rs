@@ -20,8 +20,10 @@ use std::collections::BTreeMap;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroizing;
 mod http_handshake010;
+mod owner010;
 mod record010;
 pub use http_handshake010::{encode_http_010, parse_http_010};
+pub use owner010::NonHTTPOwner010;
 use record010::http010::{HTTPContext010, HTTPProof010};
 pub use record010::{http010::HTTPMessage010, SessionResponse010};
 fn bad() -> Error {
@@ -665,6 +667,7 @@ impl PendingCompletion010 {
 /// Private seed plus immutable public authenticated tuple. Not a dispatch API.
 /// Responder state stays provisional until open_request atomically confirms it.
 pub struct AuthenticatedCompletion010 {
+    record_used: bool,
     http_target: String,
     http_authority: String,
     endpoint: uuid::Uuid,
@@ -702,6 +705,7 @@ fn owned(
     tuple.insert("sid".into(), result.sid);
     let records = RecordSession010::new(&result.seed, &result.th, initiator)?;
     Ok(AuthenticatedCompletion010 {
+        record_used: false,
         http_target: String::new(),
         http_authority: String::new(),
         endpoint,
@@ -746,6 +750,9 @@ impl AuthenticatedCompletion010 {
     /// Revalidate both signing keys and KEM, closing on failure. Does not confirm
     /// responder state or authorize record dispatch. No traffic extends idle time here.
     pub fn check(&mut self, e: &mut CompletionEndpoint010) -> Result<()> {
+        self.check_current(e).map(|_| ())
+    }
+    fn check_current(&mut self, e: &mut CompletionEndpoint010) -> Result<Stamp> {
         let result = (|| {
             if self.closed || self.endpoint != e.identity {
                 return Err(bad());
@@ -760,7 +767,7 @@ impl AuthenticatedCompletion010 {
             {
                 return Err(bad());
             }
-            Ok(())
+            Ok(start)
         })();
         if result.is_err() {
             self.close()

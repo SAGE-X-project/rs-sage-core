@@ -1188,3 +1188,249 @@ fn durable_completion() {
     ja.borrow_mut().close().unwrap();
     jb.borrow_mut().close().unwrap();
 }
+
+fn owner_pair() -> (
+    NonHTTPOwner010,
+    NonHTTPOwner010,
+    CompletionEndpoint010,
+    CompletionEndpoint010,
+    Controls,
+    tempfile::TempDir,
+) {
+    let (mut a, mut b, controls, tmp) = pair();
+    let (mut pending, request) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    let (responder, response) = b.respond(&request, 300).unwrap();
+    let initiator = pending.complete(&mut a, &response).unwrap();
+    (
+        initiator.into_non_http(&a).unwrap(),
+        responder.into_non_http(&b).unwrap(),
+        a,
+        b,
+        controls,
+        tmp,
+    )
+}
+#[test]
+fn non_http_owner_encrypted_exchange() {
+    let (mut left, mut right, mut a, mut b, _, _tmp) = owner_pair();
+    assert!(left.initiator());
+    assert!(!right.initiator());
+    assert_eq!(left.created_mono_ms(), 0);
+    assert_eq!(left.participants().unwrap(), (ALICE.into(), BOB.into()));
+    assert_eq!(left.observe(&mut a).unwrap(), 0);
+    let request = left.seal_request(&mut a, b"benign request", 30).unwrap();
+    assert_eq!(
+        right.open_request(&mut b, &request).unwrap(),
+        b"benign request"
+    );
+    assert!(right.open_request(&mut b, &request).is_err());
+    let wire: Value = serde_json::from_slice(&request).unwrap();
+    let response = right
+        .seal_response(
+            &mut b,
+            wire["id"].as_str().unwrap(),
+            b"benign result",
+            None,
+            30,
+        )
+        .unwrap();
+    assert_eq!(
+        left.open_response(&mut a, &response).unwrap().data,
+        b"benign result"
+    );
+    assert!(left.open_response(&mut a, &response).is_err());
+    left.close();
+    left.close();
+    assert!(left.local_now(&mut a).is_err());
+    assert!(left.participants().is_err());
+}
+#[test]
+fn non_http_owner_rejects_used_bound_closed_or_wrong_endpoint() {
+    for mode in [
+        "used",
+        "failed attempt",
+        "http",
+        "closed",
+        "wrong endpoint",
+        "retired endpoint",
+    ] {
+        let (mut a, mut b, _, _tmp) = pair();
+        let (mut pending, request) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+        let (_, response) = b.respond(&request, 300).unwrap();
+        let mut s = pending.complete(&mut a, &response).unwrap();
+        match mode {
+            "used" => {
+                s.seal_request(&mut a, b"hello", 30).unwrap();
+            }
+            "failed attempt" => {
+                assert!(s.seal_request(&mut a, b"hello", 0).is_err());
+            }
+            "http" => s.bind_http("https://agent.example/mcp").unwrap(),
+            "closed" => s.close(),
+            "retired endpoint" => a.close(),
+            _ => (),
+        }
+        assert!(
+            s.into_non_http(if mode == "wrong endpoint" { &b } else { &a })
+                .is_err(),
+            "{mode}"
+        );
+    }
+}
+#[test]
+fn non_http_owner_local_clock_and_authority_boundaries() {
+    for mode in [
+        "idle",
+        "lifetime",
+        "rollback",
+        "wall rollback",
+        "source error",
+        "revoked",
+        "clock error",
+    ] {
+        let (mut left, _, mut a, _, control, _tmp) = owner_pair();
+        {
+            let mut c = control.0.borrow_mut();
+            match mode {
+                "idle" => c.mono = 600_000,
+                "lifetime" => c.mono = 3_600_000,
+                "rollback" => c.mono = 10,
+                "wall rollback" => c.utc = 101,
+                "source error" => c.mode = "source-error".into(),
+                "revoked" => c.mode = "revoke-init".into(),
+                "clock error" => c.mode = "clock-error".into(),
+                _ => unreachable!(),
+            }
+        }
+        if mode == "rollback" || mode == "wall rollback" {
+            left.local_now(&mut a).unwrap();
+            let mut c = control.0.borrow_mut();
+            c.mono = 0;
+            c.utc = 100;
+        }
+        if mode == "source error" || mode == "revoked" {
+            assert!(
+                left.local_now(&mut a).is_ok(),
+                "local sample must not query registry"
+            );
+            assert!(left.observe(&mut a).is_err());
+        } else {
+            assert!(left.local_now(&mut a).is_err(), "{mode}");
+        }
+        assert!(
+            left.participants().is_err(),
+            "failure must retire owner: {mode}"
+        );
+    }
+}
+struct OwnerPanicClock;
+impl Clock for OwnerPanicClock {
+    fn now(&mut self) -> Result<Stamp> {
+        panic!("local clock unavailable")
+    }
+}
+#[test]
+fn non_http_owner_clock_panic_retires_keys() {
+    let (mut left, _, mut a, _, _, _tmp) = owner_pair();
+    a.clock = Box::new(OwnerPanicClock);
+    assert!(left.local_now(&mut a).is_err());
+    assert!(left.participants().is_err());
+}
+
+#[test]
+fn non_http_owner_loopback_runtime() {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::time::Duration;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client =
+        TcpStream::connect_timeout(&listener.local_addr().unwrap(), Duration::from_secs(2))
+            .unwrap();
+    let (mut server, _) = listener.accept().unwrap();
+    for s in [&client, &server] {
+        s.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        s.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+    }
+    // Benign test-only carriage; no production Rust framing or listener claim.
+    fn send(s: &mut TcpStream, wire: &[u8]) {
+        assert!(wire.len() <= 32768);
+        s.write_all(&(wire.len() as u32).to_be_bytes()).unwrap();
+        s.write_all(wire).unwrap();
+    }
+    fn receive(s: &mut TcpStream) -> Vec<u8> {
+        let mut header = [0; 4];
+        s.read_exact(&mut header).unwrap();
+        let n = u32::from_be_bytes(header) as usize;
+        assert!((1..=32768).contains(&n));
+        let mut wire = vec![0; n];
+        s.read_exact(&mut wire).unwrap();
+        wire
+    }
+    let (mut a, mut b, _control, _tmp) = pair();
+    let (mut pending, request) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    send(&mut client, &request);
+    let (right, response) = b.respond(&receive(&mut server), 300).unwrap();
+    send(&mut server, &response);
+    let left = pending.complete(&mut a, &receive(&mut client)).unwrap();
+    let mut left = left.into_non_http(&a).unwrap();
+    let mut right = right.into_non_http(&b).unwrap();
+    send(
+        &mut client,
+        &left.seal_request(&mut a, b"benign request", 30).unwrap(),
+    );
+    let request = receive(&mut server);
+    assert_eq!(
+        right.open_request(&mut b, &request).unwrap(),
+        b"benign request"
+    );
+    let wire: Value = serde_json::from_slice(&request).unwrap();
+    send(
+        &mut server,
+        &right
+            .seal_response(
+                &mut b,
+                wire["id"].as_str().unwrap(),
+                b"benign result",
+                None,
+                30,
+            )
+            .unwrap(),
+    );
+    assert_eq!(
+        left.open_response(&mut a, &receive(&mut client))
+            .unwrap()
+            .data,
+        b"benign result"
+    );
+}
+
+struct OwnerClockSchedule(std::collections::VecDeque<i64>);
+impl Clock for OwnerClockSchedule {
+    fn now(&mut self) -> Result<Stamp> {
+        Ok(Stamp {
+            mono_ms: self.0.pop_front().expect("bounded clock schedule"),
+            unix: 100,
+        })
+    }
+}
+#[test]
+fn non_http_owner_observation_watermark_and_idle() {
+    let (mut owner, _, mut endpoint, _, _, _tmp) = owner_pair();
+    endpoint.clock = Box::new(OwnerClockSchedule([1000, 1000, 1000, 3000, 2500].into()));
+    assert_eq!(owner.local_now(&mut endpoint).unwrap(), 1000);
+    assert_eq!(owner.observe(&mut endpoint).unwrap(), 1000);
+    assert!(owner.local_now(&mut endpoint).is_err());
+    assert!(owner.participants().is_err());
+
+    let (mut owner, _, mut endpoint, _, clock, _tmp) = owner_pair();
+    for mono in [1000, 100_000, 599_999] {
+        clock.0.borrow_mut().mono = mono;
+        assert_eq!(owner.local_now(&mut endpoint).unwrap(), mono);
+        assert_eq!(owner.observe(&mut endpoint).unwrap(), mono);
+    }
+    clock.0.borrow_mut().mono = 600_000;
+    assert!(
+        owner.local_now(&mut endpoint).is_err(),
+        "observations must not refresh activity"
+    );
+}
