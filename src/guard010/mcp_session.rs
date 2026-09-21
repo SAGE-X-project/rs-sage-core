@@ -23,14 +23,20 @@ fn field(raw: &[u8], key: &str) -> String {
         .and_then(|v| v[key].as_str().map(str::to_owned))
         .unwrap_or_default()
 }
-fn request(version: &str, id: &str, raw: &[u8], issuer: &str, recipient: &str) -> Result<Vec<u8>> {
+pub(super) fn request(
+    version: &str,
+    id: &str,
+    raw: &[u8],
+    issuer: &str,
+    recipient: &str,
+) -> Result<Vec<u8>> {
     ensure(raw.len() <= 16348)?;
     let intent = parse_mcp_request(version, id, raw)?;
     let (e, _) = intent_envelope(&intent)?;
     ensure(text(&e["intent"], "issuer") == issuer && text(&e["intent"], "recipient") == recipient)?;
     Ok(intent)
 }
-fn response(
+pub(super) fn response(
     version: &str,
     id: &str,
     raw: &[u8],

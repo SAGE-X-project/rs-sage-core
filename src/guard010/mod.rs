@@ -568,10 +568,13 @@ mod registry_tests;
 mod mcp_session;
 pub use mcp_session::{open_mcp_session_request, seal_mcp_session_request, MCPSessionCall};
 
-// Internal setup plumbing awaits owner-aware Guard integration. It deliberately
-// exposes no public readiness API while the remaining binding is implemented.
+// Internal owner integration remains private pending host scheduling and transport.
+// It deliberately exposes no public readiness or session-reset API.
 #[allow(dead_code)]
 pub(crate) mod mcp_setup;
 
 #[allow(unused_imports)]
 pub(crate) use dispatch::mcp_admission;
+
+#[allow(dead_code)]
+pub(crate) mod mcp_owned;

@@ -26,6 +26,7 @@ struct State {
     seen: BTreeSet<String>,
     operation: Option<Arc<()>>,
     protected_deadline: Option<i64>,
+    output_pending: bool,
 }
 #[derive(Clone)]
 pub(crate) struct SetupClose(Arc<Mutex<State>>, Arc<Mutex<()>>);
@@ -36,6 +37,20 @@ impl SetupClose {
         s.phase = Phase::Closed;
         s.pending = None;
         s.operation = None;
+        s.output_pending = false;
+    }
+    pub(crate) fn close_operation(&self, operation: &Arc<()>) {
+        let _coordinator = self.1.lock().unwrap_or_else(|p| p.into_inner());
+        let mut s = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        if s.operation
+            .as_ref()
+            .is_some_and(|old| Arc::ptr_eq(old, operation))
+        {
+            s.phase = Phase::Closed;
+            s.pending = None;
+            s.operation = None;
+            s.output_pending = false;
+        }
     }
     pub(crate) fn closed(&self) -> bool {
         self.1.is_poisoned() || self.0.lock().map_or(true, |s| s.phase == Phase::Closed)
@@ -49,12 +64,13 @@ pub(crate) trait SetupIO {
     fn receive(&mut self, deadline_ms: i64, close: &SetupClose) -> Result<Vec<u8>>;
 }
 pub(crate) struct MCPSetup {
-    owner: NonHTTPOwner010,
+    pub(crate) owner: NonHTTPOwner010,
     state: Arc<Mutex<State>>,
     coordinator: Arc<Mutex<()>>,
     deadline: i64,
     info: Value,
     started: bool,
+    pub(crate) response: Option<super::mcp_admission::ProtectedReply>,
 }
 fn object(raw: &[u8]) -> Result<Value> {
     canonicalize_bounds(raw, 16348, 16348, 36)?;
@@ -171,11 +187,13 @@ impl MCPSetup {
                 seen: BTreeSet::new(),
                 operation: None,
                 protected_deadline: None,
+                output_pending: false,
             })),
             coordinator,
             deadline,
             info,
             started: false,
+            response: None,
         })
     }
     pub(crate) fn closer(&self) -> SetupClose {
@@ -195,7 +213,7 @@ impl MCPSetup {
         self.closer().close();
         self.owner.close();
     }
-    fn guarded<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+    pub(crate) fn guarded<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         let result = catch_unwind(AssertUnwindSafe(|| {
             ensure(!self.coordinator.is_poisoned())?;
             f(self)
@@ -421,9 +439,22 @@ impl MCPSetup {
         coordinator: &Arc<Mutex<()>>,
         operation: Option<&Arc<()>>,
     ) -> Result<crate::registry010::Stamp> {
+        self.protected_time(e, coordinator, operation, false)
+    }
+    pub(crate) fn protected_time(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        coordinator: &Arc<Mutex<()>>,
+        operation: Option<&Arc<()>>,
+        initiator: bool,
+    ) -> Result<crate::registry010::Stamp> {
         ensure(Arc::ptr_eq(coordinator, &self.coordinator))?;
         let mut state = self.state.lock().map_err(|_| Invalid)?;
-        ensure(state.phase == Phase::Ready && state.pending.is_none() && !self.owner.initiator())?;
+        ensure(
+            state.phase == Phase::Ready
+                && state.pending.is_none()
+                && self.owner.initiator() == initiator,
+        )?;
         match operation {
             Some(id) => ensure(
                 state
@@ -441,6 +472,48 @@ impl MCPSetup {
             state.operation = Some(Arc::new(()));
         }
         Ok(self.owner.sampled_time())
+    }
+    pub(crate) fn reserve_client_id(&self, id: &str) -> Result<()> {
+        let mut state = self.state.lock().map_err(|_| Invalid)?;
+        ensure(self.owner.initiator() && state.phase == Phase::Ready)?;
+        Self::reserve(&mut state, id)
+    }
+    pub(crate) fn begin_output(&self, operation: &Arc<()>) -> Result<()> {
+        let mut s = self.state.lock().map_err(|_| Invalid)?;
+        ensure(
+            s.phase == Phase::Ready
+                && !s.output_pending
+                && s.operation
+                    .as_ref()
+                    .is_some_and(|old| Arc::ptr_eq(old, operation)),
+        )?;
+        s.output_pending = true;
+        Ok(())
+    }
+    pub(crate) fn finish_output(&self, operation: &Arc<()>) -> Result<()> {
+        let mut s = self.state.lock().map_err(|_| Invalid)?;
+        ensure(
+            s.phase == Phase::Ready
+                && s.output_pending
+                && s.operation
+                    .as_ref()
+                    .is_some_and(|old| Arc::ptr_eq(old, operation)),
+        )?;
+        s.output_pending = false;
+        Ok(())
+    }
+    pub(crate) fn finish_operation(&self, operation: &Arc<()>) -> Result<()> {
+        let mut s = self.state.lock().map_err(|_| Invalid)?;
+        ensure(
+            s.phase == Phase::Ready
+                && !s.output_pending
+                && s.operation
+                    .as_ref()
+                    .is_some_and(|old| Arc::ptr_eq(old, operation)),
+        )?;
+        s.operation = None;
+        s.protected_deadline = None;
+        Ok(())
     }
     pub(crate) fn bind_deadline(&self, deadline: i64) -> Result<()> {
         let mut state = self.state.lock().map_err(|_| Invalid)?;
@@ -559,6 +632,7 @@ mod tests {
             seen: BTreeSet::from([ID.into()]),
             operation: Some(Arc::new(())),
             protected_deadline: Some(100),
+            output_pending: false,
         }));
         let coordinator = Arc::new(Mutex::new(()));
         let closer = SetupClose(shared.clone(), coordinator.clone());
@@ -583,6 +657,7 @@ mod tests {
             seen: BTreeSet::new(),
             operation: None,
             protected_deadline: None,
+            output_pending: false,
         }));
         {
             let mut s = shared.lock().unwrap();

@@ -250,7 +250,11 @@ impl State {
         ensure(Arc::ptr_eq(&self.owner, &t.owner) && self.seen.get(&t.id) == Some(&true))?;
         self.append(Event::new("close", &t.id))
     }
-    fn begin(&mut self, id: &str) -> Result<ClientInvocation> {
+    fn begin(
+        &mut self,
+        id: &str,
+        sender: Option<&mut dyn ClientSender>,
+    ) -> Result<ClientInvocation> {
         ensure(
             !self.failed
                 && self.file.is_some()
@@ -292,7 +296,10 @@ impl State {
         )?;
         let (u, _) = self.sample()?;
         ensure(u < expires * 1000)?;
-        let sent = self.services.sender.commit(id, &self.intent);
+        let sent = match sender {
+            Some(sender) => sender.commit(id, &self.intent),
+            None => self.services.sender.commit(id, &self.intent),
+        };
         let (u, m) = self.sample()?;
         self.last_mono = m;
         self.last_wall = u;
@@ -468,8 +475,23 @@ impl Client {
     /// the receipt to exactly this actual invocation. This is not a read-only query.
     pub fn begin(&self, id: &str) -> Result<ClientInvocation> {
         let mut s = self.state.lock().map_err(|_| Invalid)?;
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.begin(id))) {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.begin(id, None))) {
             Ok(r) => r,
+            Err(_) => {
+                s.failed = true;
+                Err(Invalid)
+            }
+        }
+    }
+    /// Private synchronous owner adapter; no sender replacement or public permit.
+    pub(crate) fn begin_owned(
+        &self,
+        id: &str,
+        sender: &mut dyn ClientSender,
+    ) -> Result<ClientInvocation> {
+        let mut s = self.state.lock().map_err(|_| Invalid)?;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.begin(id, Some(sender)))) {
+            Ok(result) => result,
             Err(_) => {
                 s.failed = true;
                 Err(Invalid)
