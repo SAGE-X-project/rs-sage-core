@@ -150,7 +150,7 @@ impl DispatchGate {
         }
     }
 }
-fn finish(
+pub(super) fn finish(
     s: &mut State,
     token: &Completion,
     output: &[u8],

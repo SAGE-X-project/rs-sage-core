@@ -170,7 +170,7 @@ impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C
             last: None,
         })
     }
-    fn sample(&mut self) -> Result<Stamp> {
+    pub(crate) fn sample(&mut self) -> Result<Stamp> {
         let t = self.clock.now().map_err(|_| unreachable())?;
         if t.mono_ms < 0 || t.unix < 0 || t.unix > 9007199254740991 {
             return Err(unreachable());

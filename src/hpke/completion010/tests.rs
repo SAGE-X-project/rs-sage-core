@@ -1437,3 +1437,7 @@ fn non_http_owner_observation_watermark_and_idle() {
 
 #[path = "mcp_setup_tests.rs"]
 mod mcp_setup_tests;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "mcp_admission_tests.rs"]
+mod mcp_admission_tests;
