@@ -99,6 +99,8 @@ struct Queue {
     output_jobs: Vec<Arc<Mutex<Job>>>,
     hosted: bool,
     worker_ms: i64,
+    setup_used: bool,
+    owners: Option<Arc<crate::guard010::mcp_lifecycle::OwnerRegistry>>,
 }
 /// Construction pins configuration for the gate lifetime. Retirement is permanent;
 /// replacement requires stopping/cleaning this gate and reopening the same ledger.
@@ -157,6 +159,8 @@ impl MCPGate {
                 output_jobs: Vec::with_capacity(capacity),
                 hosted: false,
                 worker_ms: 300_000,
+                setup_used: false,
+                owners: None,
             }),
             authority,
             result_authority: Mutex::new(result_authority),
@@ -167,6 +171,24 @@ impl MCPGate {
             claim_ms,
         })
     }
+    pub(crate) fn attach_owners(
+        &self,
+        owners: Arc<crate::guard010::mcp_lifecycle::OwnerRegistry>,
+    ) -> Result<()> {
+        let _c = self.coordinator.lock().map_err(|_| Invalid)?;
+        let mut q = self.queue.lock().map_err(|_| Invalid)?;
+        ensure(
+            !q.retired
+                && !q.hosted
+                && !q.setup_used
+                && q.last.is_none()
+                && q.owners.is_none()
+                && owners.live()
+                && owners.interval() < std::time::Duration::from_millis(self.request_ms as u64),
+        )?;
+        q.owners = Some(owners);
+        Ok(())
+    }
     /// Bind before setup, so even the earliest close handle uses this coordinator.
     pub(crate) fn setup(
         &self,
@@ -176,8 +198,22 @@ impl MCPGate {
         version: &str,
     ) -> Result<MCPSetup> {
         let _c = self.coordinator.lock().map_err(|_| Invalid)?;
-        ensure(!self.queue.lock().map_err(|_| Invalid)?.retired && !owner.initiator())?;
-        MCPSetup::coordinated(owner, endpoint, name, version, self.coordinator.clone())
+        let owners = {
+            let mut q = self.queue.lock().map_err(|_| Invalid)?;
+            ensure(!q.retired && !owner.initiator())?;
+            q.setup_used = true;
+            q.owners.clone()
+        };
+        let mut setup =
+            MCPSetup::coordinated(owner, endpoint, name, version, self.coordinator.clone())?;
+        if let Some(owners) = owners {
+            if let Err(error) = owners.register(&mut setup) {
+                // Drop outside the coordinator: MCPSetup::drop closes through it.
+                drop(_c);
+                return Err(error);
+            }
+        }
+        Ok(setup)
     }
     /// No execution/storage lock: an in-flight provider cannot delay retirement.
     /// Queued work retains capacity until a worker performs conservative cleanup.

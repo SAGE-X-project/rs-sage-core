@@ -578,3 +578,6 @@ pub(crate) use dispatch::mcp_admission;
 
 #[allow(dead_code)]
 pub(crate) mod mcp_owned;
+
+#[allow(dead_code)]
+pub(crate) mod mcp_lifecycle;

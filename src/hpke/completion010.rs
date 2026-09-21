@@ -24,6 +24,7 @@ mod owner010;
 mod record010;
 pub use http_handshake010::{encode_http_010, parse_http_010};
 pub use owner010::NonHTTPOwner010;
+pub(crate) use owner010::OwnerLife;
 use record010::http010::{HTTPContext010, HTTPProof010};
 pub use record010::{http010::HTTPMessage010, SessionResponse010};
 fn bad() -> Error {

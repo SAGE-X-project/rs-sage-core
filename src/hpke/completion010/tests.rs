@@ -1416,7 +1416,9 @@ impl Clock for OwnerClockSchedule {
 #[test]
 fn non_http_owner_observation_watermark_and_idle() {
     let (mut owner, _, mut endpoint, _, _, _tmp) = owner_pair();
-    endpoint.clock = Box::new(OwnerClockSchedule([1000, 1000, 1000, 3000, 2500].into()));
+    endpoint.clock = Box::new(OwnerClockSchedule(
+        [1000, 1000, 1000, 3000, 3000, 2500].into(),
+    ));
     assert_eq!(owner.local_now(&mut endpoint).unwrap(), 1000);
     assert_eq!(owner.observe(&mut endpoint).unwrap(), 1000);
     assert!(owner.local_now(&mut endpoint).is_err());
@@ -1441,3 +1443,80 @@ mod mcp_setup_tests;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "mcp_admission_tests.rs"]
 mod mcp_admission_tests;
+
+#[test]
+fn non_http_lifecycle_mirror_tracks_confirmation_and_pinned_expiry() {
+    for confirmed in [false, true] {
+        let (mut left, mut right, mut a, mut b, _, _tmp) = owner_pair();
+        if confirmed {
+            let wire = left
+                .seal_request(&mut a, b"inert confirmation", 30)
+                .unwrap();
+            right.open_request(&mut b, &wire).unwrap();
+        }
+        let life = right.lifecycle();
+        assert!(life
+            .inspect(&mut || Some(Stamp {
+                mono_ms: 299999,
+                unix: 100
+            }))
+            .is_some());
+        assert_eq!(
+            life.inspect(&mut || Some(Stamp {
+                mono_ms: 300000,
+                unix: 100
+            }))
+            .is_some(),
+            confirmed
+        );
+    }
+    let (mut a, mut b, control, _tmp) = pair();
+    control.0.borrow_mut().expiry = 101;
+    let (mut pending, request) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    let (responder, response) = b.respond(&request, 300).unwrap();
+    let mut left = pending
+        .complete(&mut a, &response)
+        .unwrap()
+        .into_non_http(&a)
+        .unwrap();
+    let mut right = responder.into_non_http(&b).unwrap();
+    let wire = left
+        .seal_request(&mut a, b"inert confirmation", 30)
+        .unwrap();
+    right.open_request(&mut b, &wire).unwrap();
+    let life = right.lifecycle();
+    assert!(life
+        .inspect(&mut || Some(Stamp {
+            mono_ms: 1,
+            unix: 100
+        }))
+        .is_some());
+    assert!(life
+        .inspect(&mut || Some(Stamp {
+            mono_ms: 2,
+            unix: 101
+        }))
+        .is_none());
+    assert!(right.local_now(&mut b).is_err()); // closure cannot be undone by an older endpoint sample
+}
+
+#[test]
+fn non_http_lifecycle_monitor_and_endpoint_share_time_watermark() {
+    for rollback in [false, true] {
+        let (mut left, _right, mut a, _b, control, _tmp) = owner_pair();
+        control.0.borrow_mut().mono = 1000;
+        left.local_now(&mut a).unwrap();
+        let life = left.lifecycle();
+        assert!(life
+            .inspect(&mut || Some(Stamp {
+                mono_ms: 5000,
+                unix: 100
+            }))
+            .is_some());
+        control.0.borrow_mut().mono = if rollback { 4000 } else { 5000 };
+        assert_eq!(left.local_now(&mut a).is_err(), rollback);
+        if rollback {
+            assert!(left.seal_request(&mut a, b"inert", 30).is_err());
+        }
+    }
+}

@@ -130,9 +130,12 @@ struct PoolState {
     active: usize,
     retired: bool,
     last: Option<Stamp>,
+    setup_used: bool,
+    owners: Option<Arc<super::mcp_lifecycle::OwnerRegistry>>,
 }
 /// Shared quota survives connection replacement. The host supplies finite provider
-/// bounds. Independent cancellation and a production stream remain separate work.
+/// bounds. Optional pre-use owner registration supplies independent logical
+/// cancellation; a production stream and automatic cleanup remain separate work.
 pub(crate) struct ClientPool {
     coordinator: Arc<Mutex<()>>,
     state: Mutex<PoolState>,
@@ -158,10 +161,29 @@ impl ClientPool {
                 active: 0,
                 retired: false,
                 last: None,
+                setup_used: false,
+                owners: None,
             }),
             capacity,
             timeout_ms,
         })
+    }
+    pub(crate) fn attach_owners(
+        &self,
+        owners: Arc<super::mcp_lifecycle::OwnerRegistry>,
+    ) -> Result<()> {
+        let _c = self.coordinator.lock().map_err(|_| Invalid)?;
+        let mut state = self.state.lock().map_err(|_| Invalid)?;
+        ensure(
+            !state.retired
+                && !state.setup_used
+                && state.last.is_none()
+                && state.owners.is_none()
+                && owners.live()
+                && owners.interval() < std::time::Duration::from_millis(self.timeout_ms as u64),
+        )?;
+        state.owners = Some(owners);
+        Ok(())
     }
     pub(crate) fn setup(
         &self,
@@ -171,8 +193,21 @@ impl ClientPool {
         version: &str,
     ) -> Result<MCPSetup> {
         let _c = self.coordinator.lock().map_err(|_| Invalid)?;
-        ensure(!self.state.lock().map_err(|_| Invalid)?.retired && owner.initiator())?;
-        MCPSetup::coordinated(owner, endpoint, name, version, self.coordinator.clone())
+        let owners = {
+            let mut state = self.state.lock().map_err(|_| Invalid)?;
+            ensure(!state.retired && owner.initiator())?;
+            state.setup_used = true;
+            state.owners.clone()
+        };
+        let mut setup =
+            MCPSetup::coordinated(owner, endpoint, name, version, self.coordinator.clone())?;
+        if let Some(owners) = owners {
+            if let Err(error) = owners.register(&mut setup) {
+                drop(_c);
+                return Err(error);
+            }
+        }
+        Ok(setup)
     }
     pub(crate) fn retire(&self) -> Result<()> {
         let _c = self.coordinator.lock().map_err(|_| Invalid)?;
@@ -248,6 +283,8 @@ pub(crate) struct OwnedClient {
     authority: Arc<Mutex<RegistryAuthority>>,
     result_authority: Arc<Mutex<RegistryAuthority>>,
     policy: Arc<Mutex<Box<dyn IntentPolicy + Send>>>,
+    // Last field keeps shared owner capacity through journal/provider destruction.
+    _registration: Option<Arc<()>>,
 }
 impl OwnedClient {
     #[allow(clippy::too_many_arguments)]
@@ -312,6 +349,7 @@ impl OwnedClient {
         drop(lease);
         match result {
             Ok((intent, authority, result_authority, policy)) => Ok(Self {
+                _registration: owner.registration.clone(),
                 owner,
                 pool,
                 client: durable.ok_or(Invalid)?,

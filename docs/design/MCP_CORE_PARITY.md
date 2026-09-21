@@ -3,7 +3,7 @@
 This is a source comparison and implementation work list, not protocol conformance
 or a replacement for historical Inspector reports. Inputs are Go
 `872307563416f144cc863d26b594b0ce7da1f2bd`, Rust baseline
-`cc7c650b131093439f391d99e521600f6db030a8`, and this Rust gate scheduling change.
+`65b6d8c3d95ac9f57c8ef6ea8bc0fe88b71ca639`, and this Rust owner lifecycle change.
 The normative reference is sage-spec `520e5ed9a896ff8ba8ade776484f41084957aaa2`,
 `profiles/non-http-mcp-security.md`.
 
@@ -12,11 +12,11 @@ The normative reference is sage-spec `520e5ed9a896ff8ba8ade776484f41084957aaa2`,
 | Authenticated handshake and signed encrypted records | Present | Present |
 | Exclusive unused non-HTTP session ownership | Present | Present through consuming ownership |
 | Local time sampling and fresh registry observation | Present | Present; exclusive endpoint access remains required |
-| Authenticated initialize, initialized and discovery lifecycle | Present | Internal setup adapter added; host integration remains pending |
+| Authenticated initialize, initialized and discovery lifecycle | Present | Internal setup adapter with bounded owner registration and independent deadline closure |
 | Lifetime setup and protected request-ID history | Present | Shared setup and protected request history on both server and client |
 | Owner-aware durable admission and execution queue | Present | Internal gate added: authenticated owner, durable fence, final checks, bounded shared queue and single-consumer claim |
 | Protected reply publication and owned client delivery | Present | Internal one-shot protected replies and durable owned-client exchanges added |
-| Fixed workers and independent deadline cancellation | Present | Gate execution workers and active admission/reply monitoring added; full owner/client host pending |
+| Fixed workers and independent deadline cancellation | Present | Gate workers plus registered setup/session/client lifetime monitoring; transport cleanup ownership pending |
 | Bounded stream, connection and listener ownership | Present | Pending; loopback test carriage is not a production binding |
 
 Go's implementations remain internal integrations under bounded trusted-provider
@@ -73,16 +73,35 @@ Clock failure or rollback retires the gate. Cancellation retains quota until the
 actual callback and durable cleanup end. Stop reports timeout without unlocking the
 ledger; callers can wait again, then close storage after all charged work ends.
 
-This is gate scheduling, not whole-owner supervision. Setup's original 30-second
-deadline, session/key/idle lifetime surveillance, client preparation/exchange pools,
-and pending reply permits between callbacks still need bounded host registration.
-Production stream/connection ownership also remains pending. Blocking providers must remain bounded
+A separate owner monitor now attaches once to an unused gate/client pool and
+registers each owner before setup I/O. Shared capacity survives logical closure and
+reconnect: a registration is released only after the owner and, for an owned client,
+its journal and provider fields are destroyed. Failed constructor cleanup is charged
+as well. The monitor covers the original setup deadline, current protected deadline
+including pending reply permits between callbacks, absolute/idle session lifetime,
+pinned key expiry and responder confirmation lifetime. Record acceptance alone
+advances idle activity; local clock sampling and registry observation do not.
+
+The mirror and endpoint share a monotonic/UTC watermark. Local clock sampling and
+mirror publication are serialized so an earlier sampled time cannot overwrite a newer
+monitor observation. The monitor does not borrow the endpoint or wait for registry,
+journal or transport callbacks. Its only callback is the trusted bounded local clock.
+Clock failure closes registered owners and denies new registrations. Closing one owner
+does not retire healthy peers. Stop closes logically before waiting; timeout retains
+the monitor and registration capacity until actual owner destruction. Gate execution
+workers have a separate stop/cleanup lifecycle and admitted work may still finish.
+
+This provides independent logical lifetime closure, not remote registry revocation
+polling, forced provider termination, immediate key destruction or automatic socket
+cleanup. The owning host must drop closed owners and clients after their actual work
+ends. Production stream/connection/listener ownership and pre-handshake resource
+quotas remain pending. Blocking providers must remain bounded
 and non-reentrant; an active synchronous callback can retain quota until it returns.
 Retained quota is fail-closed degradation, not proof of timely cleanup. Administrative
 replacement requires retiring and cleaning the old gate before reopening its durable
 scope. No in-place configuration replacement or public owner reset is exposed.
 
-Next add full owner/client scheduling and owned transport, then cross-core Inspector
+Next add owned transport and cleanup orchestration, then cross-core Inspector
 adapters. Local tests cover real encrypted sessions and journals, completed/pending
 responses, polling without re-execution, old worker completion during a newer poll,
 closure after durable acceptance, reopen without redelivery, invalid result authority,
@@ -91,6 +110,10 @@ receive and failed constructor cleanup, and bounded TCP request/response exchang
 Scheduling regressions use inert callbacks and bounded local threads: blocked
 component validation and reply send, independent worker/request deadline equality,
 queue expiry, clock rollback, stop timeout/retry and old-operation isolation.
+Owner lifecycle tests additionally cover blocked setup/client receive, idle versus
+absolute expiry, pinned key expiry, responder confirmation, shared clock rollback,
+retired poll deadlines, owner isolation, late attachment rejection, and registration
+retention through failed construction and blocking dependency destructors.
 These are implementation tests, not catalog PASS results or a production binding.
 
 ## Inspector disposition

@@ -672,3 +672,6 @@ fn reply_storage_or_signer_failure_retires_unclaimed_execution() {
         gate.close().unwrap();
     }
 }
+
+#[path = "mcp_lifecycle_tests.rs"]
+mod mcp_lifecycle_tests;
