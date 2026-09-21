@@ -43,6 +43,9 @@ impl AuthenticatedCompletion010 {
 }
 
 impl NonHTTPOwner010 {
+    pub(crate) fn unused(&self) -> bool {
+        !self.session.closed && !self.session.record_used
+    }
     /// Immutable handshake role, not authorization to send or dispatch.
     pub fn initiator(&self) -> bool {
         self.session.initiator

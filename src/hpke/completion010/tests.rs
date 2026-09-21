@@ -1434,3 +1434,6 @@ fn non_http_owner_observation_watermark_and_idle() {
         "observations must not refresh activity"
     );
 }
+
+#[path = "mcp_setup_tests.rs"]
+mod mcp_setup_tests;

@@ -273,3 +273,37 @@ MCP initialization, exclusive routing and bounded handoff. These helpers reject
 HTTP-bound sessions; HTTP intent carriage needs a separate mapping. Cryptographic
 acceptance and consumed response permits are not rolled back on application failure.
 Do not silently fall back to an unprotected call.
+
+### Internal authenticated MCP setup
+
+The private setup adapter consumes an unused non-HTTP owner and retains its original
+creation clock. It authenticates initialize, initialized acknowledgement and pinned
+tool discovery with the existing signed encrypted records. Complete local sends and
+accepted responses publish their next phase only after fresh registry observation,
+clock/deadline validation and a serialized check against closure. No metadata is
+returned to a model, no peer schema replaces the pinned descriptor, and setup never
+invokes a tool or grants Guard execution authority.
+
+A shared close handle records revocation without borrowing the endpoint or waiting
+for transport, registry or preparation callbacks. Provider work runs outside the
+state coordinator. Only a bounded, purely local, non-reentrant clock is sampled
+under that coordinator. Physical key cleanup follows on return or drop; trusted providers
+must remain bounded and honor the close handle and absolute deadline. The 30-second
+setup deadline is measured from key-state creation, not adapter construction. This
+adapter has no independent deadline scheduler or production Rust socket ownership.
+
+One 1,024-entry history covers initialize, tools/list and authenticated server-side
+protected input IDs. Duplicate, exhausted, invalid or out-of-order input closes the
+adapter; closure preserves consumed history and outer replay state. Protected input
+staging verifies carriage and shape but still requires owner-aware Guard admission.
+There is no public READY import, history reset or dispatch endpoint. Client protected
+submission and response publication remain pending. The synchronous receive path
+has no background input pump; providers may retain at most one bounded incoming
+frame while a send is pending.
+
+Tests cover authenticated lifecycle and benign local TCP carriage, invalid codecs,
+exact acknowledgement, pinned discovery, initial setup deadline, used-owner rejection,
+ID reuse and exhaustion, protected input before/after READY, preparation failure,
+transport failure/panic, key revocation and another thread closing during send.
+Implementation evidence does not promote Inspector catalog cases or establish full
+binding or Go/Rust interoperability conformance.
