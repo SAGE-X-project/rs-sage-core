@@ -1,6 +1,6 @@
 //! Private non-HTTP admission. No caller-supplied READY flags or work capabilities.
 //! All clocks share the original endpoint monotonic domain. Providers are trusted,
-//! bounded and non-reentrant. This is not a scheduler or a response transport.
+//! bounded and non-reentrant. Host scheduling and production transport remain external.
 use super::*;
 use crate::guard010::mcp_setup::{MCPSetup, SetupClose};
 use crate::hpke::completion010::{CompletionEndpoint010, NonHTTPOwner010};
@@ -14,6 +14,29 @@ pub(crate) trait Executor: Send + Sync {
     fn check(&self, manifest: &str, tool: &str) -> Result<()>;
     fn run(&self, invocation: &Invocation) -> Result<Vec<u8>>;
 }
+mod reply;
+pub(crate) use reply::ProtectedReply;
+
+pub(crate) struct Admission {
+    created: bool,
+    state: String,
+    digest: String,
+}
+impl Admission {
+    pub(crate) fn created(&self) -> bool {
+        self.created
+    }
+    pub(crate) fn committed(&self) -> bool {
+        self.created
+    }
+    pub(crate) fn state(&self) -> &str {
+        &self.state
+    }
+    pub(crate) fn intent_digest(&self) -> &str {
+        &self.digest
+    }
+}
+
 struct Pinned(Arc<dyn Executor>);
 impl Component for Pinned {
     fn check(&mut self, manifest: &str, tool: &str) -> Result<()> {
@@ -38,10 +61,12 @@ struct Work {
     claim_before: i64,
     deadline: i64,
     close: SetupClose,
+    operation: Arc<()>,
 }
 struct Queue {
     retired: bool,
     occupied: usize,
+    outputs: usize,
     items: VecDeque<Work>,
     last: Option<Stamp>,
 }
@@ -53,6 +78,7 @@ pub(crate) struct MCPGate {
     coordinator: Arc<Mutex<()>>,
     queue: Mutex<Queue>,
     authority: Arc<Mutex<RegistryAuthority>>,
+    result_authority: Mutex<RegistryAuthority>,
     executor: Arc<dyn Executor>,
     clock: Mutex<Box<dyn Clock + Send>>,
     capacity: usize,
@@ -66,6 +92,7 @@ impl MCPGate {
         create: bool,
         recipient: &str,
         authority: RegistryAuthority,
+        result_authority: RegistryAuthority,
         policy: Box<dyn IntentPolicy + Send>,
         executor: Arc<dyn Executor>,
         clock: Box<dyn Clock + Send>,
@@ -93,10 +120,12 @@ impl MCPGate {
             queue: Mutex::new(Queue {
                 retired: false,
                 occupied: 0,
+                outputs: 0,
                 items: VecDeque::with_capacity(capacity),
                 last: None,
             }),
             authority,
+            result_authority: Mutex::new(result_authority),
             executor,
             clock: Mutex::new(clock),
             capacity,
@@ -162,7 +191,7 @@ impl MCPGate {
         owner: &mut MCPSetup,
         endpoint: &mut CompletionEndpoint010,
         wire: &[u8],
-    ) -> Result<DispatchReceipt> {
+    ) -> Result<Admission> {
         let mut held = false;
         let result = catch_unwind(AssertUnwindSafe(|| {
             let (started, operation, deadline) = {
@@ -179,6 +208,7 @@ impl MCPGate {
             };
             let raw = owner.open_protected(endpoint, wire)?;
             let root: Value = serde_json::from_slice(&raw).map_err(|_| Invalid)?;
+            let outer = super::super::mcp_owned::wire_id(wire)?;
             let intent = parse_mcp_request(MCP_VERSION, text(&root, "id"), &raw)?;
             let mut s = self.execution.state.lock().map_err(|_| Invalid)?;
             let s = &mut *s;
@@ -265,11 +295,12 @@ impl MCPGate {
                         claim_before,
                         deadline,
                         close: owner.closer(),
+                        operation: operation.clone(),
                     });
                     held = false; // queue now owns capacity, including actual execution/cleanup
                     pending = None;
                 }
-                Ok(DispatchReceipt {
+                let receipt = DispatchReceipt {
                     created,
                     committed: created,
                     state: if created {
@@ -283,7 +314,21 @@ impl MCPGate {
                         canonical: v.canonical,
                         used: false,
                     },
-                })
+                };
+                let admission = Admission {
+                    created,
+                    state: receipt.state.clone(),
+                    digest: receipt.digest.clone(),
+                };
+                owner.response = Some(ProtectedReply {
+                    operation,
+                    started,
+                    deadline,
+                    inner: text(&root, "id").into(),
+                    outer,
+                    receipt,
+                });
+                Ok(admission)
             }));
             let result = match result {
                 Ok(result) => result,
@@ -341,7 +386,7 @@ impl MCPGate {
             (work, allowed, expired)
         };
         if expired {
-            work.close.close();
+            work.close.close_operation(&work.operation);
         }
         let output = if allowed {
             catch_unwind(AssertUnwindSafe(|| self.executor.run(&work.invocation)))
@@ -382,7 +427,7 @@ impl MCPGate {
             }
         };
         if expired {
-            work.close.close();
+            work.close.close_operation(&work.operation);
         }
         self.release();
         result.map(|_| true)
@@ -404,7 +449,10 @@ impl MCPGate {
         self.retire()?;
         let mut s = self.execution.state.lock().map_err(|_| Invalid)?;
         let _c = self.coordinator.lock().map_err(|_| Invalid)?;
-        ensure(self.queue.lock().map_err(|_| Invalid)?.occupied == 0)?;
+        {
+            let q = self.queue.lock().map_err(|_| Invalid)?;
+            ensure(q.occupied == 0 && q.outputs == 0)?;
+        }
         s.retired = true;
         drop(_c);
         if let Some(mut store) = s.store.take() {

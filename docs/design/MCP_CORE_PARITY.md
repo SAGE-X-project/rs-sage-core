@@ -3,7 +3,7 @@
 This is a source comparison and implementation work list, not protocol conformance
 or a replacement for historical Inspector reports. Inputs are Go
 `872307563416f144cc863d26b594b0ce7da1f2bd`, Rust baseline
-`64531b658f28b069772b0c88d5148eb1dbec807c`, and this Rust admission change.
+`6c62fc6c94908fdf66367f019b0ed76c8cc86cc0`, and this Rust reply/client change.
 The normative reference is sage-spec `520e5ed9a896ff8ba8ade776484f41084957aaa2`,
 `profiles/non-http-mcp-security.md`.
 
@@ -13,9 +13,9 @@ The normative reference is sage-spec `520e5ed9a896ff8ba8ade776484f41084957aaa2`,
 | Exclusive unused non-HTTP session ownership | Present | Present through consuming ownership |
 | Local time sampling and fresh registry observation | Present | Present; exclusive endpoint access remains required |
 | Authenticated initialize, initialized and discovery lifecycle | Present | Internal setup adapter added; host integration remains pending |
-| Lifetime setup and protected request-ID history | Present | Setup and server protected-input history added; client submission integration remains pending |
+| Lifetime setup and protected request-ID history | Present | Shared setup and protected request history on both server and client |
 | Owner-aware durable admission and execution queue | Present | Internal gate added: authenticated owner, durable fence, final checks, bounded shared queue and single-consumer claim |
-| Protected reply publication and owned client delivery | Present | Pending; existing MCP record helpers do not establish this boundary |
+| Protected reply publication and owned client delivery | Present | Internal one-shot protected replies and durable owned-client exchanges added |
 | Fixed workers and independent deadline cancellation | Present | Pending |
 | Bounded stream, connection and listener ownership | Present | Pending; loopback test carriage is not a production binding |
 
@@ -42,23 +42,38 @@ claim bound cancels conservatively. Capacity remains occupied through actual exe
 termination and result/UNKNOWN persistence. The executor must encompass actual work,
 not detach another worker. Queue entries are never reconstructed from recovered rows.
 
-This private API does not yet provide protected replies, client delivery, a host
-worker pool or an independent cancellation scheduler. An owner stays occupied after
-admission until the future reply integration or closure; no public reset exists.
-Workers observe request expiry at claim and completion and close the owner without
-claiming rollback. A blocked provider still needs the future independent scheduler;
-retained quota is fail-closed degradation, not proof of timely cleanup. Administrative
-replacement requires retiring and cleaning the old gate before reopening the durable
-scope; no in-place configuration replacement is exposed here.
+The server now retains the sole response permit inside the authenticated owner.
+It sends the stored signed result once with exact inner/outer correlation, then
+rechecks result authority, session validity and the fixed request deadline before
+releasing the invocation. The gate bounds concurrent reply work across owners and
+retains its quota until I/O and cleanup end. Failed sends and oversized RPC output
+preserve durable execution and exact terminal bytes. A pending reply retires only
+that transport invocation; the worker remains charged until it actually finishes.
+Old worker deadline observations cannot close a newer poll on the same connection.
 
-Next add response/client publication, scheduling and owned transport. Validate each
-boundary with inert unit schedules and benign runtime exchanges before building
-cross-core Inspector adapters. The admission tests cover real encrypted sessions and
-ledger files, cross-thread closure during post-fence verification, shared capacity
-through actual worker exit, duplicates, unavailable storage, signer failure with
-queued work, clock rollback, freshness at 5000/5001 ms, request/claim deadline equality,
-and a bounded loopback TCP request. These are implementation tests, not catalog PASS
-results or a production transport binding.
+The private owned client consumes a negotiated initiator and uses the existing durable
+client journal with a private synchronous sender. No alternate sender, raw reply,
+reusable send permit or session export is exposed by this adapter. Submission reserves
+IDs in the same setup history. Receive authenticates outer correlation and status,
+consumes the durable invocation, then checks fresh result/session evidence under the
+shared pool coordinator before returning output. A failure after terminal persistence
+can lose delivery, but reopen cannot redeliver it. Preparation and exchange quotas
+survive owner closure until journal, provider and dependency cleanup actually end.
+
+These APIs still need a fixed host worker pool, independent cancellation scheduler
+and production stream/connection ownership. Blocking providers must remain bounded
+and non-reentrant; an active synchronous callback can retain quota until it returns.
+Retained quota is fail-closed degradation, not proof of timely cleanup. Administrative
+replacement requires retiring and cleaning the old gate before reopening its durable
+scope. No in-place configuration replacement or public owner reset is exposed.
+
+Next add independent scheduling and owned transport, then cross-core Inspector
+adapters. Local tests cover real encrypted sessions and journals, completed/pending
+responses, polling without re-execution, old worker completion during a newer poll,
+closure after durable acceptance, reopen without redelivery, invalid result authority,
+failed/oversized replies, 5000/5001 ms observation age, shared quotas through blocked
+receive and failed constructor cleanup, and bounded TCP request/response exchanges.
+These are implementation tests, not catalog PASS results or a production binding.
 
 ## Inspector disposition
 

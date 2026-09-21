@@ -45,7 +45,11 @@ impl r::Source for Source {
             keys: vec![Key {
                 name: "signing-1".into(),
                 alg: "ed25519".into(),
-                material: hex::encode(SigningKey::from_bytes(&[1; 32]).verifying_key().to_bytes()),
+                material: hex::encode(
+                    SigningKey::from_bytes(&[if did == BOB { 2 } else { 1 }; 32])
+                        .verifying_key()
+                        .to_bytes(),
+                ),
                 state: "accepted".into(),
                 expires: None,
             }],
@@ -103,6 +107,7 @@ struct Sink {
     checks: AtomicUsize,
     hook: Hook,
     run_hook: Hook,
+    output_size: AtomicUsize,
 }
 impl Executor for Sink {
     fn check(&self, manifest: &str, tool: &str) -> g::Result<()> {
@@ -126,6 +131,10 @@ impl Executor for Sink {
         self.effects.fetch_add(1, Ordering::SeqCst);
         if let Some(hook) = self.run_hook.lock().unwrap().as_mut() {
             hook()?;
+        }
+        let size = self.output_size.load(Ordering::SeqCst);
+        if size > 0 {
+            return Ok(serde_json::to_vec(&json!({"text":"x".repeat(size)})).unwrap());
         }
         Ok(br#"{"text":"inert public fixture"}"#.to_vec())
     }
@@ -152,8 +161,7 @@ impl g::ResultSigner for Signer {
             .to_vec())
     }
 }
-fn gate(path: &std::path::Path, sink: Arc<Sink>, capacity: usize) -> (Arc<MCPGate>, Local) {
-    let clock = Local(Arc::new(AtomicI64::new(0)));
+fn authority_for(clock: Local, did: &str) -> g::RegistryAuthority {
     let registry = r::SendGate::new_send(
         r::Config {
             source: "admission-fixture".into(),
@@ -166,8 +174,12 @@ fn gate(path: &std::path::Path, sink: Arc<Sink>, capacity: usize) -> (Arc<MCPGat
         Box::new(Store),
     )
     .unwrap();
-    let authority =
-        g::RegistryAuthority::new(registry, ALICE, &format!("{ALICE}#signing-1")).unwrap();
+    g::RegistryAuthority::new(registry, did, &format!("{did}#signing-1")).unwrap()
+}
+fn gate(path: &std::path::Path, sink: Arc<Sink>, capacity: usize) -> (Arc<MCPGate>, Local) {
+    let clock = Local(Arc::new(AtomicI64::new(0)));
+    let authority = authority_for(clock.clone(), ALICE);
+    let result_authority = authority_for(clock.clone(), BOB);
     (
         Arc::new(
             MCPGate::open(
@@ -175,6 +187,7 @@ fn gate(path: &std::path::Path, sink: Arc<Sink>, capacity: usize) -> (Arc<MCPGat
                 true,
                 BOB,
                 authority,
+                result_authority,
                 Box::new(Policy),
                 sink,
                 Box::new(clock.clone()),
@@ -568,3 +581,6 @@ fn admission_requires_ready_owner_from_this_gate() {
         gate.close().unwrap();
     }
 }
+
+#[path = "mcp_reply_tests.rs"]
+mod mcp_reply_tests;

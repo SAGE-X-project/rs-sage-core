@@ -26,16 +26,21 @@ fn matches(e: &Entry, raw: &[u8]) -> Result<bool> {
     actual.result_hex.clear();
     Ok(actual == expected)
 }
-fn entry(s: &State, raw: &[u8]) -> Result<Entry> {
+fn entry(s: &mut State, raw: &[u8]) -> Result<Entry> {
     let (env, _) = intent_envelope(raw)?;
     let i = &env["intent"];
-    let e = s
+    let e = match s
         .store
         .as_ref()
         .ok_or(Invalid)?
         .lookup(text(i, "issuer"), text(i, "call_id"))
-        .map_err(|_| Invalid)?
-        .ok_or(Invalid)?;
+    {
+        Ok(entry) => entry.ok_or(Invalid)?,
+        Err(_) => {
+            s.retired = true;
+            return Err(Invalid);
+        }
+    };
     ensure(matches(&e, raw)?)?;
     Ok(e)
 }
@@ -174,7 +179,11 @@ pub(super) fn finish(
     check(&raw, &token.canonical, "COMPLETED", signer)?;
     Ok(())
 }
-fn reply(s: &mut State, intent: &[u8], signer: &mut dyn ResultSigner) -> Result<Vec<u8>> {
+pub(super) fn reply(
+    s: &mut State,
+    intent: &[u8],
+    signer: &mut dyn ResultSigner,
+) -> Result<Vec<u8>> {
     let mut e = entry(s, intent)?;
     let raw = if !e.result_hex.is_empty() {
         hex::decode(&e.result_hex).map_err(|_| Invalid)?
