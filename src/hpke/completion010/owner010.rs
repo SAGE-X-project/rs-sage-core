@@ -43,6 +43,9 @@ impl AuthenticatedCompletion010 {
 }
 
 impl NonHTTPOwner010 {
+    pub(crate) fn sampled_time(&self) -> Stamp {
+        self.sampled
+    }
     pub(crate) fn unused(&self) -> bool {
         !self.session.closed && !self.session.record_used
     }

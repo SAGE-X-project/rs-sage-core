@@ -572,3 +572,6 @@ pub use mcp_session::{open_mcp_session_request, seal_mcp_session_request, MCPSes
 // exposes no public readiness API while the remaining binding is implemented.
 #[allow(dead_code)]
 pub(crate) mod mcp_setup;
+
+#[allow(unused_imports)]
+pub(crate) use dispatch::mcp_admission;

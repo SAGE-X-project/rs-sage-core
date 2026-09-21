@@ -6,8 +6,8 @@ use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
 #[derive(Default)]
-struct Capture {
-    wire: Vec<u8>,
+pub(super) struct Capture {
+    pub(super) wire: Vec<u8>,
     hook: Option<Box<dyn FnMut()>>,
     fail: bool,
 }
@@ -74,15 +74,15 @@ impl SetupIO for PairIO<'_> {
         })
     }
 }
-fn setup_request(id: &str, step: usize) -> Vec<u8> {
+pub(super) fn setup_request(id: &str, step: usize) -> Vec<u8> {
     serde_json::to_vec(&match step {
   0=>json!({"jsonrpc":"2.0","id":id,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"fixture","version":"1"}}}),
   1=>json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
   _=>json!({"jsonrpc":"2.0","id":id,"method":"tools/list"})
  }).unwrap()
 }
-const ID1: &str = "00000000-0000-4000-8000-000000000001";
-const ID2: &str = "00000000-0000-4000-8000-000000000002";
+pub(super) const ID1: &str = "00000000-0000-4000-8000-000000000001";
+pub(super) const ID2: &str = "00000000-0000-4000-8000-000000000002";
 #[test]
 fn mcp_setup_encrypted_lifecycle_and_tcp_runtime() {
     for tcp in [false, true] {

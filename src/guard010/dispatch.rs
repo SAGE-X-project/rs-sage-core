@@ -3,6 +3,8 @@ use super::*;
 use crate::execution010::{Entry, Ledger};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+#[allow(dead_code)]
+pub(crate) mod mcp_admission;
 mod publication;
 pub use publication::ResultSigner;
 

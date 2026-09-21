@@ -24,18 +24,21 @@ struct State {
     phase: Phase,
     pending: Option<Phase>,
     seen: BTreeSet<String>,
+    operation: Option<Arc<()>>,
+    protected_deadline: Option<i64>,
 }
 #[derive(Clone)]
-pub(crate) struct SetupClose(Arc<Mutex<State>>);
+pub(crate) struct SetupClose(Arc<Mutex<State>>, Arc<Mutex<()>>);
 impl SetupClose {
     pub(crate) fn close(&self) {
-        if let Ok(mut s) = self.0.lock() {
-            s.phase = Phase::Closed;
-            s.pending = None;
-        }
+        let _coordinator = self.1.lock().unwrap_or_else(|p| p.into_inner());
+        let mut s = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        s.phase = Phase::Closed;
+        s.pending = None;
+        s.operation = None;
     }
     pub(crate) fn closed(&self) -> bool {
-        self.0.lock().map_or(true, |s| s.phase == Phase::Closed)
+        self.1.is_poisoned() || self.0.lock().map_or(true, |s| s.phase == Phase::Closed)
     }
 }
 /// Trusted bounded provider: complete local handoff and one bounded frame only.
@@ -48,6 +51,7 @@ pub(crate) trait SetupIO {
 pub(crate) struct MCPSetup {
     owner: NonHTTPOwner010,
     state: Arc<Mutex<State>>,
+    coordinator: Arc<Mutex<()>>,
     deadline: i64,
     info: Value,
     started: bool,
@@ -135,10 +139,19 @@ fn encode(v: Value) -> Result<Vec<u8>> {
 }
 impl MCPSetup {
     pub(crate) fn new(
+        owner: NonHTTPOwner010,
+        e: &mut CompletionEndpoint010,
+        name: &str,
+        version: &str,
+    ) -> Result<Self> {
+        Self::coordinated(owner, e, name, version, Arc::new(Mutex::new(())))
+    }
+    pub(crate) fn coordinated(
         mut owner: NonHTTPOwner010,
         e: &mut CompletionEndpoint010,
         name: &str,
         version: &str,
+        coordinator: Arc<Mutex<()>>,
     ) -> Result<Self> {
         ensure(owner.unused())?;
         let info = json!({"name":name,"version":version});
@@ -156,28 +169,38 @@ impl MCPSetup {
                 phase,
                 pending: None,
                 seen: BTreeSet::new(),
+                operation: None,
+                protected_deadline: None,
             })),
+            coordinator,
             deadline,
             info,
             started: false,
         })
     }
     pub(crate) fn closer(&self) -> SetupClose {
-        SetupClose(self.state.clone())
+        SetupClose(self.state.clone(), self.coordinator.clone())
     }
     #[cfg(test)]
     pub(crate) fn history(&self) -> Vec<String> {
         self.state.lock().unwrap().seen.iter().cloned().collect()
     }
     pub(crate) fn phase(&self) -> Phase {
+        if self.coordinator.is_poisoned() {
+            return Phase::Closed;
+        }
         self.state.lock().map_or(Phase::Closed, |s| s.phase)
     }
-    fn fail(&mut self) {
+    pub(crate) fn fail(&mut self) {
         self.closer().close();
         self.owner.close();
     }
     fn guarded<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-        let result = catch_unwind(AssertUnwindSafe(|| f(self))).unwrap_or(Err(Invalid));
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            ensure(!self.coordinator.is_poisoned())?;
+            f(self)
+        }))
+        .unwrap_or(Err(Invalid));
         if result.is_err() {
             self.fail();
         }
@@ -215,7 +238,9 @@ impl MCPSetup {
         Ok(())
     }
     fn publish(&mut self, e: &mut CompletionEndpoint010, next: Phase, output: bool) -> Result<()> {
+        ensure(!self.coordinator.is_poisoned())?;
         let observed = self.owner.observe(e).map_err(|_| Invalid)?;
+        ensure(!self.coordinator.is_poisoned())?;
         let mut s = self.state.lock().map_err(|_| Invalid)?;
         let now = Self::valid(&mut self.owner, e, &s, self.deadline)?;
         ensure(now >= observed && now - observed <= 5000)?;
@@ -388,6 +413,52 @@ impl MCPSetup {
             s.send(e, io, &reply, next)
         })
     }
+    // The caller holds this same coordinator throughout start/final publication.
+    // Only the bounded endpoint clock runs inside it; registry work stays outside.
+    pub(crate) fn admission_time(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        coordinator: &Arc<Mutex<()>>,
+        operation: Option<&Arc<()>>,
+    ) -> Result<crate::registry010::Stamp> {
+        ensure(Arc::ptr_eq(coordinator, &self.coordinator))?;
+        let mut state = self.state.lock().map_err(|_| Invalid)?;
+        ensure(state.phase == Phase::Ready && state.pending.is_none() && !self.owner.initiator())?;
+        match operation {
+            Some(id) => ensure(
+                state
+                    .operation
+                    .as_ref()
+                    .is_some_and(|old| Arc::ptr_eq(old, id)),
+            )?,
+            None => ensure(state.operation.is_none())?,
+        }
+        let now = Self::valid(&mut self.owner, e, &state, self.deadline)?;
+        if operation.is_some() {
+            ensure(now < state.protected_deadline.ok_or(Invalid)?)?;
+        }
+        if operation.is_none() {
+            state.operation = Some(Arc::new(()));
+        }
+        Ok(self.owner.sampled_time())
+    }
+    pub(crate) fn bind_deadline(&self, deadline: i64) -> Result<()> {
+        let mut state = self.state.lock().map_err(|_| Invalid)?;
+        ensure(state.operation.is_some() && state.protected_deadline.is_none())?;
+        state.protected_deadline = Some(deadline);
+        Ok(())
+    }
+    pub(crate) fn operation(&self) -> Result<Arc<()>> {
+        self.state
+            .lock()
+            .map_err(|_| Invalid)?
+            .operation
+            .clone()
+            .ok_or(Invalid)
+    }
+    pub(crate) fn observe_admission(&mut self, e: &mut CompletionEndpoint010) -> Result<i64> {
+        self.owner.observe(e).map_err(|_| Invalid)
+    }
     /// Private input staging only. Returned bytes still require owner-aware Guard
     /// admission; setup does not verify the intent signature or authorize effects.
     pub(crate) fn open_protected(
@@ -481,11 +552,37 @@ mod tests {
         assert!(discovery(&serde_json::to_vec(&response).unwrap(), ID, true).is_err());
     }
     #[test]
+    fn poisoned_coordinator_still_closes_existing_handles() {
+        let shared = Arc::new(Mutex::new(State {
+            phase: Phase::Ready,
+            pending: None,
+            seen: BTreeSet::from([ID.into()]),
+            operation: Some(Arc::new(())),
+            protected_deadline: Some(100),
+        }));
+        let coordinator = Arc::new(Mutex::new(()));
+        let closer = SetupClose(shared.clone(), coordinator.clone());
+        let poison = coordinator.clone();
+        let _ = std::thread::spawn(move || {
+            let _lock = poison.lock().unwrap();
+            panic!("inert poison fixture");
+        })
+        .join();
+        assert!(closer.closed());
+        closer.close();
+        let s = shared.lock().unwrap();
+        assert_eq!(s.phase, Phase::Closed);
+        assert!(s.operation.is_none());
+        assert_eq!(s.seen.len(), 1);
+    }
+    #[test]
     fn history_capacity_is_not_reset_by_close() {
         let shared = Arc::new(Mutex::new(State {
             phase: Phase::Ready,
             pending: None,
             seen: BTreeSet::new(),
+            operation: None,
+            protected_deadline: None,
         }));
         {
             let mut s = shared.lock().unwrap();
@@ -494,7 +591,7 @@ mod tests {
             }
             assert!(MCPSetup::reserve(&mut s, "00000000-0000-4000-8000-ffffffffffff").is_err());
         }
-        SetupClose(shared.clone()).close();
+        SetupClose(shared.clone(), Arc::new(Mutex::new(()))).close();
         let s = shared.lock().unwrap();
         assert_eq!(s.phase, Phase::Closed);
         assert_eq!(s.seen.len(), 1024);
