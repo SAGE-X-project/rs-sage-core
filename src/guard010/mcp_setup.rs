@@ -41,6 +41,10 @@ impl SetupClose {
     }
     pub(crate) fn close_operation(&self, operation: &Arc<()>) {
         let _coordinator = self.1.lock().unwrap_or_else(|p| p.into_inner());
+        self.close_operation_locked(operation);
+    }
+    // Caller holds this owner's shared admission coordinator.
+    pub(crate) fn close_operation_locked(&self, operation: &Arc<()>) {
         let mut s = self.0.lock().unwrap_or_else(|p| p.into_inner());
         if s.operation
             .as_ref()

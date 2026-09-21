@@ -20,7 +20,7 @@ impl MCPGate {
         io: &mut dyn SetupIO,
         signer: &mut dyn ResultSigner,
     ) -> Result<()> {
-        let mut held = false;
+        let mut held = None;
         let result = catch_unwind(AssertUnwindSafe(|| {
             let mut reply = owner.response.take().ok_or(Invalid)?;
             {
@@ -30,7 +30,16 @@ impl MCPGate {
                 owner.admission_time(endpoint, &self.coordinator, Some(&reply.operation))?;
                 owner.begin_output(&reply.operation)?;
                 q.outputs += 1;
-                held = true;
+                let job = Arc::new(Mutex::new(Job {
+                    cancellation: Cancellation::default(),
+                    close: owner.closer(),
+                    operation: reply.operation.clone(),
+                    deadline: reply.deadline,
+                    claim_before: None,
+                    worker_before: None,
+                }));
+                q.output_jobs.push(job.clone());
+                held = Some(job);
             }
             let raw = {
                 let mut s = self.execution.state.lock().map_err(|_| Invalid)?;
@@ -107,9 +116,10 @@ impl MCPGate {
         if result.is_err() {
             owner.fail();
         }
-        if held {
+        if let Some(job) = held {
             if let Ok(_c) = self.coordinator.lock() {
                 if let Ok(mut q) = self.queue.lock() {
+                    q.output_jobs.retain(|old| !Arc::ptr_eq(old, &job));
                     q.outputs -= 1;
                 }
             }
