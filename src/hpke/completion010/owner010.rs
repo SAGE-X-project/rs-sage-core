@@ -1,6 +1,66 @@
 //! Exclusive ownership of unused non-HTTP sessions for trusted protocol adapters.
 use super::*;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::{Arc, Mutex};
+
+/// A provider-free mirror of authenticated session lifetime, never an authority
+/// permit. Only successful record operations can advance the idle watermark.
+#[derive(Clone)]
+pub(crate) struct OwnerLife(Arc<Mutex<Life>>);
+struct Life {
+    closed: bool,
+    created: Stamp,
+    active: Stamp,
+    sampled: Stamp,
+    provisional: Option<i64>,
+    key_expiry: Option<i64>,
+}
+impl OwnerLife {
+    fn snapshot(s: &AuthenticatedCompletion010, sampled: Stamp) -> Life {
+        Life {
+            closed: s.closed || s.records.is_none(),
+            created: s.created,
+            active: s.active,
+            sampled,
+            provisional: (!s.initiator && !s.confirmed).then_some(s.expires),
+            key_expiry: std::iter::once(s.a.signing())
+                .chain(std::iter::once(s.b.signing()))
+                .chain(s.b.kem())
+                .filter_map(|k| k.expires)
+                .min(),
+        }
+    }
+    pub(crate) fn invalidate(&self) {
+        self.0.lock().unwrap_or_else(|p| p.into_inner()).closed = true;
+    }
+    /// Sample under the mirror lock so an older monitor sample cannot invalidate
+    /// newly accepted activity. The callback is a bounded non-reentrant local clock.
+    pub(crate) fn inspect(&self, sample: &mut dyn FnMut() -> Option<Stamp>) -> Option<Stamp> {
+        let Ok(mut s) = self.0.lock() else {
+            return None;
+        };
+        let now = sample();
+        let valid = now.is_some_and(|now| {
+            !s.closed
+                && now.mono_ms >= s.sampled.mono_ms
+                && now.unix >= s.sampled.unix
+                && now.mono_ms >= s.created.mono_ms
+                && now.unix >= s.created.unix
+                && now.mono_ms >= s.active.mono_ms
+                && now.mono_ms - s.created.mono_ms < 3_600_000
+                && now.mono_ms - s.active.mono_ms < 600_000
+                && s.provisional
+                    .is_none_or(|expiry| live(now, s.created, expiry))
+                && s.key_expiry.is_none_or(|expiry| now.unix < expiry)
+        });
+        if !valid {
+            s.closed = true;
+            return None;
+        }
+        s.sampled = now.unwrap();
+        now
+    }
+}
 
 /// An exclusively owned non-HTTP session. This handle has no Clone, restore,
 /// HTTP binding or inner-session export. It grants neither MCP readiness nor
@@ -8,6 +68,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 pub struct NonHTTPOwner010 {
     session: AuthenticatedCompletion010,
     sampled: Stamp,
+    life: OwnerLife,
 }
 
 impl AuthenticatedCompletion010 {
@@ -35,7 +96,9 @@ impl AuthenticatedCompletion010 {
             return Err(bad());
         }
         let sampled = e.last.unwrap_or(self.created);
+        let life = OwnerLife(Arc::new(Mutex::new(OwnerLife::snapshot(&self, sampled))));
         Ok(NonHTTPOwner010 {
+            life,
             session: self,
             sampled,
         })
@@ -43,6 +106,9 @@ impl AuthenticatedCompletion010 {
 }
 
 impl NonHTTPOwner010 {
+    pub(crate) fn lifecycle(&self) -> OwnerLife {
+        self.life.clone()
+    }
     pub(crate) fn sampled_time(&self) -> Stamp {
         self.sampled
     }
@@ -63,6 +129,7 @@ impl NonHTTPOwner010 {
     }
     /// Revoke this owner's record operations and erase its keys.
     pub fn close(&mut self) {
+        self.life.invalidate();
         self.session.close();
     }
 
@@ -73,8 +140,17 @@ impl NonHTTPOwner010 {
         e: &mut CompletionEndpoint010,
         action: impl FnOnce(&mut AuthenticatedCompletion010, &mut CompletionEndpoint010) -> Result<T>,
     ) -> Result<T> {
+        if self.life.0.lock().map_or(true, |s| s.closed) {
+            self.close();
+            return Err(bad());
+        }
         match catch_unwind(AssertUnwindSafe(|| action(&mut self.session, e))) {
-            Ok(result) => result,
+            Ok(result) => {
+                // Re-sample under the shared mirror lock after providers return.
+                // Clock observations and mirror publication share one ordering point.
+                self.local_now(e)?;
+                result
+            }
             Err(_) => {
                 self.close();
                 Err(bad())
@@ -85,34 +161,39 @@ impl NonHTTPOwner010 {
     /// Clock access remains exclusive through the endpoint; this method alone is
     /// not a background scheduler or a cancellation path around blocked providers.
     pub fn local_now(&mut self, e: &mut CompletionEndpoint010) -> Result<i64> {
-        let previous = self.sampled;
-        let sampled = self.guarded(e, |s, e| {
-            if s.endpoint != e.identity || e.signing.is_none() {
+        let sampled = catch_unwind(AssertUnwindSafe(|| {
+            let mut mirror = self.life.0.lock().map_err(|_| bad())?;
+            let s = &self.session;
+            if mirror.closed || s.endpoint != e.identity || e.signing.is_none() {
                 return Err(bad());
             }
             let t = e.clock.now().map_err(|_| bad())?;
-            if t.mono_ms < previous.mono_ms
-                || t.unix < previous.unix
+            if t.mono_ms < mirror.sampled.mono_ms
+                || t.unix < mirror.sampled.unix
+                || t.mono_ms < self.sampled.mono_ms
+                || t.unix < self.sampled.unix
                 || e.last
                     .is_some_and(|p| t.mono_ms < p.mono_ms || t.unix < p.unix)
-                || t.mono_ms > i64::MAX / 1_000_000
-                || t.unix > 9007199254740691
+                || !(0..=i64::MAX / 1_000_000).contains(&t.mono_ms)
+                || !(0..=9007199254740691).contains(&t.unix)
                 || !pinned_live(t.unix, &s.a, &s.b)
                 || s.record_live(t).is_err()
             {
                 return Err(bad());
             }
             e.last = Some(t);
+            *mirror = OwnerLife::snapshot(s, t);
             Ok(t)
-        });
+        }))
+        .unwrap_or_else(|_| Err(bad()));
         match sampled {
             Ok(t) => {
                 self.sampled = t;
                 Ok(t.mono_ms)
             }
-            Err(e) => {
+            Err(error) => {
                 self.close();
-                Err(e)
+                Err(error)
             }
         }
     }

@@ -27,6 +27,8 @@ struct State {
     operation: Option<Arc<()>>,
     protected_deadline: Option<i64>,
     output_pending: bool,
+    life: Option<crate::hpke::completion010::OwnerLife>,
+    setup_deadline: i64,
 }
 #[derive(Clone)]
 pub(crate) struct SetupClose(Arc<Mutex<State>>, Arc<Mutex<()>>);
@@ -34,6 +36,9 @@ impl SetupClose {
     pub(crate) fn close(&self) {
         let _coordinator = self.1.lock().unwrap_or_else(|p| p.into_inner());
         let mut s = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(life) = &s.life {
+            life.invalidate();
+        }
         s.phase = Phase::Closed;
         s.pending = None;
         s.operation = None;
@@ -50,6 +55,28 @@ impl SetupClose {
             .as_ref()
             .is_some_and(|old| Arc::ptr_eq(old, operation))
         {
+            if let Some(life) = &s.life {
+                life.invalidate();
+            }
+            s.phase = Phase::Closed;
+            s.pending = None;
+            s.operation = None;
+            s.output_pending = false;
+        }
+    }
+    pub(crate) fn supervise(&self, sample: &mut dyn FnMut() -> Option<crate::registry010::Stamp>) {
+        let _coordinator = self.1.lock().unwrap_or_else(|p| p.into_inner());
+        let mut s = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        let now = s.life.as_ref().and_then(|life| life.inspect(sample));
+        let valid = !self.1.is_poisoned()
+            && now.is_some_and(|t| {
+                (s.phase == Phase::Ready || t.mono_ms < s.setup_deadline)
+                    && s.protected_deadline.is_none_or(|end| t.mono_ms < end)
+            });
+        if !valid {
+            if let Some(life) = &s.life {
+                life.invalidate();
+            }
             s.phase = Phase::Closed;
             s.pending = None;
             s.operation = None;
@@ -75,6 +102,8 @@ pub(crate) struct MCPSetup {
     info: Value,
     started: bool,
     pub(crate) response: Option<super::mcp_admission::ProtectedReply>,
+    // Last field: capacity outlives key and response destruction.
+    pub(crate) registration: Option<Arc<()>>,
 }
 fn object(raw: &[u8]) -> Result<Value> {
     canonicalize_bounds(raw, 16348, 16348, 36)?;
@@ -183,6 +212,7 @@ impl MCPSetup {
         } else {
             Phase::ServerStart
         };
+        let life = owner.lifecycle();
         Ok(Self {
             owner,
             state: Arc::new(Mutex::new(State {
@@ -192,12 +222,15 @@ impl MCPSetup {
                 operation: None,
                 protected_deadline: None,
                 output_pending: false,
+                life: Some(life),
+                setup_deadline: deadline,
             })),
             coordinator,
             deadline,
             info,
             started: false,
             response: None,
+            registration: None,
         })
     }
     pub(crate) fn closer(&self) -> SetupClose {
@@ -637,6 +670,8 @@ mod tests {
             operation: Some(Arc::new(())),
             protected_deadline: Some(100),
             output_pending: false,
+            life: None,
+            setup_deadline: 30000,
         }));
         let coordinator = Arc::new(Mutex::new(()));
         let closer = SetupClose(shared.clone(), coordinator.clone());
@@ -662,6 +697,8 @@ mod tests {
             operation: None,
             protected_deadline: None,
             output_pending: false,
+            life: None,
+            setup_deadline: 30000,
         }));
         {
             let mut s = shared.lock().unwrap();
