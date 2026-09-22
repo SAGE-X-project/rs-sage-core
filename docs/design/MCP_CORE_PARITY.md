@@ -3,7 +3,7 @@
 This is a source comparison and implementation work list, not protocol conformance
 or a replacement for historical Inspector reports. Inputs are Go
 `872307563416f144cc863d26b594b0ce7da1f2bd`, Rust baseline
-`65b6d8c3d95ac9f57c8ef6ea8bc0fe88b71ca639`, and this Rust owner lifecycle change.
+`8de4571829631270648f3e89bf982350bba71727`, and this Rust owned TCP change.
 The normative reference is sage-spec `520e5ed9a896ff8ba8ade776484f41084957aaa2`,
 `profiles/non-http-mcp-security.md`.
 
@@ -16,8 +16,8 @@ The normative reference is sage-spec `520e5ed9a896ff8ba8ade776484f41084957aaa2`,
 | Lifetime setup and protected request-ID history | Present | Shared setup and protected request history on both server and client |
 | Owner-aware durable admission and execution queue | Present | Internal gate added: authenticated owner, durable fence, final checks, bounded shared queue and single-consumer claim |
 | Protected reply publication and owned client delivery | Present | Internal one-shot protected replies and durable owned-client exchanges added |
-| Fixed workers and independent deadline cancellation | Present | Gate workers plus registered setup/session/client lifetime monitoring; transport cleanup ownership pending |
-| Bounded stream, connection and listener ownership | Present | Pending; loopback test carriage is not a production binding |
+| Fixed workers and independent deadline cancellation | Present | Gate workers plus registered setup/session/client lifetime monitoring and owned transport cleanup |
+| Bounded stream, connection and listener ownership | Present | Private native TCP framing, exclusively owned connections and fixed listener workers added |
 
 Go's implementations remain internal integrations under bounded trusted-provider
 assumptions. Their existence does not prove immutable component loading, deployed
@@ -91,18 +91,42 @@ does not retire healthy peers. Stop closes logically before waiting; timeout ret
 the monitor and registration capacity until actual owner destruction. Gate execution
 workers have a separate stop/cleanup lifecycle and admitted work may still finish.
 
-This provides independent logical lifetime closure, not remote registry revocation
-polling, forced provider termination, immediate key destruction or automatic socket
-cleanup. The owning host must drop closed owners and clients after their actual work
-ends. Production stream/connection/listener ownership and pre-handshake resource
-quotas remain pending. Blocking providers must remain bounded
+The private TCP host now connects logical closure to native socket shutdown and
+owned object destruction. It consumes the bound owner monitor and execution worker
+pool, and charges connection capacity before endpoint creation, handshake or peer
+reads. A fixed reaper closes sockets on handshake timeout or owner closure without
+waiting for the connection handler. Only fixed listener workers accept and handle
+connections; frames and accepted sockets never spawn new workers. Listener ownership
+is exclusive and stop closes the native listener even while a handler is blocked.
+
+The deployment-selected carriage prefixes each exact envelope with a four-byte
+big-endian length in 1..32768. It is not MCP stdio, a negotiation extension or a public
+standard framing declaration. Native nonblocking I/O reads exactly one frame with no
+read-ahead. Header and body share one absolute wall-time budget, additionally bounded
+by the original monotonic operation deadline. Every partial transfer and final success
+rechecks closure and time; incomplete/failed frames close the stream. Pure unit tests
+cover invalid lengths; runtime fixtures use benign loopback traffic and disconnects.
+
+A connection privately owns its endpoint, negotiated setup or durable client, and sole
+stream. Borrowed handlers can only use that owned path. The original host handshake
+bound remains active through setup and is removed only after owner binding and READY;
+the normative original key-creation setup deadline remains independently enforced.
+Connection and socket leases survive failed construction, handler return, and actual
+endpoint/provider destruction. Listener workers retain their own quota through handler
+destruction. Stop signals acceptance, sockets, execution workers and owner monitors
+before waiting; timeout retains live resources for a later wait. Gate ledger close is
+separate and requires successful quiescence.
+
+This remains a private integration under trusted bounded, non-reentrant provider and
+handler assumptions. It does not forcibly terminate callbacks, poll remote registry
+revocation, recover queued effects or establish deployment conformance. Blocking providers must remain bounded
 and non-reentrant; an active synchronous callback can retain quota until it returns.
 Retained quota is fail-closed degradation, not proof of timely cleanup. Administrative
 replacement requires retiring and cleaning the old gate before reopening its durable
 scope. No in-place configuration replacement or public owner reset is exposed.
 
-Next add owned transport and cleanup orchestration, then cross-core Inspector
-adapters. Local tests cover real encrypted sessions and journals, completed/pending
+Next connect these implementations to cross-core Inspector adapters and independently
+verify the mandatory runtime schedules. Local tests cover real encrypted sessions and journals, completed/pending
 responses, polling without re-execution, old worker completion during a newer poll,
 closure after durable acceptance, reopen without redelivery, invalid result authority,
 failed/oversized replies, 5000/5001 ms observation age, shared quotas through blocked
@@ -114,7 +138,11 @@ Owner lifecycle tests additionally cover blocked setup/client receive, idle vers
 absolute expiry, pinned key expiry, responder confirmation, shared clock rollback,
 retired poll deadlines, owner isolation, late attachment rejection, and registration
 retention through failed construction and blocking dependency destructors.
-These are implementation tests, not catalog PASS results or a production binding.
+Transport regressions additionally execute real handshake/setup and protected
+exchanges over an owned TCP listener, fragmented benign frames, incomplete-frame
+and monotonic deadlines, owner-close interruption, pre-authentication capacity,
+listener shutdown, and quota retention through blocked endpoint/handler destruction.
+These are implementation tests, not catalog PASS results or deployed conformance.
 
 ## Inspector disposition
 
@@ -124,5 +152,5 @@ The consolidated catalog's 71 cases remain NOT_RUN, and its model/checker result
 are not actual protocol execution. This change neither executes those catalog
 cases nor promotes the 26 mandatory child obligations to PASS. Rust compile-time
 ownership checks, unit tests and local TCP exchanges are separate implementation
-evidence. No full binding, Go/Rust interoperability or deployment conformance is
+evidence. No catalog-wide binding verdict, Go/Rust interoperability or deployment conformance is
 claimed from this change.

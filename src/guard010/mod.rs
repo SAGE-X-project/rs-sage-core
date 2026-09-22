@@ -581,3 +581,6 @@ pub(crate) mod mcp_owned;
 
 #[allow(dead_code)]
 pub(crate) mod mcp_lifecycle;
+
+#[allow(dead_code)]
+pub(crate) mod mcp_transport;

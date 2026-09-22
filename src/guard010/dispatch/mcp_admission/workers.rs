@@ -31,6 +31,9 @@ pub(crate) struct Workers {
     control: Arc<Control>,
 }
 impl Workers {
+    pub(crate) fn bound_to(&self, gate: &Arc<MCPGate>) -> bool {
+        Arc::ptr_eq(&self.gate, gate)
+    }
     pub(crate) fn start(
         gate: Arc<MCPGate>,
         signers: Vec<Box<dyn ResultSigner + Send>>,

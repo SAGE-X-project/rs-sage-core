@@ -675,3 +675,6 @@ fn reply_storage_or_signer_failure_retires_unclaimed_execution() {
 
 #[path = "mcp_lifecycle_tests.rs"]
 mod mcp_lifecycle_tests;
+
+#[path = "mcp_transport_tests.rs"]
+mod mcp_transport_tests;

@@ -33,6 +33,9 @@ struct State {
 #[derive(Clone)]
 pub(crate) struct SetupClose(Arc<Mutex<State>>, Arc<Mutex<()>>);
 impl SetupClose {
+    pub(crate) fn same_owner(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) && Arc::ptr_eq(&self.1, &other.1)
+    }
     pub(crate) fn close(&self) {
         let _coordinator = self.1.lock().unwrap_or_else(|p| p.into_inner());
         let mut s = self.0.lock().unwrap_or_else(|p| p.into_inner());
