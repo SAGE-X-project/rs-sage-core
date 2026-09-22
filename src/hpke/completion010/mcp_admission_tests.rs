@@ -183,6 +183,14 @@ fn authority_for(clock: Local, did: &str) -> g::RegistryAuthority {
     g::RegistryAuthority::new(registry, did, &format!("{did}#signing-1")).unwrap()
 }
 fn gate(path: &std::path::Path, sink: Arc<Sink>, capacity: usize) -> (Arc<MCPGate>, Local) {
+    gate_mode(path, sink, capacity, true)
+}
+fn gate_mode(
+    path: &std::path::Path,
+    sink: Arc<Sink>,
+    capacity: usize,
+    create: bool,
+) -> (Arc<MCPGate>, Local) {
     let clock = Local(Arc::new(AtomicI64::new(0)));
     let authority = authority_for(clock.clone(), ALICE);
     let result_authority = authority_for(clock.clone(), BOB);
@@ -190,7 +198,7 @@ fn gate(path: &std::path::Path, sink: Arc<Sink>, capacity: usize) -> (Arc<MCPGat
         Arc::new(
             MCPGate::open(
                 path,
-                true,
+                create,
                 BOB,
                 authority,
                 result_authority,
@@ -256,6 +264,72 @@ fn admission_fences_before_effects_and_gate_close_cancels_unclaimed_work() {
     assert!(gate.close().is_err()); // also retires: verify cancellation in separate test
     assert!(gate.run_one(&mut Signer).is_err());
     assert_eq!(row(&path)["state"], "UNKNOWN");
+    gate.close().unwrap();
+}
+#[test]
+fn crash_after_durable_admission_fixture() {
+    let Some(path) = std::env::var_os("SAGE_MCP_ADMISSION_CRASH_PATH") else {
+        return;
+    };
+    let path = std::path::PathBuf::from(path);
+    let (mut client, right, mut a, mut b, _, _tmp) = owner_pair();
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    let receipt = gate
+        .admit(&mut server, &mut b, &request(&mut client, &mut a))
+        .unwrap();
+    assert!(receipt.created() && receipt.committed());
+    assert_eq!(row(&path)["state"], "EXECUTING");
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    let mut lock = path.as_os_str().to_os_string();
+    lock.push(".lock");
+    assert!(std::path::Path::new(&lock).is_file());
+    std::process::exit(0);
+}
+#[test]
+fn crash_recovery_marks_admission_unknown_and_never_executes_again() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("execution");
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "hpke::completion010::tests::mcp_admission_tests::crash_after_durable_admission_fixture",
+            "--test-threads=1",
+            "--color=never",
+        ])
+        .env("SAGE_MCP_ADMISSION_CRASH_PATH", &path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "crash fixture: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut lock = path.as_os_str().to_os_string();
+    lock.push(".lock");
+    let lock = std::path::PathBuf::from(lock);
+    assert!(lock.is_file());
+    assert!(crate::execution010::Ledger::open(&path, false).is_err());
+    // The owned child has exited; this models trusted administration proving
+    // exclusive ownership before clearing the stale process lock.
+    std::fs::remove_file(lock).unwrap();
+
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate_mode(&path, sink.clone(), 1, false);
+    assert_eq!(row(&path)["state"], "UNKNOWN");
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    let (mut client, right, mut a, mut b, _, _tmp) = owner_pair();
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    let receipt = gate
+        .admit(&mut server, &mut b, &request(&mut client, &mut a))
+        .unwrap();
+    assert!(!receipt.created() && !receipt.committed());
+    assert_eq!(receipt.state(), "UNKNOWN");
+    assert!(!gate.run_one(&mut Signer).unwrap());
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
     gate.close().unwrap();
 }
 #[test]
