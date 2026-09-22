@@ -189,6 +189,22 @@ impl MCPGate {
         q.owners = Some(owners);
         Ok(())
     }
+    pub(crate) fn transport_ready(
+        &self,
+        owners: &Arc<crate::guard010::mcp_lifecycle::OwnerRegistry>,
+    ) -> bool {
+        let Ok(_c) = self.coordinator.lock() else {
+            return false;
+        };
+        self.queue.lock().is_ok_and(|q| {
+            !q.retired
+                && q.hosted
+                && !q.setup_used
+                && q.owners
+                    .as_ref()
+                    .is_some_and(|old| Arc::ptr_eq(old, owners))
+        })
+    }
     /// Bind before setup, so even the earliest close handle uses this coordinator.
     pub(crate) fn setup(
         &self,

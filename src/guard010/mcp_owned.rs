@@ -185,6 +185,21 @@ impl ClientPool {
         state.owners = Some(owners);
         Ok(())
     }
+    pub(crate) fn transport_ready(
+        &self,
+        owners: &Arc<super::mcp_lifecycle::OwnerRegistry>,
+    ) -> bool {
+        let Ok(_c) = self.coordinator.lock() else {
+            return false;
+        };
+        self.state.lock().is_ok_and(|s| {
+            !s.retired
+                && !s.setup_used
+                && s.owners
+                    .as_ref()
+                    .is_some_and(|old| Arc::ptr_eq(old, owners))
+        })
+    }
     pub(crate) fn setup(
         &self,
         owner: NonHTTPOwner010,
