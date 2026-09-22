@@ -232,13 +232,15 @@ fn ready(
     }
 }
 fn request(client: &mut NonHTTPOwner010, a: &mut CompletionEndpoint010) -> Vec<u8> {
-    let raw = g::mcp_request(
-        g::MCP_VERSION,
-        &uuid::Uuid::new_v4().to_string(),
-        &envelope(),
-    )
-    .unwrap();
-    client.seal_request(a, &raw, 30).unwrap()
+    request_with_id(client, a).0
+}
+fn request_with_id(
+    client: &mut NonHTTPOwner010,
+    a: &mut CompletionEndpoint010,
+) -> (Vec<u8>, String) {
+    let id = uuid::Uuid::new_v4().to_string();
+    let raw = g::mcp_request(g::MCP_VERSION, &id, &envelope()).unwrap();
+    (client.seal_request(a, &raw, 30).unwrap(), id)
 }
 fn row(path: &std::path::Path) -> Value {
     let raw = std::fs::read_to_string(path).unwrap();
@@ -549,6 +551,40 @@ fn final_admission_rechecks_observation_age_and_fixed_request_deadline() {
         assert_eq!(row(&path)["state"], "UNKNOWN");
         gate.close().unwrap();
     }
+}
+#[test]
+fn protected_deadline_before_final_admission_retains_identity_and_reservation() {
+    let (mut client, right, mut a, mut b, control, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, registry_clock) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    let history_before = server.history().len();
+    let (wire, request_id) = request_with_id(&mut client, &mut a);
+    let time = Arc::new(AtomicI64::new(0));
+    b.clock = Box::new(AdvancingClock {
+        control,
+        time: time.clone(),
+    });
+    *sink.hook.lock().unwrap() = Some(Box::new(move || {
+        time.store(30000, Ordering::SeqCst);
+        registry_clock.0.store(30000, Ordering::SeqCst);
+        Ok(())
+    }));
+    assert!(gate.admit(&mut server, &mut b, &wire).is_err());
+    let saved = row(&path);
+    let intent: Value = serde_json::from_slice(&envelope()).unwrap();
+    assert_eq!(saved["state"], "UNKNOWN");
+    assert_eq!(saved["call_id"], intent["intent"]["call_id"]);
+    assert_eq!(saved["nonce"], intent["intent"]["nonce"]);
+    let history = server.history();
+    assert!(history.contains(&request_id));
+    assert_eq!(history.len(), history_before + 1);
+    assert_eq!(server.phase(), Phase::Closed);
+    assert!(!gate.run_one(&mut Signer).unwrap());
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    gate.close().unwrap();
 }
 #[test]
 fn authenticated_tcp_request_reaches_durable_inert_execution() {
