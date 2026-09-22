@@ -239,6 +239,47 @@ fn failed_reply_does_not_erase_execution_or_allow_second_response() {
         gate.close().unwrap();
     }
 }
+
+#[test]
+fn protected_deadline_after_admission_fails_transport_without_rollback() {
+    let (mut left, right, mut a, mut b, control, tmp) = owner_pair();
+    let sink = Arc::new(Sink::default());
+    let path = tmp.path().join("execution");
+    let (gate, _clock) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut left, &mut server, &mut a, &mut b);
+    gate.admit(&mut server, &mut b, &request(&mut left, &mut a))
+        .unwrap();
+    assert!(gate.run_one(&mut Signer).unwrap());
+    let before = std::fs::read(&path).unwrap();
+    let sends = Arc::new(AtomicUsize::new(0));
+    let observed = sends.clone();
+    let mut io = Output {
+        bytes: Vec::new(),
+        hook: Some(Box::new(move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            control.0.borrow_mut().mono = 30000;
+            Ok(())
+        })),
+    };
+    assert!(gate
+        .reply(&mut server, &mut b, &mut io, &mut Signer)
+        .is_err());
+    assert!(gate
+        .reply(&mut server, &mut b, &mut io, &mut Signer)
+        .is_err());
+    assert_eq!(sends.load(Ordering::SeqCst), 1);
+    assert_eq!(server.phase(), Phase::Closed);
+    assert_eq!(before, std::fs::read(&path).unwrap());
+    let entry = row(&path);
+    assert_eq!(entry["state"], "COMPLETED");
+    assert!(!entry["result_hex"].as_str().unwrap().is_empty());
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 1);
+    assert!(!gate.run_one(&mut Signer).unwrap());
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 1);
+    gate.close().unwrap();
+}
+
 struct CloseAfterTerminal {
     clock: Local,
     path: std::path::PathBuf,
