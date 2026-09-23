@@ -552,6 +552,27 @@ fn final_admission_rechecks_observation_age_and_fixed_request_deadline() {
         gate.close().unwrap();
     }
 }
+
+#[test]
+fn ready_session_expiry_denies_new_admission_and_closes_owner() {
+    let (mut client, right, mut a, mut b, control, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    control.0.borrow_mut().mono = 599_999;
+    let wire = request(&mut client, &mut a);
+    let protected: Value = serde_json::from_slice(&wire).unwrap();
+    control.0.borrow_mut().mono = 600_000;
+    assert!(control.0.borrow().utc < protected["expires"].as_i64().unwrap());
+    assert!(gate.admit(&mut server, &mut b, &wire).is_err());
+    assert_eq!(server.phase(), Phase::Closed);
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    assert!(server.owner.local_now(&mut b).is_err());
+    gate.close().unwrap();
+}
+
 #[test]
 fn protected_deadline_before_final_admission_retains_identity_and_reservation() {
     let (mut client, right, mut a, mut b, control, tmp) = owner_pair();
