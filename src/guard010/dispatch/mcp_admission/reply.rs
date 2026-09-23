@@ -37,6 +37,7 @@ impl MCPGate {
                     deadline: reply.deadline,
                     claim_before: None,
                     worker_before: None,
+                    admitted: false,
                 }));
                 q.output_jobs.push(job.clone());
                 held = Some(job);

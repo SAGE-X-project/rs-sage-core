@@ -38,6 +38,7 @@ struct Job {
     deadline: i64,
     claim_before: Option<i64>,
     worker_before: Option<i64>,
+    admitted: bool,
 }
 
 pub(crate) use reply::ProtectedReply;
@@ -91,7 +92,9 @@ struct Work {
 }
 struct Queue {
     retired: bool,
+    generation: u64,
     occupied: usize,
+    admitted: usize,
     outputs: usize,
     items: VecDeque<Work>,
     last: Option<Stamp>,
@@ -114,8 +117,11 @@ pub(crate) struct MCPGate {
     executor: Arc<dyn Executor>,
     clock: Mutex<Box<dyn Clock + Send>>,
     capacity: usize,
+    preparation_capacity: usize,
     request_ms: i64,
     claim_ms: i64,
+    #[cfg(test)]
+    fail_unknown: AtomicBool,
 }
 impl MCPGate {
     #[allow(clippy::too_many_arguments)]
@@ -129,11 +135,13 @@ impl MCPGate {
         executor: Arc<dyn Executor>,
         clock: Box<dyn Clock + Send>,
         capacity: usize,
+        preparation_capacity: usize,
         request_ms: i64,
         claim_ms: i64,
     ) -> Result<Self> {
         ensure(
             (1..=128).contains(&capacity)
+                && (capacity..=128).contains(&preparation_capacity)
                 && (1..=300_000).contains(&request_ms)
                 && (1..=300_000).contains(&claim_ms),
         )?;
@@ -151,7 +159,9 @@ impl MCPGate {
             coordinator: Arc::new(Mutex::new(())),
             queue: Mutex::new(Queue {
                 retired: false,
+                generation: 1,
                 occupied: 0,
+                admitted: 0,
                 outputs: 0,
                 items: VecDeque::with_capacity(capacity),
                 last: None,
@@ -167,8 +177,11 @@ impl MCPGate {
             executor,
             clock: Mutex::new(clock),
             capacity,
+            preparation_capacity,
             request_ms,
             claim_ms,
+            #[cfg(test)]
+            fail_unknown: AtomicBool::new(false),
         })
     }
     pub(crate) fn attach_owners(
@@ -236,7 +249,10 @@ impl MCPGate {
     pub(crate) fn retire(&self) -> Result<()> {
         let _c = self.coordinator.lock().map_err(|_| Invalid)?;
         let mut q = self.queue.lock().map_err(|_| Invalid)?;
-        q.retired = true;
+        if !q.retired {
+            q.generation = q.generation.checked_add(1).ok_or(Invalid)?;
+            q.retired = true;
+        }
         for job in &q.jobs {
             job.lock().map_err(|_| Invalid)?.cancellation.cancel();
         }
@@ -247,6 +263,9 @@ impl MCPGate {
             if let Ok(mut q) = self.queue.lock() {
                 q.jobs.retain(|old| !Arc::ptr_eq(old, job));
                 q.occupied = q.occupied.saturating_sub(1);
+                if job.lock().is_ok_and(|job| job.admitted) {
+                    q.admitted = q.admitted.saturating_sub(1);
+                }
             }
         }
     }
@@ -285,10 +304,10 @@ impl MCPGate {
     ) -> Result<Admission> {
         let mut held = None;
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let (started, operation, deadline) = {
+            let (started, operation, deadline, generation) = {
                 let _c = self.coordinator.lock().map_err(|_| Invalid)?;
                 let mut q = self.queue.lock().map_err(|_| Invalid)?;
-                ensure(!q.retired && q.occupied < self.capacity)?;
+                ensure(!q.retired && q.occupied < self.preparation_capacity)?;
                 let start = owner.admission_time(endpoint, &self.coordinator, None)?;
                 Self::watermark(&mut q, start)?;
                 let deadline = start.mono_ms.checked_add(self.request_ms).ok_or(Invalid)?;
@@ -302,10 +321,11 @@ impl MCPGate {
                     deadline,
                     claim_before: None,
                     worker_before: None,
+                    admitted: false,
                 }));
                 q.jobs.push(job.clone());
                 held = Some(job);
-                (start, operation, deadline)
+                (start, operation, deadline, q.generation)
             };
             let raw = owner.open_protected(endpoint, wire)?;
             let root: Value = serde_json::from_slice(&raw).map_err(|_| Invalid)?;
@@ -373,6 +393,7 @@ impl MCPGate {
                 let now = owner.admission_time(endpoint, &self.coordinator, Some(&operation))?;
                 ensure(
                     !q.retired
+                        && q.generation == generation
                         && now.mono_ms >= started.mono_ms
                         && now.unix >= started.unix
                         && now.mono_ms < deadline
@@ -389,9 +410,15 @@ impl MCPGate {
                 Self::watermark(&mut q, now)?;
                 times(body, now.unix)?;
                 if created {
+                    ensure(q.admitted < self.capacity)?;
                     let claim_before = now.mono_ms.checked_add(self.claim_ms).ok_or(Invalid)?;
                     let job = held.as_ref().ok_or(Invalid)?.clone();
-                    job.lock().map_err(|_| Invalid)?.claim_before = Some(claim_before);
+                    {
+                        let mut job = job.lock().map_err(|_| Invalid)?;
+                        job.claim_before = Some(claim_before);
+                        job.admitted = true;
+                    }
+                    q.admitted += 1;
                     q.items.push_back(Work {
                         job,
                         invocation,
@@ -447,6 +474,10 @@ impl MCPGate {
                     self.retire()?;
                 }
                 if let Some(entry) = pending {
+                    #[cfg(test)]
+                    if self.fail_unknown.swap(false, Ordering::SeqCst) {
+                        s.store.as_mut().unwrap().fail_writes_fixture();
+                    }
                     unknown(s, entry);
                 }
                 if s.retired {
@@ -569,6 +600,30 @@ impl MCPGate {
             .unwrap()
             .close()
             .unwrap();
+    }
+    #[cfg(test)]
+    pub(crate) fn occupy_queue_fixture(&self) {
+        let _c = self.coordinator.lock().unwrap();
+        let mut q = self.queue.lock().unwrap();
+        assert!(q.admitted < self.capacity && q.occupied < self.preparation_capacity);
+        q.admitted += 1;
+        q.occupied += 1;
+    }
+    #[cfg(test)]
+    pub(crate) fn release_queue_fixture(&self) {
+        let _c = self.coordinator.lock().unwrap();
+        let mut q = self.queue.lock().unwrap();
+        assert!(q.admitted > 0 && q.occupied > 0);
+        q.admitted -= 1;
+        q.occupied -= 1;
+    }
+    #[cfg(test)]
+    pub(crate) fn fail_unknown_fixture(&self) {
+        self.fail_unknown.store(true, Ordering::SeqCst);
+    }
+    #[cfg(test)]
+    pub(crate) fn generation_fixture(&self) -> u64 {
+        self.queue.lock().unwrap().generation
     }
     /// Refuse to unlock durable storage while any provider, work or cleanup lives.
     pub(crate) fn close(&self) -> Result<()> {

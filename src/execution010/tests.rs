@@ -88,6 +88,40 @@ fn storage_failures() {
         assert!(Ledger::open(&p, false).is_err());
     }
 }
+
+#[test]
+fn recovery_conversion_failure_keeps_exclusive_ownership() {
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("ledger");
+    let mut raw = HEADER.to_vec();
+    for n in 0..MAX_ROWS - 2 {
+        let mut e = base();
+        e.call_id = format!("terminal-{n:04}");
+        e.nonce = format!("nonce-{n:04}");
+        e.state = "REJECTED".into();
+        e.result_hex = "7b7d".into();
+        raw.extend_from_slice(&serde_json::to_vec(&e).unwrap());
+        raw.push(b'\n');
+    }
+    let mut pending = base();
+    pending.call_id = "unresolved".into();
+    pending.nonce = "unresolved".into();
+    for state in ["RESERVED", "EXECUTING"] {
+        pending.state = state.into();
+        raw.extend_from_slice(&serde_json::to_vec(&pending).unwrap());
+        raw.push(b'\n');
+    }
+    fs::write(&p, raw).unwrap();
+    assert!(Ledger::open(&p, false).is_err());
+    assert!(d.path().join("ledger.lock").exists());
+    assert!(Ledger::open(&p, false).is_err());
+    assert!(!fs::read_to_string(&p)
+        .unwrap()
+        .contains("\"state\":\"UNKNOWN\""));
+}
 #[test]
 fn concurrent_reservation() {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {

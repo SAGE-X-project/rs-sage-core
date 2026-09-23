@@ -12,7 +12,7 @@ fn eventually(mut predicate: impl FnMut() -> bool) {
     }
 }
 fn monitor(capacity: usize) -> (OwnerMonitor, Local) {
-    let clock = Local(Arc::new(AtomicI64::new(0)));
+    let clock = Local(Arc::new(AtomicI64::new(0)), Arc::new(AtomicI64::new(0)));
     (
         OwnerMonitor::start(capacity, Duration::from_millis(1), Box::new(clock.clone())).unwrap(),
         clock,
