@@ -39,6 +39,22 @@ impl Source for Controls {
             state: "accepted".into(),
             expires: None,
         };
+        let targeted = (c.mode.starts_with("alice-") && did == ALICE)
+            || (c.mode.starts_with("bob-") && did == BOB);
+        if targeted {
+            let mode = c
+                .mode
+                .strip_prefix("alice-")
+                .or_else(|| c.mode.strip_prefix("bob-"))
+                .unwrap();
+            match mode {
+                "p256-signing" => k.alg = "ecdsa-p256-sha256".into(),
+                "secp256k1-signing" => k.alg = "sage-secp256k1-keccak256".into(),
+                "x25519-signing" => k.alg = "x25519".into(),
+                "alternate-signing" => k.name = "signing-2".into(),
+                _ => {}
+            }
+        }
         let mut keys = Vec::new();
         if did == BOB {
             keys.push(Key {
@@ -347,6 +363,50 @@ fn completion_scenarios() {
         r.close();
     }
 }
+#[test]
+fn signature_carriage_requires_role_bound_ed25519() {
+    let (mut a, mut b, _, _tmp) = pair();
+    let (mut pending, request) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    let outer: Value = serde_json::from_slice(&request).unwrap();
+    assert_eq!(outer["kid"], format!("{ALICE}#signing-1"));
+    let payload = B64.decode(outer["payload"].as_str().unwrap()).unwrap();
+    let binding: Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(binding["initKid"], format!("{ALICE}#signing-1"));
+    assert_eq!(binding["respKid"], format!("{BOB}#signing-1"));
+    assert_eq!(binding["kemKid"], format!("{BOB}#kem-1"));
+    let (mut provisional, response) = b.respond(&request, 300).unwrap();
+    let mut established = pending.complete(&mut a, &response).unwrap();
+    established.close();
+    provisional.close();
+
+    for role in ["alice", "bob"] {
+        for algorithm in ["p256-signing", "secp256k1-signing", "x25519-signing"] {
+            let (mut a, _, mut controls, _tmp) = pair();
+            controls.0.borrow_mut().mode = format!("{role}-{algorithm}");
+            assert!(a.start(BOB, &format!("{BOB}#signing-1"), 300).is_err());
+            if role == "bob" {
+                let snapshot = controls.read(BOB).unwrap();
+                assert_eq!(snapshot.keys[0].name, "kem-1");
+                assert_eq!(snapshot.keys[0].alg, "x25519");
+            }
+        }
+    }
+}
+
+#[test]
+fn missing_signing_key_has_no_fallback() {
+    for role in ["alice", "bob"] {
+        let (mut a, _, mut controls, _tmp) = pair();
+        controls.0.borrow_mut().mode = format!("{role}-alternate-signing");
+        assert!(a.start(BOB, &format!("{BOB}#signing-1"), 300).is_err());
+        if role == "bob" {
+            let snapshot = controls.read(BOB).unwrap();
+            assert_eq!(snapshot.keys[0].name, "kem-1");
+            assert_eq!(snapshot.keys[0].alg, "x25519");
+        }
+    }
+}
+
 #[test]
 fn lifecycle() {
     for mode in [

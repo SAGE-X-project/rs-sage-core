@@ -127,6 +127,68 @@ fn mcp_setup_encrypted_lifecycle_and_tcp_runtime() {
     }
 }
 #[test]
+fn mcp_setup_ready_past_setup_deadline_uses_protected_limits() {
+    let (mut client, right, mut a, mut b, clock, _tmp) = owner_pair();
+    let mut server = MCPSetup::new(right, &mut b, "server", "1").unwrap();
+    let mut io = Capture::default();
+    for (id, step) in [(ID1, 0), ("", 1), (ID2, 2)] {
+        let wire = client
+            .seal_request(&mut a, &setup_request(id, step), 30)
+            .unwrap();
+        server
+            .accept_setup(&mut b, &wire, &mut io, &mut || Ok(()))
+            .unwrap();
+        client.open_response(&mut a, &io.wire).unwrap();
+    }
+    assert_eq!(server.phase(), Phase::Ready);
+    clock.0.borrow_mut().mono = 31_000;
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../guard010/testdata/guard-rpc.json")).unwrap();
+    let mut envelope: Value = serde_json::from_slice(
+        &hex::decode(fixture["input"]["envelope_hex"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    envelope["intent"]["issuer"] = json!(ALICE);
+    envelope["intent"]["recipient"] = json!(BOB);
+    envelope["intent"]["keyid"] = json!(format!("{ALICE}#signing-1"));
+    envelope["intent"]["created"] = json!(131);
+    envelope["intent"]["expires"] = json!(400);
+    let bytes = [
+        b"sage-execution-intent|0.10.0\0".as_slice(),
+        canonical(&envelope["intent"]).as_slice(),
+    ]
+    .concat();
+    envelope["proof"] = json!(B64.encode(SigningKey::from_bytes(&[1; 32]).sign(&bytes).to_bytes()));
+    let id = "00000000-0000-4000-8000-000000000003";
+    let raw = crate::guard010::mcp_request("2025-06-18", id, &canonical(&envelope)).unwrap();
+    let wire = client.seal_request(&mut a, &raw, 30).unwrap();
+    assert_eq!(server.open_protected(&mut b, &wire).unwrap(), raw);
+    assert_eq!(server.phase(), Phase::Ready);
+}
+
+#[test]
+fn mcp_setup_stale_completion_after_ready_is_inert() {
+    let (mut client, right, mut a, mut b, _, _tmp) = owner_pair();
+    let mut server = MCPSetup::new(right, &mut b, "server", "1").unwrap();
+    let mut io = Capture::default();
+    for (id, step) in [(ID1, 0), ("", 1), (ID2, 2)] {
+        let wire = client
+            .seal_request(&mut a, &setup_request(id, step), 30)
+            .unwrap();
+        server
+            .accept_setup(&mut b, &wire, &mut io, &mut || Ok(()))
+            .unwrap();
+        client.open_response(&mut a, &io.wire).unwrap();
+    }
+    let history = server.history();
+    assert!(server
+        .replay_setup_publication(&mut b, Phase::Ready)
+        .is_err());
+    assert_eq!(server.phase(), Phase::Ready);
+    assert_eq!(server.history(), history);
+}
+
+#[test]
 fn mcp_setup_late_send_and_closure_cannot_publish() {
     for mode in ["close", "deadline", "failure", "panic", "revoked"] {
         let (mut client, right, mut a, mut b, clock, _tmp) = owner_pair();
