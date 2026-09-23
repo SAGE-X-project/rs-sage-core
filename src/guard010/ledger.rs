@@ -84,7 +84,7 @@ pub(super) fn reservation_entry(v: &VerifiedIntent) -> Result<Entry> {
 mod tests {
     use super::super::fixtures_test::Fixture;
     use super::*;
-    use ed25519_dalek::{Signer, SigningKey};
+    use ed25519_dalek::{Signer, SigningKey, Verifier as _};
     use serde_json::json;
     use std::fs;
     use std::sync::{Arc, Mutex};
@@ -150,6 +150,108 @@ mod tests {
                 assert_eq!(fs::read(&path).unwrap(), before)
             };
             l.close().unwrap();
+        }
+    }
+
+    struct CountingAuthority {
+        fixture: Fixture,
+        now: usize,
+        key: usize,
+    }
+    impl Authority for CountingAuthority {
+        fn now(&mut self) -> Result<i64> {
+            self.now += 1;
+            self.fixture.now()
+        }
+        fn active_key(&mut self, issuer: &str, kid: &str) -> Result<[u8; 32]> {
+            self.key += 1;
+            self.fixture.active_key(issuer, kid)
+        }
+    }
+
+    struct CountingPolicy {
+        fixture: Fixture,
+        bindings: usize,
+        authorize: usize,
+    }
+    impl IntentPolicy for CountingPolicy {
+        fn bindings(&mut self, issuer: &str, request_id: &str) -> Result<Bindings> {
+            self.bindings += 1;
+            self.fixture.bindings(issuer, request_id)
+        }
+        fn authorize(&mut self, issuer: &str, tool: &str, args: &[u8]) -> Result<()> {
+            self.authorize += 1;
+            self.fixture.authorize(issuer, tool, args)
+        }
+    }
+
+    fn intent_algorithm_envelope(fixture: &mut Value, algorithm: &str) -> Vec<u8> {
+        let mut envelope: Value = serde_json::from_slice(&raw(fixture)).unwrap();
+        envelope["intent"]["alg"] = json!(algorithm);
+        let body = encode(&envelope["intent"]).unwrap();
+        let message = [b"sage-execution-intent|0.10.0\0".as_slice(), &body].concat();
+        let proof = match algorithm {
+            "ed25519" => {
+                let seed: [u8; 32] = Sha256::digest(b"public Guard fixture issuer").into();
+                let key = SigningKey::from_bytes(&seed);
+                let signature = key.sign(&message);
+                key.verifying_key()
+                    .verify_strict(&message, &signature)
+                    .unwrap();
+                fixture["public_key_hex"] = json!(hex::encode(key.verifying_key().to_bytes()));
+                signature.to_bytes().to_vec()
+            }
+            "ecdsa-p256-sha256" => {
+                let key = crate::crypto::p256::P256KeyPair::generate().unwrap();
+                let signature = key.sign(&message).unwrap();
+                key.verify(&message, &signature).unwrap();
+                signature
+            }
+            "secp256k1" => {
+                let key = crate::crypto::secp256k1::generate_signing_key();
+                let signature: k256::ecdsa::Signature = key.sign(&message);
+                key.verifying_key().verify(&message, &signature).unwrap();
+                signature.to_bytes().to_vec()
+            }
+            _ => panic!("unexpected algorithm"),
+        };
+        envelope["proof"] = json!(B64.encode(proof));
+        serde_json::to_vec(&envelope).unwrap()
+    }
+
+    #[test]
+    fn intent_signature_algorithm_boundary_accepts_only_ed25519() {
+        for algorithm in ["ed25519", "ecdsa-p256-sha256", "secp256k1"] {
+            let mut f = fixture();
+            let raw = intent_algorithm_envelope(&mut f, algorithm);
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("journal");
+            let mut ledger =
+                GuardLedger::open(&path, true, text(&f, "expected_recipient")).unwrap();
+            let before = fs::read(&path).unwrap();
+            let mut authority = CountingAuthority {
+                fixture: Fixture(f.clone()),
+                now: 0,
+                key: 0,
+            };
+            let mut policy = CountingPolicy {
+                fixture: Fixture(f.clone()),
+                bindings: 0,
+                authorize: 0,
+            };
+            let reservation = ledger.reserve(&raw, &mut authority, &mut policy);
+            if algorithm == "ed25519" {
+                let reservation = reservation.unwrap();
+                assert!(reservation.created());
+                assert!(authority.key > 0 && policy.bindings > 0 && policy.authorize > 0);
+                assert_ne!(fs::read(&path).unwrap(), before);
+            } else {
+                assert!(reservation.is_err());
+                assert_eq!((authority.now, authority.key), (0, 0));
+                assert_eq!((policy.bindings, policy.authorize), (0, 0));
+                assert_eq!(fs::read(&path).unwrap(), before);
+            }
+            ledger.close().unwrap();
         }
     }
     #[test]
