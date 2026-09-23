@@ -15,7 +15,7 @@ use std::sync::{
 use std::time::Duration;
 
 #[derive(Clone)]
-struct Local(Arc<AtomicI64>);
+struct Local(Arc<AtomicI64>, Arc<AtomicI64>);
 impl r::Clock for Local {
     fn now(&mut self) -> Result<Stamp> {
         Ok(Stamp {
@@ -39,7 +39,7 @@ impl r::Source for Source {
             validated: true,
             finalized: true,
             conflicting: false,
-            acquired_ms: self.0 .0.load(Ordering::SeqCst),
+            acquired_ms: self.0 .0.load(Ordering::SeqCst) + self.0 .1.load(Ordering::SeqCst),
             block_hash: String::new(),
             keys_block_hash: String::new(),
             keys: vec![Key {
@@ -191,7 +191,16 @@ fn gate_mode(
     capacity: usize,
     create: bool,
 ) -> (Arc<MCPGate>, Local) {
-    let clock = Local(Arc::new(AtomicI64::new(0)));
+    gate_with_preparations(path, sink, capacity, capacity, create)
+}
+fn gate_with_preparations(
+    path: &std::path::Path,
+    sink: Arc<Sink>,
+    capacity: usize,
+    preparation_capacity: usize,
+    create: bool,
+) -> (Arc<MCPGate>, Local) {
+    let clock = Local(Arc::new(AtomicI64::new(0)), Arc::new(AtomicI64::new(0)));
     let authority = authority_for(clock.clone(), ALICE);
     let result_authority = authority_for(clock.clone(), BOB);
     (
@@ -206,6 +215,7 @@ fn gate_mode(
                 sink,
                 Box::new(clock.clone()),
                 capacity,
+                preparation_capacity,
                 30000,
                 1000,
             )
@@ -486,6 +496,192 @@ fn capacity_is_shared_across_connections_and_retained_during_actual_run() {
 }
 
 #[test]
+fn queue_capacity_race_fails_atomic_insertion() {
+    let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate_with_preparations(&path, sink.clone(), 1, 2, true);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    let competing = gate.clone();
+    *sink.hook.lock().unwrap() = Some(Box::new(move || {
+        competing.occupy_queue_fixture();
+        Ok(())
+    }));
+    assert!(gate
+        .admit(&mut server, &mut b, &request(&mut client, &mut a))
+        .is_err());
+    assert_eq!(row(&path)["state"], "UNKNOWN");
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    gate.release_queue_fixture();
+    assert!(!gate.run_one(&mut Signer).unwrap());
+    gate.close().unwrap();
+}
+
+#[test]
+fn authenticated_setup_reaches_record_limit_before_owner_history() {
+    let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate(&path, sink, 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    for sequence in 3..1000 {
+        let wire = client
+            .seal_request(&mut a, br#"{"jsonrpc":"2.0","method":"ping"}"#, 30)
+            .unwrap_or_else(|error| panic!("sequence {sequence}: {error}"));
+        server
+            .owner
+            .open_request(&mut b, &wire)
+            .unwrap_or_else(|error| panic!("sequence {sequence}: {error}"));
+    }
+    assert!(client.seal_request(&mut a, b"{}", 30).is_err());
+    assert!(client.seal_request(&mut a, b"{}", 30).is_err());
+    assert!(server.history().len() < 1024);
+    gate.close().unwrap();
+}
+
+#[test]
+fn failed_unknown_persistence_retires_scope_and_keeps_writer_lock() {
+    let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    let failed = gate.clone();
+    *sink.hook.lock().unwrap() = Some(Box::new(move || {
+        failed.fail_unknown_fixture();
+        Err(g::Invalid)
+    }));
+    assert!(gate
+        .admit(&mut server, &mut b, &request(&mut client, &mut a))
+        .is_err());
+    assert_eq!(row(&path)["state"], "EXECUTING");
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    assert!(gate.close().is_err());
+    assert!(path.with_extension("lock").exists());
+}
+
+#[test]
+fn policy_generation_change_before_coordinator_denies_admission() {
+    let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    let observed = gate.generation_fixture();
+    let retired = gate.clone();
+    *sink.hook.lock().unwrap() = Some(Box::new(move || retired.retire()));
+    assert!(gate
+        .admit(&mut server, &mut b, &request(&mut client, &mut a))
+        .is_err());
+    assert_eq!(gate.generation_fixture(), observed + 1);
+    assert_eq!(row(&path)["state"], "UNKNOWN");
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    gate.close().unwrap();
+}
+
+#[test]
+fn component_generation_change_before_coordinator_denies_admission() {
+    let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    let observed = gate.generation_fixture();
+    let retired = gate.clone();
+    *sink.hook.lock().unwrap() = Some(Box::new(move || retired.retire()));
+    assert!(gate
+        .admit(&mut server, &mut b, &request(&mut client, &mut a))
+        .is_err());
+    assert_eq!(gate.generation_fixture(), observed + 1);
+    assert_eq!(row(&path)["state"], "UNKNOWN");
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    gate.close().unwrap();
+}
+
+#[test]
+fn observation_acquired_before_operation_start_is_rejected() {
+    let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, clock) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    *sink.hook.lock().unwrap() = Some(Box::new(move || {
+        clock.1.store(-1, Ordering::SeqCst);
+        Ok(())
+    }));
+    assert!(gate
+        .admit(&mut server, &mut b, &request(&mut client, &mut a))
+        .is_err());
+    assert_eq!(row(&path)["state"], "UNKNOWN");
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    gate.close().unwrap();
+}
+
+#[test]
+fn policy_retirement_and_claim_are_serialized() {
+    for claim_first in [false, true] {
+        let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+        let path = tmp.path().join("execution");
+        let sink = Arc::new(Sink::default());
+        let (gate, _) = gate(&path, sink.clone(), 1);
+        let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+        ready(&mut client, &mut server, &mut a, &mut b);
+        gate.admit(&mut server, &mut b, &request(&mut client, &mut a))
+            .unwrap();
+        if !claim_first {
+            gate.retire().unwrap();
+            assert!(gate.run_one(&mut Signer).is_err());
+            assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+            assert_eq!(row(&path)["state"], "UNKNOWN");
+        } else {
+            let retired = gate.clone();
+            *sink.run_hook.lock().unwrap() = Some(Box::new(move || retired.retire()));
+            assert!(gate.run_one(&mut Signer).unwrap());
+            assert_eq!(sink.effects.load(Ordering::SeqCst), 1);
+            assert_eq!(row(&path)["state"], "COMPLETED");
+        }
+        gate.close().unwrap();
+    }
+}
+
+#[test]
+fn scheduler_cancel_and_claim_race_is_serialized() {
+    for claim_first in [false, true] {
+        let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+        let path = tmp.path().join("execution");
+        let sink = Arc::new(Sink::default());
+        let (gate, clock) = gate(&path, sink.clone(), 1);
+        let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+        ready(&mut client, &mut server, &mut a, &mut b);
+        gate.admit(&mut server, &mut b, &request(&mut client, &mut a))
+            .unwrap();
+        if !claim_first {
+            clock.0.store(1000, Ordering::SeqCst);
+            gate.sweep().unwrap();
+            assert!(gate.run_one(&mut Signer).is_err());
+            assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+            assert_eq!(row(&path)["state"], "UNKNOWN");
+        } else {
+            let claimed = gate.clone();
+            *sink.run_hook.lock().unwrap() = Some(Box::new(move || {
+                clock.0.store(1000, Ordering::SeqCst);
+                claimed.sweep()
+            }));
+            assert!(gate.run_one(&mut Signer).unwrap());
+            assert_eq!(sink.effects.load(Ordering::SeqCst), 1);
+            assert_eq!(row(&path)["state"], "COMPLETED");
+        }
+        gate.close().unwrap();
+    }
+}
+
+#[test]
 fn unavailable_storage_cancels_existing_unclaimed_work() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -538,6 +734,7 @@ impl r::Clock for AdvancingClock {
 #[test]
 fn final_admission_rechecks_observation_age_and_fixed_request_deadline() {
     for (delay, refresh_registry, accepted) in [
+        (4999, false, true),
         (5000, false, true),
         (5001, false, false),
         (30000, true, false),

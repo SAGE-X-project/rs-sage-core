@@ -247,7 +247,12 @@ impl Ledger {
             .collect();
         for mut e in pending {
             e.state = "UNKNOWN".into();
-            self.append(e)?;
+            if let Err(error) = self.append(e) {
+                // Recovery is an integrity operation. Even failures detected
+                // before a write keep exclusive ownership for administration.
+                self.failed = true;
+                return Err(error);
+            }
         }
         Ok(())
     }
@@ -293,6 +298,10 @@ impl Ledger {
             return Err(Error::Unavailable);
         }
         Ok(self.entries.get(&(issuer.into(), call.into())).cloned())
+    }
+    #[cfg(test)]
+    pub(crate) fn fail_writes_fixture(&mut self) {
+        self.file = Some(File::open(self.lock.with_extension("")).unwrap());
     }
     /// Release a healthy writer lock. Poisoned handles retain their lock for
     /// explicit administrative recovery. No implicit unlock occurs on Drop.
