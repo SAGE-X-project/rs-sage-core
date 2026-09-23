@@ -519,6 +519,83 @@ fn queue_capacity_race_fails_atomic_insertion() {
 }
 
 #[test]
+fn queue_insertion_failure_has_no_visibility_or_effect() {
+    let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    gate.fail_insert_fixture();
+    assert!(gate
+        .admit(&mut server, &mut b, &request(&mut client, &mut a))
+        .is_err());
+    assert_eq!(row(&path)["state"], "UNKNOWN");
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    assert!(!gate.run_one(&mut Signer).unwrap());
+    gate.close().unwrap();
+}
+
+#[test]
+fn close_during_fence_preserves_actual_storage_outcome() {
+    for mode in 0..=2 {
+        let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+        let path = tmp.path().join("execution");
+        let sink = Arc::new(Sink::default());
+        let (gate, _) = gate(&path, sink.clone(), 1);
+        let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+        ready(&mut client, &mut server, &mut a, &mut b);
+        let close = server.closer();
+        gate.fence_outcome_fixture(mode, Box::new(move || close.close()));
+        assert!(gate
+            .admit(&mut server, &mut b, &request(&mut client, &mut a))
+            .is_err());
+        let expected = ["UNKNOWN", "RESERVED", "EXECUTING"][mode];
+        assert_eq!(row(&path)["state"], expected);
+        assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+        assert!(!gate.run_one(&mut Signer).unwrap_or(false));
+        if mode == 0 {
+            gate.close().unwrap();
+        } else {
+            assert!(gate.close().is_err());
+            assert!(path.with_extension("lock").exists());
+        }
+    }
+}
+
+#[test]
+fn closing_one_shared_owner_does_not_close_another() {
+    let (mut first_client, first_right, mut first_a, mut first_b, _, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate(&path, sink.clone(), 1);
+    let mut first = gate.setup(first_right, &mut first_b, "first", "1").unwrap();
+    ready(&mut first_client, &mut first, &mut first_a, &mut first_b);
+    let (mut second_client, second_right, mut second_a, mut second_b, _, _tmp2) = owner_pair();
+    let mut second = gate
+        .setup(second_right, &mut second_b, "second", "1")
+        .unwrap();
+    ready(
+        &mut second_client,
+        &mut second,
+        &mut second_a,
+        &mut second_b,
+    );
+    first.closer().close();
+    assert!(gate
+        .admit(
+            &mut second,
+            &mut second_b,
+            &request(&mut second_client, &mut second_a),
+        )
+        .unwrap()
+        .committed());
+    assert!(gate.run_one(&mut Signer).unwrap());
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 1);
+    gate.close().unwrap();
+}
+
+#[test]
 fn authenticated_setup_reaches_record_limit_before_owner_history() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -604,6 +681,29 @@ fn component_generation_change_before_coordinator_denies_admission() {
 }
 
 #[test]
+fn session_generation_change_before_coordinator_denies_admission() {
+    for revocation in [1, 2] {
+        let (mut client, right, mut a, mut b, controls, tmp) = owner_pair();
+        let path = tmp.path().join("execution");
+        let sink = Arc::new(Sink::default());
+        let (gate, _) = gate(&path, sink.clone(), 1);
+        let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+        ready(&mut client, &mut server, &mut a, &mut b);
+        let state = controls.1.clone();
+        *sink.hook.lock().unwrap() = Some(Box::new(move || {
+            state.store(revocation, Ordering::SeqCst);
+            Ok(())
+        }));
+        assert!(gate
+            .admit(&mut server, &mut b, &request(&mut client, &mut a))
+            .is_err());
+        assert_eq!(row(&path)["state"], "UNKNOWN");
+        assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+        gate.close().unwrap();
+    }
+}
+
+#[test]
 fn observation_acquired_before_operation_start_is_rejected() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -647,6 +747,37 @@ fn policy_retirement_and_claim_are_serialized() {
             assert_eq!(row(&path)["state"], "COMPLETED");
         }
         gate.close().unwrap();
+    }
+}
+
+#[test]
+fn component_replacement_and_claim_are_serialized() {
+    for claim_first in [false, true] {
+        let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+        let path = tmp.path().join("execution");
+        let sink = Arc::new(Sink::default());
+        let (gate, _) = gate(&path, sink.clone(), 1);
+        let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+        ready(&mut client, &mut server, &mut a, &mut b);
+        gate.admit(&mut server, &mut b, &request(&mut client, &mut a))
+            .unwrap();
+        if claim_first {
+            let retired = gate.clone();
+            *sink.run_hook.lock().unwrap() = Some(Box::new(move || retired.retire()));
+            assert!(gate.run_one(&mut Signer).unwrap());
+            assert_eq!(sink.effects.load(Ordering::SeqCst), 1);
+            assert_eq!(row(&path)["state"], "COMPLETED");
+        } else {
+            gate.retire().unwrap();
+            assert!(gate.run_one(&mut Signer).is_err());
+            assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+            assert_eq!(row(&path)["state"], "UNKNOWN");
+        }
+        gate.close().unwrap();
+        let replacement = Arc::new(Sink::default());
+        let (replacement_gate, _) = gate_mode(&path, replacement.clone(), 1, false);
+        assert_eq!(replacement.effects.load(Ordering::SeqCst), 0);
+        replacement_gate.close().unwrap();
     }
 }
 

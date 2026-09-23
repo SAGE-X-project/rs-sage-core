@@ -7,6 +7,8 @@ use crate::hpke::completion010::{CompletionEndpoint010, NonHTTPOwner010};
 use crate::registry010::{Clock, Stamp};
 use std::collections::VecDeque;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// One pinned immutable instance. Run returns only after the actual effect ends;
@@ -120,8 +122,15 @@ pub(crate) struct MCPGate {
     preparation_capacity: usize,
     request_ms: i64,
     claim_ms: i64,
+    retain_writer: AtomicBool,
     #[cfg(test)]
     fail_unknown: AtomicBool,
+    #[cfg(test)]
+    fail_insert: AtomicBool,
+    #[cfg(test)]
+    fence_mode: AtomicUsize,
+    #[cfg(test)]
+    fence_hook: Mutex<Option<Box<dyn FnMut() + Send>>>,
 }
 impl MCPGate {
     #[allow(clippy::too_many_arguments)]
@@ -180,8 +189,15 @@ impl MCPGate {
             preparation_capacity,
             request_ms,
             claim_ms,
+            retain_writer: AtomicBool::new(false),
             #[cfg(test)]
             fail_unknown: AtomicBool::new(false),
+            #[cfg(test)]
+            fail_insert: AtomicBool::new(false),
+            #[cfg(test)]
+            fence_mode: AtomicUsize::new(0),
+            #[cfg(test)]
+            fence_hook: Mutex::new(None),
         })
     }
     pub(crate) fn attach_owners(
@@ -369,10 +385,36 @@ impl MCPGate {
                 if created {
                     pending = Some(entry.clone());
                     entry.state = "EXECUTING".into();
+                    #[cfg(test)]
+                    let fence_mode = self.fence_mode.swap(0, Ordering::SeqCst);
+                    #[cfg(not(test))]
+                    let fence_mode = 0;
+                    if fence_mode == 1 {
+                        #[cfg(test)]
+                        if let Some(hook) = self.fence_hook.lock().unwrap().as_mut() {
+                            hook();
+                        }
+                        pending = None;
+                        self.retain_writer.store(true, Ordering::SeqCst);
+                        s.retired = true;
+                        return Err(Invalid);
+                    }
                     if !matches!(
                         s.store.as_mut().ok_or(Invalid)?.commit(entry.clone()),
                         Ok(true)
                     ) {
+                        pending = None;
+                        self.retain_writer.store(true, Ordering::SeqCst);
+                        s.retired = true;
+                        return Err(Invalid);
+                    }
+                    #[cfg(test)]
+                    if let Some(hook) = self.fence_hook.lock().unwrap().as_mut() {
+                        hook();
+                    }
+                    if fence_mode == 2 {
+                        pending = None;
+                        self.retain_writer.store(true, Ordering::SeqCst);
                         s.retired = true;
                         return Err(Invalid);
                     }
@@ -411,6 +453,8 @@ impl MCPGate {
                 times(body, now.unix)?;
                 if created {
                     ensure(q.admitted < self.capacity)?;
+                    #[cfg(test)]
+                    ensure(!self.fail_insert.swap(false, Ordering::SeqCst))?;
                     let claim_before = now.mono_ms.checked_add(self.claim_ms).ok_or(Invalid)?;
                     let job = held.as_ref().ok_or(Invalid)?.clone();
                     {
@@ -622,6 +666,16 @@ impl MCPGate {
         self.fail_unknown.store(true, Ordering::SeqCst);
     }
     #[cfg(test)]
+    pub(crate) fn fail_insert_fixture(&self) {
+        self.fail_insert.store(true, Ordering::SeqCst);
+    }
+    #[cfg(test)]
+    pub(crate) fn fence_outcome_fixture(&self, mode: usize, hook: Box<dyn FnMut() + Send>) {
+        assert!((0..=2).contains(&mode));
+        self.fence_mode.store(mode, Ordering::SeqCst);
+        *self.fence_hook.lock().unwrap() = Some(hook);
+    }
+    #[cfg(test)]
     pub(crate) fn generation_fixture(&self) -> u64 {
         self.queue.lock().unwrap().generation
     }
@@ -629,6 +683,7 @@ impl MCPGate {
     pub(crate) fn close(&self) -> Result<()> {
         self.retire()?;
         let mut s = self.execution.state.lock().map_err(|_| Invalid)?;
+        ensure(!self.retain_writer.load(Ordering::SeqCst))?;
         let _c = self.coordinator.lock().map_err(|_| Invalid)?;
         {
             let q = self.queue.lock().map_err(|_| Invalid)?;

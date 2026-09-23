@@ -12,7 +12,10 @@ struct Control {
     mode: String,
 }
 #[derive(Clone)]
-struct Controls(Rc<RefCell<Control>>);
+struct Controls(
+    Rc<RefCell<Control>>,
+    std::sync::Arc<std::sync::atomic::AtomicUsize>,
+);
 impl Clock for Controls {
     fn now(&mut self) -> Result<Stamp> {
         let c = self.0.borrow();
@@ -73,11 +76,21 @@ impl Source for Controls {
         if (c.mode == "revoke-init" && did == ALICE) || (c.mode == "revoke-resp" && did == BOB) {
             k.state = "revoked".into()
         }
+        let admission_revocation = self.1.load(std::sync::atomic::Ordering::SeqCst);
+        if admission_revocation == 1 && did == BOB {
+            k.state = "revoked".into();
+        }
         if c.mode == "changed-material" && did == BOB {
             k.material = hex::encode(SigningKey::from_bytes(&[4; 32]).verifying_key().to_bytes())
         }
+        if admission_revocation == 2 && did == BOB {
+            if let Some(kem) = keys.first_mut() {
+                kem.state = "revoked".into();
+            }
+        }
         keys.push(k.clone());
-        let version = if c.mode.starts_with("revoke")
+        let version = if admission_revocation != 0
+            || c.mode.starts_with("revoke")
             || ["changed-material", "unrelated"].contains(&c.mode.as_str())
         {
             "3"
@@ -191,10 +204,13 @@ fn pair() -> (
     tempfile::TempDir,
 ) {
     let tmp = tempfile::tempdir().unwrap();
-    let controls = Controls(Rc::new(RefCell::new(Control {
-        utc: 100,
-        ..Default::default()
-    })));
+    let controls = Controls(
+        Rc::new(RefCell::new(Control {
+            utc: 100,
+            ..Default::default()
+        })),
+        std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+    );
     let make = |did: &str, n: u8| {
         let gate = Gate::new(
             Config {
