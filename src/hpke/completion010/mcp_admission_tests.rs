@@ -247,6 +247,25 @@ fn row(path: &std::path::Path) -> Value {
     serde_json::from_str(raw.lines().last().unwrap()).unwrap()
 }
 #[test]
+fn close_before_reservation_denies_with_zero_effects() {
+    let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+    let path = tmp.path().join("execution");
+    let sink = Arc::new(Sink::default());
+    let (gate, _) = gate(&path, sink.clone(), 1);
+    let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+    ready(&mut client, &mut server, &mut a, &mut b);
+    let before = std::fs::read(&path).unwrap();
+    let wire = request(&mut client, &mut a);
+    server.closer().close();
+    assert!(gate.admit(&mut server, &mut b, &wire).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert_eq!(sink.checks.load(Ordering::SeqCst), 0);
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    assert!(!gate.run_one(&mut Signer).unwrap());
+    gate.close().unwrap();
+}
+
+#[test]
 fn admission_fences_before_effects_and_gate_close_cancels_unclaimed_work() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");

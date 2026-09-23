@@ -243,6 +243,14 @@ impl MCPSetup {
     pub(crate) fn history(&self) -> Vec<String> {
         self.state.lock().unwrap().seen.iter().cloned().collect()
     }
+    #[cfg(test)]
+    pub(crate) fn replay_setup_publication(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        next: Phase,
+    ) -> Result<()> {
+        self.publish(e, next, true)
+    }
     pub(crate) fn phase(&self) -> Phase {
         if self.coordinator.is_poisoned() {
             return Phase::Closed;
