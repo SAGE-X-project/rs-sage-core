@@ -219,6 +219,88 @@ mod tests {
         serde_json::to_vec(&envelope).unwrap()
     }
 
+    fn result_fixture() -> Value {
+        cases()
+            .into_iter()
+            .find(|c| c["id"] == "result-completed-valid")
+            .unwrap()["input"]
+            .clone()
+    }
+
+    fn result_algorithm_envelope(fixture: &mut Value, algorithm: &str) -> Vec<u8> {
+        let source = hex::decode(text(fixture, "envelope_hex")).unwrap();
+        let mut envelope: Value = serde_json::from_slice(&source).unwrap();
+        envelope["result"]["alg"] = json!(algorithm);
+        let body = encode(&envelope["result"]).unwrap();
+        let message = [b"sage-tool-result|0.10.0\0".as_slice(), &body].concat();
+        let proof = match algorithm {
+            "ed25519" => {
+                let seed: [u8; 32] = Sha256::digest(b"public Guard fixture executor").into();
+                let key = SigningKey::from_bytes(&seed);
+                let signature = key.sign(&message);
+                key.verifying_key()
+                    .verify_strict(&message, &signature)
+                    .unwrap();
+                fixture["public_key_hex"] = json!(hex::encode(key.verifying_key().to_bytes()));
+                signature.to_bytes().to_vec()
+            }
+            "ecdsa-p256-sha256" => {
+                let key = crate::crypto::p256::P256KeyPair::generate().unwrap();
+                let signature = key.sign(&message).unwrap();
+                key.verify(&message, &signature).unwrap();
+                signature
+            }
+            "secp256k1" => {
+                let key = crate::crypto::secp256k1::generate_signing_key();
+                let signature: k256::ecdsa::Signature = key.sign(&message);
+                key.verifying_key().verify(&message, &signature).unwrap();
+                signature.to_bytes().to_vec()
+            }
+            _ => panic!("unexpected algorithm"),
+        };
+        envelope["proof"] = json!(B64.encode(proof));
+        serde_json::to_vec(&envelope).unwrap()
+    }
+
+    struct CountingOutstanding {
+        fixture: Fixture,
+        lookups: usize,
+    }
+    impl Outstanding for CountingOutstanding {
+        fn intent(&mut self, request_id: &str, call_id: &str) -> Result<Vec<u8>> {
+            self.lookups += 1;
+            self.fixture.intent(request_id, call_id)
+        }
+    }
+
+    #[test]
+    fn result_signature_algorithm_boundary_accepts_only_ed25519() {
+        for algorithm in ["ed25519", "ecdsa-p256-sha256", "secp256k1"] {
+            let mut f = result_fixture();
+            let raw = result_algorithm_envelope(&mut f, algorithm);
+            let mut authority = CountingAuthority {
+                fixture: Fixture(f.clone()),
+                now: 0,
+                key: 0,
+            };
+            let mut outstanding = CountingOutstanding {
+                fixture: Fixture(f),
+                lookups: 0,
+            };
+            let verified = verify_result(&raw, &mut authority, &mut outstanding);
+            if algorithm == "ed25519" {
+                let verified = verified.unwrap();
+                assert_eq!(verified.status(), "completed");
+                assert!(authority.key > 0);
+                assert_eq!(outstanding.lookups, 1);
+            } else {
+                assert!(verified.is_err());
+                assert_eq!((authority.now, authority.key), (0, 0));
+                assert_eq!(outstanding.lookups, 0);
+            }
+        }
+    }
+
     #[test]
     fn intent_signature_algorithm_boundary_accepts_only_ed25519() {
         for algorithm in ["ed25519", "ecdsa-p256-sha256", "secp256k1"] {
