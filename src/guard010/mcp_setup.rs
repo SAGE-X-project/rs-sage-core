@@ -189,6 +189,9 @@ fn encode(v: Value) -> Result<Vec<u8>> {
     ensure(b.len() <= 16348)?;
     Ok(b)
 }
+fn distinct_request_id(inner: &str, wire: &[u8]) -> Result<()> {
+    ensure(inner.is_empty() || wire_id(wire)? != inner)
+}
 impl MCPSetup {
     pub(crate) fn new(
         owner: NonHTTPOwner010,
@@ -400,7 +403,7 @@ impl MCPSetup {
             )?;
             let wire = self.owner.seal_request(e, &raw, 30).map_err(|_| Invalid)?;
             let outer = wire_id(&wire)?;
-            ensure(id.is_empty() || id != outer)?;
+            distinct_request_id(&id, &wire)?;
             self.send(e, io, &wire, pending)?;
             let response = self.receive(io)?;
             let r = self
@@ -411,7 +414,7 @@ impl MCPSetup {
                 r.message_id == outer
                     && r.success
                     && r.error.is_empty()
-                    && (id.is_empty() || wire_id(&response)? != id),
+                    && distinct_request_id(&id, &response).is_ok(),
             )?;
             match index {
                 0 => initialize(&r.data, &id, true)?,
@@ -441,7 +444,7 @@ impl MCPSetup {
             let raw = s.owner.open_request(e, wire).map_err(|_| Invalid)?;
             let m = object(&raw)?;
             let id = text(&m, "id");
-            ensure(id.is_empty() || id != wire_id(wire)?)?;
+            distinct_request_id(id, wire)?;
             let phase = s.phase();
             let next = match phase {
                 Phase::ServerStart => Phase::WaitInitialized,
@@ -475,7 +478,7 @@ impl MCPSetup {
             };
             ensure(!s.closer().closed())?;
             let reply = s.owner.seal_response(e, &wire_id(wire)?, &response, None, 30).map_err(|_| Invalid)?;
-            ensure(id.is_empty() || wire_id(&reply)? != id)?;
+            distinct_request_id(id, &reply)?;
             s.send(e, io, &reply, next)
         })
     }
@@ -599,7 +602,7 @@ impl MCPSetup {
             let raw = s.owner.open_request(e, wire).map_err(|_| Invalid)?;
             let m = object(&raw)?;
             let id = text(&m, "id");
-            ensure(id != wire_id(wire)?)?;
+            distinct_request_id(id, wire)?;
             {
                 let mut state = s.state.lock().map_err(|_| Invalid)?;
                 Self::valid(&mut s.owner, e, &state, s.deadline)?;
@@ -629,6 +632,14 @@ mod tests {
     fn request() -> Value {
         json!({"jsonrpc":"2.0","id":ID,"method":"initialize","params":{"protocolVersion":MCP_VERSION,"capabilities":{},"clientInfo":{"name":"test","version":"1"}}})
     }
+    #[test]
+    fn outer_and_inner_request_ids_remain_distinct() {
+        let outer = serde_json::to_vec(&json!({"id": ID})).unwrap();
+        assert!(distinct_request_id(ID, &outer).is_err());
+        assert!(distinct_request_id("00000000-0000-4000-8000-000000000002", &outer).is_ok());
+        assert!(distinct_request_id("", &outer).is_ok());
+    }
+
     #[test]
     fn setup_codecs_are_bounded_and_closed() {
         let valid = serde_json::to_vec(&request()).unwrap();
