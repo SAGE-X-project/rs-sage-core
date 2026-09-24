@@ -540,7 +540,8 @@ mod dispatch_tests;
 
 mod client;
 pub use client::{
-    Client, ClientClock, ClientDelivery, ClientInvocation, ClientSender, ClientServices,
+    Client, ClientClock, ClientDelivery, ClientInvocation, ClientSender, ClientServices, HopParent,
+    HopServices,
 };
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod client_tests;

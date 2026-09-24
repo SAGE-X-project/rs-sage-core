@@ -1,6 +1,8 @@
 use super::fixtures_test::Fixture;
 use super::*;
+use ed25519_dalek::{Signer, SigningKey};
 use serde_json::json;
+use sha2::Digest;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -119,6 +121,124 @@ fn client_requires_trusted_peer_binding() {
             "{name}"
         );
     }
+}
+
+struct ParentState(Arc<Mutex<(bool, usize, usize)>>);
+impl HopParent for ParentState {
+    fn authorized(&mut self, _: &[u8]) -> Result<()> {
+        let mut state = self.0.lock().map_err(|_| Invalid)?;
+        state.1 += 1;
+        ensure(state.0 && state.1 != state.2)
+    }
+}
+#[test]
+fn hop_client_capture_and_parent_gate() {
+    let v = suite();
+    let incoming = hex::decode(text(&v["input"], "envelope_hex")).unwrap();
+    let mut child: Value = serde_json::from_slice(&incoming).unwrap();
+    let b = text(&v["input"], "expected_recipient");
+    let c = text(&v["input"], "expected_issuer");
+    let mut policy = v["input"]["approved_policy"].clone();
+    policy["issuer"] = json!(b);
+    let digest = original_commitment(&[incoming.clone()]).unwrap();
+    child["intent"]["issuer"] = json!(b);
+    child["intent"]["recipient"] = json!(c);
+    child["intent"]["keyid"] = json!(format!("{b}#signing-1"));
+    child["intent"]["request_id"] = json!("00000000-0000-4000-8000-000000000011");
+    child["intent"]["call_id"] = json!("00000000-0000-4000-8000-000000000012");
+    child["intent"]["original_digest"] = json!(digest);
+    child["intent"]["nonce"] = json!("AgICAgICAgICAgICAgICAg");
+    child["intent"]["policy_digest"] = json!(policy_commitment(&encode(&policy).unwrap()).unwrap());
+    let seed: [u8; 32] = Sha256::digest(b"public Guard fixture issuer").into();
+    let key = SigningKey::from_bytes(&seed);
+    let mut message = b"sage-execution-intent|0.10.0\0".to_vec();
+    message.extend(encode(&child["intent"]).unwrap());
+    use base64::Engine;
+    child["proof"] = json!(
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.sign(&message).to_bytes())
+    );
+    let outgoing = encode(&child).unwrap();
+    let mut out = v["input"].clone();
+    out["expected_issuer"] = json!(b);
+    out["expected_recipient"] = json!(c);
+    out["original_digest"] = json!(digest);
+    out["approved_policy"] = policy;
+    out["public_key_hex"] = json!(hex::encode(key.verifying_key().to_bytes()));
+    let carrier = Services(Arc::new(Mutex::new(
+        json!({"input":out,"public":v["public_key_hex"],
+        "clock_ok":true,"result_active":true,"utc":1700000000000_i64,"mono":0}),
+    )));
+    let config = || ClientServices {
+        intent_authority: Box::new(Fixture(out.clone())),
+        policy: Box::new(Fixture(out.clone())),
+        result_authority: Box::new(Fixture(out.clone())),
+        clock: Box::new(carrier.clone()),
+        sender: Box::new(carrier.clone()),
+        expected_issuer: b.into(),
+        expected_recipient: c.into(),
+    };
+    let allowed = Arc::new(Mutex::new((false, 0usize, 0usize)));
+    let hop = || HopServices {
+        authority: Box::new(Fixture(v["input"].clone())),
+        policy: Box::new(Fixture(v["input"].clone())),
+        parent: Box::new(ParentState(allowed.clone())),
+    };
+    let d = tempfile::tempdir().unwrap();
+    let path = d.path().join("journal");
+    assert!(Client::open_hop(&path, true, &incoming, &outgoing, config(), hop()).is_err());
+    assert!(!path.exists());
+    allowed.lock().unwrap().0 = true;
+    let parent: Value = serde_json::from_slice(&incoming).unwrap();
+    for (field, value) in [
+        (
+            "original_digest",
+            parent["intent"]["original_digest"].clone(),
+        ),
+        ("request_id", parent["intent"]["request_id"].clone()),
+        ("call_id", parent["intent"]["call_id"].clone()),
+    ] {
+        let mut changed = child.clone();
+        changed["intent"][field] = value;
+        let mut signed = b"sage-execution-intent|0.10.0\0".to_vec();
+        signed.extend(encode(&changed["intent"]).unwrap());
+        changed["proof"] =
+            json!(base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(key.sign(&signed).to_bytes()));
+        assert!(
+            Client::open_hop(
+                &path,
+                true,
+                &incoming,
+                &encode(&changed).unwrap(),
+                config(),
+                hop()
+            )
+            .is_err(),
+            "{field}"
+        );
+        assert!(!path.exists(), "{field}");
+    }
+    let client = Client::open_hop(&path, true, &incoming, &outgoing, config(), hop()).unwrap();
+    allowed.lock().unwrap().0 = false;
+    assert!(client
+        .begin("00000000-0000-4000-8000-000000000020")
+        .is_err());
+    assert_eq!(carrier.0.lock().unwrap()["handoffs"], Value::Null);
+    allowed.lock().unwrap().0 = true;
+    assert!(client.begin("00000000-0000-4000-8000-000000000021").is_ok());
+    assert_eq!(carrier.0.lock().unwrap()["handoffs"], 1);
+    client.close().unwrap();
+
+    let d = tempfile::tempdir().unwrap();
+    let path = d.path().join("journal");
+    let count = allowed.lock().unwrap().1;
+    allowed.lock().unwrap().2 = count + 3;
+    let client = Client::open_hop(&path, true, &incoming, &outgoing, config(), hop()).unwrap();
+    assert!(client
+        .begin("00000000-0000-4000-8000-000000000022")
+        .is_err());
+    assert_eq!(carrier.0.lock().unwrap()["handoffs"], 1);
+    client.close().unwrap();
 }
 pub(super) fn setup() -> (
     tempfile::TempDir,

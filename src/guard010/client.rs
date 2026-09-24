@@ -40,6 +40,51 @@ pub struct ClientServices {
     /// Trusted target identity; never selected by the signed intent.
     pub expected_recipient: String,
 }
+/// Durable authorized parent admission for the exact authenticated envelope.
+/// Missing, rejected and unknown states must fail.
+pub trait HopParent {
+    /// Recheck the parent before each protected downstream handoff.
+    fn authorized(&mut self, incoming: &[u8]) -> Result<()>;
+}
+/// Trusted A-to-B providers, independent of B's B-to-C authority and policy.
+pub struct HopServices {
+    /// Current upstream signing authority.
+    pub authority: Box<dyn Authority + Send>,
+    /// Upstream authorization policy.
+    pub policy: Box<dyn IntentPolicy + Send>,
+    /// Protected parent outcome store.
+    pub parent: Box<dyn HopParent + Send>,
+}
+struct HopBinding {
+    incoming: Vec<u8>,
+    services: HopServices,
+}
+fn check_hop(
+    incoming: &[u8],
+    outgoing: &[u8],
+    s: &ClientServices,
+    h: &mut HopServices,
+) -> Result<()> {
+    let (parent_envelope, parent_canonical) = intent_envelope(incoming)?;
+    let parent = &parent_envelope["intent"];
+    ensure(incoming == parent_canonical && text(parent, "recipient") == s.expected_issuer)?;
+    verify_intent(
+        incoming,
+        &s.expected_issuer,
+        h.authority.as_mut(),
+        h.policy.as_mut(),
+    )?;
+    h.parent.authorized(incoming)?;
+    let (child_envelope, _) = intent_envelope(outgoing)?;
+    let child = &child_envelope["intent"];
+    ensure(
+        text(child, "issuer") == s.expected_issuer
+            && text(child, "recipient") == s.expected_recipient
+            && text(child, "request_id") != text(parent, "request_id")
+            && text(child, "call_id") != text(parent, "call_id")
+            && original_commitment(&[incoming.to_vec()])? == text(child, "original_digest"),
+    )
+}
 /// Private outstanding invocation bound to one client and outer request identity.
 /// Clones share the same one-use identity; transport must bind it to the real request.
 #[derive(Clone)]
@@ -117,6 +162,7 @@ struct State {
     file: Option<File>,
     lock: PathBuf,
     services: ClientServices,
+    hop: Option<HopBinding>,
     intent: Vec<u8>,
     terminal: Vec<u8>,
     seen: BTreeMap<String, bool>,
@@ -286,6 +332,14 @@ impl State {
             self.services.intent_authority.as_mut(),
             self.services.policy.as_mut(),
         )?;
+        if let Some(hop) = &mut self.hop {
+            check_hop(
+                &hop.incoming,
+                &self.intent,
+                &self.services,
+                &mut hop.services,
+            )?;
+        }
         let expires = number(i, "expires")?;
         ensure(u < expires * 1000)?;
         let mut e = Event::new("send", id);
@@ -298,6 +352,14 @@ impl State {
             self.services.intent_authority.as_mut(),
             self.services.policy.as_mut(),
         )?;
+        if let Some(hop) = &mut self.hop {
+            check_hop(
+                &hop.incoming,
+                &self.intent,
+                &self.services,
+                &mut hop.services,
+            )?;
+        }
         let (u, _) = self.sample()?;
         ensure(u < expires * 1000)?;
         let sent = match sender {
@@ -371,6 +433,25 @@ impl Outstanding for Accepted {
     }
 }
 impl Client {
+    /// Bind an authenticated A-to-B call to B's fresh capture and independently
+    /// authorized B-to-C operation. The host must use this path for every
+    /// multi-hop protected effect and reopen with the protected parent admission.
+    pub fn open_hop(
+        path: &Path,
+        create: bool,
+        incoming: &[u8],
+        outgoing: &[u8],
+        services: ClientServices,
+        mut hop: HopServices,
+    ) -> Result<Self> {
+        check_hop(incoming, outgoing, &services, &mut hop)?;
+        let client = Self::open(path, create, outgoing, services)?;
+        client.state.lock().map_err(|_| Invalid)?.hop = Some(HopBinding {
+            incoming: incoming.to_vec(),
+            services: hop,
+        });
+        Ok(client)
+    }
     /// Initialize a new authorized operation, or reopen its exact protected original.
     /// Reopening never redelivers a terminal and abandons pre-restart transport handles.
     /// Only trusted Linux/macOS paths are supported. No automatic unlock on Drop.
@@ -420,6 +501,7 @@ impl Client {
             file: Some(file),
             lock,
             services,
+            hop: None,
             intent,
             terminal: Vec::new(),
             seen: BTreeMap::new(),
