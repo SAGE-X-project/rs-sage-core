@@ -288,6 +288,42 @@ pub(crate) struct OwnedServices {
     pub(crate) policy: Box<dyn IntentPolicy + Send>,
     pub(crate) clock: Box<dyn ClientClock + Send>,
 }
+/// Binds the exact original input list to a root request. The trusted host must
+/// capture those bytes and assign a fresh request ID before plugin or model
+/// expansion, then retain the bytes in protected storage.
+pub(crate) struct RootCapture {
+    request_id: String,
+    digest: String,
+}
+impl RootCapture {
+    pub(crate) fn new(items: &[Vec<u8>], request_id: &str) -> Result<Self> {
+        ensure(uuid(request_id))?;
+        Ok(Self {
+            request_id: request_id.into(),
+            digest: original_commitment(items)?,
+        })
+    }
+    fn matches(&self, raw: &[u8]) -> Result<()> {
+        let (env, _) = intent_envelope(raw)?;
+        let intent = &env["intent"];
+        ensure(
+            intent["parent_call_id"].is_null()
+                && text(intent, "request_id") == self.request_id
+                && text(intent, "original_digest") == self.digest,
+        )
+    }
+    #[cfg(test)]
+    // Historical fixtures carry only a digest. Production callers use `new`
+    // with the captured original bytes.
+    pub(crate) fn fixture(raw: &[u8]) -> Result<Self> {
+        let (env, _) = intent_envelope(raw)?;
+        let intent = &env["intent"];
+        Ok(Self {
+            request_id: text(intent, "request_id").into(),
+            digest: text(intent, "original_digest").into(),
+        })
+    }
+}
 pub(crate) struct HopCapture {
     incoming: Vec<u8>,
     services: HopServices,
@@ -329,6 +365,30 @@ pub(crate) struct OwnedClient {
 }
 impl OwnedClient {
     #[allow(clippy::too_many_arguments)]
+    pub(crate) fn open_root(
+        pool: Arc<ClientPool>,
+        owner: MCPSetup,
+        endpoint: &mut CompletionEndpoint010,
+        path: &Path,
+        create: bool,
+        intent: &[u8],
+        services: OwnedServices,
+        capture: RootCapture,
+    ) -> Result<Self> {
+        Self::open_inner(
+            pool,
+            owner,
+            endpoint,
+            path,
+            create,
+            intent,
+            services,
+            Some(capture),
+            None,
+        )
+    }
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn open(
         pool: Arc<ClientPool>,
         owner: MCPSetup,
@@ -338,7 +398,10 @@ impl OwnedClient {
         intent: &[u8],
         services: OwnedServices,
     ) -> Result<Self> {
-        Self::open_inner(pool, owner, endpoint, path, create, intent, services, None)
+        let capture = RootCapture::fixture(intent)?;
+        Self::open_root(
+            pool, owner, endpoint, path, create, intent, services, capture,
+        )
     }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn open_hop(
@@ -359,6 +422,7 @@ impl OwnedClient {
             create,
             intent,
             services,
+            None,
             Some(hop),
         )
     }
@@ -371,11 +435,16 @@ impl OwnedClient {
         create: bool,
         intent: &[u8],
         services: OwnedServices,
+        root: Option<RootCapture>,
         mut hop: Option<HopCapture>,
     ) -> Result<Self> {
         let mut durable = None;
         let mut lease = None;
         let result = catch_unwind(AssertUnwindSafe(|| {
+            ensure(root.is_some() != hop.is_some())?;
+            if let Some(capture) = root.as_ref() {
+                capture.matches(intent)?;
+            }
             let intent = intent_envelope(intent)?.1;
             let raw = mcp_request(MCP_VERSION, "00000000-0000-4000-8000-000000000001", &intent)?;
             let (local, peer) = owner.owner.participants().map_err(|_| Invalid)?;

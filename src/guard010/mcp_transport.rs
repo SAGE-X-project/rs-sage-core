@@ -3,7 +3,7 @@
 //! bounded and non-reentrant; handlers must finish their work before returning.
 use super::mcp_admission::{workers::Workers, MCPGate};
 use super::mcp_lifecycle::OwnerMonitor;
-use super::mcp_owned::{ClientPool, HopCapture, OwnedClient, OwnedServices};
+use super::mcp_owned::{ClientPool, HopCapture, OwnedClient, OwnedServices, RootCapture};
 use super::mcp_setup::{MCPSetup, SetupClose, SetupIO};
 use super::*;
 use crate::hpke::completion010::{CompletionEndpoint010, PendingCompletion010};

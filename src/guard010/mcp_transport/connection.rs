@@ -163,8 +163,25 @@ impl Connection {
         create: bool,
         intent: &[u8],
         services: OwnedServices,
+        capture: RootCapture,
     ) -> Result<()> {
-        self.open_client_inner(path, create, intent, services, None)
+        self.open_client_inner(path, create, intent, services, Some(capture), None)
+    }
+    #[cfg(test)]
+    pub(crate) fn open_client_fixture(
+        &mut self,
+        path: &Path,
+        create: bool,
+        intent: &[u8],
+        services: OwnedServices,
+    ) -> Result<()> {
+        self.open_client(
+            path,
+            create,
+            intent,
+            services,
+            RootCapture::fixture(intent)?,
+        )
     }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn open_hop_client(
@@ -178,7 +195,7 @@ impl Connection {
         upstream_policy: Box<dyn super::super::IntentPolicy + Send>,
     ) -> Result<()> {
         let hop = HopCapture::from_invocation(parent, upstream, upstream_policy)?;
-        self.open_client_inner(path, create, intent, services, Some(hop))
+        self.open_client_inner(path, create, intent, services, None, Some(hop))
     }
     #[cfg(test)]
     pub(crate) fn open_hop_client_fixture(
@@ -189,7 +206,7 @@ impl Connection {
         services: OwnedServices,
         hop: HopCapture,
     ) -> Result<()> {
-        self.open_client_inner(path, create, intent, services, Some(hop))
+        self.open_client_inner(path, create, intent, services, None, Some(hop))
     }
     fn open_client_inner(
         &mut self,
@@ -197,6 +214,7 @@ impl Connection {
         create: bool,
         intent: &[u8],
         services: OwnedServices,
+        root: Option<RootCapture>,
         hop: Option<HopCapture>,
     ) -> Result<()> {
         let previous = std::mem::replace(&mut self.protocol, Protocol::Closed);
@@ -215,7 +233,7 @@ impl Connection {
                     services,
                     capture,
                 )?,
-                None => OwnedClient::open(
+                None => OwnedClient::open_root(
                     self.pool.clients.clone(),
                     *owner,
                     &mut self.endpoint.0,
@@ -223,6 +241,7 @@ impl Connection {
                     create,
                     intent,
                     services,
+                    root.ok_or(Invalid)?,
                 )?,
             };
             self.protocol = Protocol::Client(Box::new(client));
