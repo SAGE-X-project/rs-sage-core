@@ -289,8 +289,30 @@ pub(crate) struct OwnedServices {
     pub(crate) clock: Box<dyn ClientClock + Send>,
 }
 pub(crate) struct HopCapture {
-    pub(crate) incoming: Vec<u8>,
-    pub(crate) services: HopServices,
+    incoming: Vec<u8>,
+    services: HopServices,
+}
+impl HopCapture {
+    pub(crate) fn from_invocation(
+        parent: &super::dispatch::Invocation,
+        authority: Box<dyn Authority + Send>,
+        policy: Box<dyn IntentPolicy + Send>,
+    ) -> Result<Self> {
+        let admission = parent.parent_admission().ok_or(Invalid)?;
+        Ok(Self {
+            incoming: parent.canonical_intent().to_vec(),
+            services: HopServices {
+                authority,
+                policy,
+                parent: admission,
+            },
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixture(incoming: Vec<u8>, services: HopServices) -> Self {
+        Self { incoming, services }
+    }
 }
 /// Consumes both the negotiated owner and durable client. No alternate sender,
 /// session export, raw response or invocation token is exposed by this adapter.

@@ -166,7 +166,22 @@ impl Connection {
     ) -> Result<()> {
         self.open_client_inner(path, create, intent, services, None)
     }
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn open_hop_client(
+        &mut self,
+        path: &Path,
+        create: bool,
+        intent: &[u8],
+        services: OwnedServices,
+        parent: &super::super::dispatch::Invocation,
+        upstream: Box<dyn super::super::Authority + Send>,
+        upstream_policy: Box<dyn super::super::IntentPolicy + Send>,
+    ) -> Result<()> {
+        let hop = HopCapture::from_invocation(parent, upstream, upstream_policy)?;
+        self.open_client_inner(path, create, intent, services, Some(hop))
+    }
+    #[cfg(test)]
+    pub(crate) fn open_hop_client_fixture(
         &mut self,
         path: &Path,
         create: bool,

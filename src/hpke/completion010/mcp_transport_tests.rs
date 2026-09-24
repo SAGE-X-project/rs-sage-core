@@ -113,19 +113,19 @@ impl Handler for HopClientHandler {
         Ok(endpoint(true, &self.clock))
     }
     fn handle(&mut self, connection: &mut Connection) -> g::Result<()> {
-        connection.open_hop_client(
+        connection.open_hop_client_fixture(
             &self.path,
             true,
             &envelope(),
             services(&self.clock),
-            HopCapture {
-                incoming: Vec::new(),
-                services: g::HopServices {
+            HopCapture::fixture(
+                Vec::new(),
+                g::HopServices {
                     authority: Box::new(authority_for(self.clock.clone(), ALICE)),
                     policy: Box::new(Policy),
                     parent: Box::new(DeniedHop),
                 },
-            },
+            ),
         )
     }
 }
