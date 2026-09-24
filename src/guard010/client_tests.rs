@@ -189,6 +189,39 @@ fn hop_client_capture_and_parent_gate() {
     assert!(!path.exists());
     allowed.lock().unwrap().0 = true;
     let parent: Value = serde_json::from_slice(&incoming).unwrap();
+    let declared = |parent_id: &str| {
+        let mut linked = child.clone();
+        linked["intent"]["parent_call_id"] = json!(parent_id);
+        let mut signed = b"sage-execution-intent|0.10.0\0".to_vec();
+        signed.extend(encode(&linked["intent"]).unwrap());
+        linked["proof"] =
+            json!(base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(key.sign(&signed).to_bytes()));
+        encode(&linked).unwrap()
+    };
+    let linked = declared(text(&parent["intent"], "call_id"));
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path().join("journal");
+    assert!(Client::open(&root_path, true, &linked, config()).is_err());
+    assert!(!root_path.exists());
+    let wrong = tempfile::tempdir().unwrap();
+    let wrong_path = wrong.path().join("journal");
+    assert!(Client::open_hop(
+        &wrong_path,
+        true,
+        &incoming,
+        &declared("00000000-0000-4000-8000-000000000099"),
+        config(),
+        hop(),
+    )
+    .is_err());
+    assert!(!wrong_path.exists());
+    let matching = tempfile::tempdir().unwrap();
+    let matching_path = matching.path().join("journal");
+    Client::open_hop(&matching_path, true, &incoming, &linked, config(), hop())
+        .unwrap()
+        .close()
+        .unwrap();
     for (field, value) in [
         (
             "original_digest",
