@@ -101,12 +101,14 @@ impl g::IntentPolicy for Policy {
     }
 }
 type Hook = Mutex<Option<Box<dyn FnMut() -> g::Result<()> + Send>>>;
+type ParentHook = Mutex<Option<Box<dyn FnMut(&g::Invocation) -> g::Result<()> + Send>>>;
 #[derive(Default)]
 struct Sink {
     effects: AtomicUsize,
     checks: AtomicUsize,
     hook: Hook,
     run_hook: Hook,
+    parent_hook: ParentHook,
     output_size: AtomicUsize,
     cancellation: Mutex<Option<g::mcp_admission::Cancellation>>,
 }
@@ -135,6 +137,9 @@ impl Executor for Sink {
         assert_eq!(i.arguments(), br#"{"path":"public.txt"}"#);
         *self.cancellation.lock().unwrap() = Some(cancellation.clone());
         self.effects.fetch_add(1, Ordering::SeqCst);
+        if let Some(hook) = self.parent_hook.lock().unwrap().as_mut() {
+            hook(i)?;
+        }
         if let Some(hook) = self.run_hook.lock().unwrap().as_mut() {
             hook()?;
         }
@@ -391,6 +396,46 @@ fn admitted_worker_persists_signed_result_once_and_duplicate_never_runs() {
     assert_eq!(before, std::fs::read(&path).unwrap());
     assert_eq!(sink.effects.load(Ordering::SeqCst), 1);
     gate.close().unwrap();
+}
+
+#[test]
+fn parent_admission_is_bound_to_the_active_admitted_worker() {
+    for retire in [false, true] {
+        let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
+        let path = tmp.path().join("execution");
+        let sink = Arc::new(Sink::default());
+        let (gate, _) = gate(&path, sink.clone(), 1);
+        let captured: Arc<Mutex<Option<Box<dyn g::HopParent + Send>>>> = Arc::new(Mutex::new(None));
+        let retained = captured.clone();
+        let retirement = gate.clone();
+        *sink.parent_hook.lock().unwrap() = Some(Box::new(move |i| {
+            let mut parent = i.parent_admission().ok_or(g::Invalid)?;
+            parent.authorized(i.canonical_intent())?;
+            let mut changed = i.canonical_intent().to_vec();
+            *changed.last_mut().ok_or(g::Invalid)? ^= 1;
+            assert!(parent.authorized(&changed).is_err());
+            if retire {
+                retirement.retire()?;
+                assert!(parent.authorized(i.canonical_intent()).is_err());
+            }
+            *retained.lock().unwrap() = Some(parent);
+            Ok(())
+        }));
+        let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+        ready(&mut client, &mut server, &mut a, &mut b);
+        gate.admit(&mut server, &mut b, &request(&mut client, &mut a))
+            .unwrap();
+        let result = gate.run_one(&mut Signer);
+        if !retire {
+            assert!(result.unwrap());
+            assert_eq!(row(&path)["state"], "COMPLETED");
+        }
+        let mut retained = captured.lock().unwrap();
+        let parent = retained.as_mut().expect("worker did not receive admission");
+        assert!(parent.authorized(&envelope()).is_err());
+        drop(retained);
+        gate.close().unwrap();
+    }
 }
 #[test]
 fn close_during_post_fence_callback_denies_and_retains_history() {
