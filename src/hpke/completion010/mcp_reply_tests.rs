@@ -143,9 +143,9 @@ fn owned_hop_rechecks_parent_before_mcp_transport() {
             true,
             &outgoing,
             outbound,
-            HopCapture {
-                incoming: incoming.clone(),
-                services: g::HopServices {
+            HopCapture::fixture(
+                incoming.clone(),
+                g::HopServices {
                     authority: Box::new(HopAuthority),
                     policy: Box::new(upstream),
                     parent: Box::new(HopAdmission {
@@ -153,7 +153,7 @@ fn owned_hop_rechecks_parent_before_mcp_transport() {
                         allowed: parent.clone(),
                     }),
                 },
-            },
+            ),
         );
         if mode == "denied at open" {
             assert!(client.is_err());

@@ -409,6 +409,9 @@ fn parent_admission_is_bound_to_the_active_admitted_worker() {
         let retained = captured.clone();
         let retirement = gate.clone();
         *sink.parent_hook.lock().unwrap() = Some(Box::new(move |i| {
+            let capture =
+                g::mcp_owned::HopCapture::from_invocation(i, Box::new(Signer), Box::new(Policy))?;
+            drop(capture);
             let mut parent = i.parent_admission().ok_or(g::Invalid)?;
             parent.authorized(i.canonical_intent())?;
             let mut changed = i.canonical_intent().to_vec();
