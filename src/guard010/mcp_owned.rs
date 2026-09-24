@@ -340,6 +340,8 @@ impl OwnedClient {
                     policy: Box::new(Policy(policy.clone())),
                     clock: Box::new(SafeClock(services.clock)),
                     sender: Box::new(NoSender),
+                    expected_issuer: local.clone(),
+                    expected_recipient: peer.clone(),
                 },
             )?);
             let evidence = intent_evidence(
