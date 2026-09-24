@@ -164,20 +164,52 @@ impl Connection {
         intent: &[u8],
         services: OwnedServices,
     ) -> Result<()> {
+        self.open_client_inner(path, create, intent, services, None)
+    }
+    pub(crate) fn open_hop_client(
+        &mut self,
+        path: &Path,
+        create: bool,
+        intent: &[u8],
+        services: OwnedServices,
+        hop: HopCapture,
+    ) -> Result<()> {
+        self.open_client_inner(path, create, intent, services, Some(hop))
+    }
+    fn open_client_inner(
+        &mut self,
+        path: &Path,
+        create: bool,
+        intent: &[u8],
+        services: OwnedServices,
+        hop: Option<HopCapture>,
+    ) -> Result<()> {
         let previous = std::mem::replace(&mut self.protocol, Protocol::Closed);
         let result = (|| {
             let Protocol::Setup(owner) = previous else {
                 return Err(Invalid);
             };
-            let client = OwnedClient::open(
-                self.pool.clients.clone(),
-                *owner,
-                &mut self.endpoint.0,
-                path,
-                create,
-                intent,
-                services,
-            )?;
+            let client = match hop {
+                Some(capture) => OwnedClient::open_hop(
+                    self.pool.clients.clone(),
+                    *owner,
+                    &mut self.endpoint.0,
+                    path,
+                    create,
+                    intent,
+                    services,
+                    capture,
+                )?,
+                None => OwnedClient::open(
+                    self.pool.clients.clone(),
+                    *owner,
+                    &mut self.endpoint.0,
+                    path,
+                    create,
+                    intent,
+                    services,
+                )?,
+            };
             self.protocol = Protocol::Client(Box::new(client));
             Ok(())
         })();

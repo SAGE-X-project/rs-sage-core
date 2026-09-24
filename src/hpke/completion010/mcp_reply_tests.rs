@@ -1,9 +1,184 @@
 //! Inert end-to-end exchanges; no external agents, plugins or attack programs.
 use super::*;
-use crate::guard010::mcp_owned::{ClientPool, OwnedClient, OwnedServices};
+use crate::guard010::mcp_owned::{ClientPool, HopCapture, OwnedClient, OwnedServices};
 use crate::guard010::mcp_setup::{SetupClose, SetupIO};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::AtomicBool;
+
+#[derive(Clone)]
+struct HopPolicy {
+    issuer: String,
+    original: String,
+    descriptor: Vec<u8>,
+    manifest: Vec<u8>,
+}
+impl g::IntentPolicy for HopPolicy {
+    fn bindings(&mut self, issuer: &str, _: &str) -> g::Result<g::Bindings> {
+        if issuer != self.issuer {
+            return Err(g::Invalid);
+        }
+        Ok(g::Bindings {
+            original: self.original.clone(),
+            policy: self.descriptor.clone(),
+            manifest: self.manifest.clone(),
+        })
+    }
+    fn authorize(&mut self, issuer: &str, tool: &str, args: &[u8]) -> g::Result<()> {
+        if issuer != self.issuer || tool != "read" || args != br#"{"path":"public.txt"}"# {
+            return Err(g::Invalid);
+        }
+        Ok(())
+    }
+}
+struct HopAuthority;
+impl g::Authority for HopAuthority {
+    fn now(&mut self) -> g::Result<i64> {
+        Ok(100)
+    }
+    fn active_key(&mut self, issuer: &str, key: &str) -> g::Result<[u8; 32]> {
+        const ORIGIN: &str = "did:sage:web:agent.example:origin";
+        if issuer != ORIGIN || key != format!("{ORIGIN}#signing-1") {
+            return Err(g::Invalid);
+        }
+        Ok(SigningKey::from_bytes(&[3; 32]).verifying_key().to_bytes())
+    }
+}
+struct HopAdmission {
+    incoming: Vec<u8>,
+    allowed: Arc<AtomicBool>,
+}
+impl g::HopParent for HopAdmission {
+    fn authorized(&mut self, incoming: &[u8]) -> g::Result<()> {
+        if !self.allowed.load(Ordering::SeqCst) || incoming != self.incoming {
+            return Err(g::Invalid);
+        }
+        Ok(())
+    }
+}
+fn signed_hop(mut envelope: Value, seed: u8) -> Vec<u8> {
+    let message = [
+        b"sage-execution-intent|0.10.0\0".as_slice(),
+        &canonical(&envelope["intent"]),
+    ]
+    .concat();
+    envelope["proof"] = json!(B64.encode(
+        SigningKey::from_bytes(&[seed; 32])
+            .sign(&message)
+            .to_bytes()
+    ));
+    canonical(&envelope)
+}
+fn hop_inputs() -> (Vec<u8>, Vec<u8>, HopPolicy, HopPolicy) {
+    const ORIGIN: &str = "did:sage:web:agent.example:origin";
+    let fixture = fixture();
+    let mut parent: Value = serde_json::from_slice(&envelope()).unwrap();
+    parent["intent"]["issuer"] = json!(ORIGIN);
+    parent["intent"]["recipient"] = json!(ALICE);
+    parent["intent"]["keyid"] = json!(format!("{ORIGIN}#signing-1"));
+    parent["intent"]["request_id"] = json!("00000000-0000-4000-8000-000000000031");
+    parent["intent"]["call_id"] = json!("00000000-0000-4000-8000-000000000032");
+    let mut parent_descriptor = fixture["approved_policy"].clone();
+    parent_descriptor["issuer"] = json!(ORIGIN);
+    parent["intent"]["policy_digest"] =
+        json!(g::policy_commitment(&canonical(&parent_descriptor)).unwrap());
+    let upstream = HopPolicy {
+        issuer: ORIGIN.into(),
+        original: fixture["original_digest"].as_str().unwrap().into(),
+        descriptor: canonical(&parent_descriptor),
+        manifest: canonical(&fixture["approved_manifest"]),
+    };
+    let incoming = signed_hop(parent, 3);
+    let original = g::original_commitment(&[incoming.clone()]).unwrap();
+    let mut child: Value = serde_json::from_slice(&envelope()).unwrap();
+    child["intent"]["original_digest"] = json!(original);
+    let outgoing = signed_hop(child, 1);
+    let downstream = HopPolicy {
+        issuer: ALICE.into(),
+        original,
+        descriptor: canonical(&fixture["approved_policy"]),
+        manifest: canonical(&fixture["approved_manifest"]),
+    };
+    (incoming, outgoing, upstream, downstream)
+}
+
+#[test]
+fn owned_hop_rechecks_parent_before_mcp_transport() {
+    for mode in ["denied at open", "revoked before send", "allowed"] {
+        let (left, right, mut a, mut b, _, tmp) = owner_pair();
+        let (incoming, outgoing, upstream, downstream) = hop_inputs();
+        let sink = Arc::new(Sink::default());
+        let clock = Local(Arc::new(AtomicI64::new(0)), Arc::new(AtomicI64::new(0)));
+        let gate = Arc::new(
+            MCPGate::open(
+                &tmp.path().join("execution"),
+                true,
+                BOB,
+                authority_for(clock.clone(), ALICE),
+                authority_for(clock.clone(), BOB),
+                Box::new(downstream.clone()),
+                sink.clone(),
+                Box::new(clock.clone()),
+                2,
+                2,
+                30000,
+                1000,
+            )
+            .unwrap(),
+        );
+        let pool = Arc::new(ClientPool::new(2, 30000).unwrap());
+        let mut client = pool.setup(left, &mut a, "client", "1").unwrap();
+        let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+        let mut link = Link::new(&mut server, &mut b, gate.clone(), mode == "allowed");
+        client.run(&mut a, &mut link, &mut || Ok(())).unwrap();
+        let parent = Arc::new(AtomicBool::new(mode != "denied at open"));
+        let mut outbound = services(&clock);
+        outbound.policy = Box::new(downstream);
+        let path = tmp.path().join("client");
+        let client = OwnedClient::open_hop(
+            pool,
+            client,
+            &mut a,
+            &path,
+            true,
+            &outgoing,
+            outbound,
+            HopCapture {
+                incoming: incoming.clone(),
+                services: g::HopServices {
+                    authority: Box::new(HopAuthority),
+                    policy: Box::new(upstream),
+                    parent: Box::new(HopAdmission {
+                        incoming,
+                        allowed: parent.clone(),
+                    }),
+                },
+            },
+        );
+        if mode == "denied at open" {
+            assert!(client.is_err());
+            assert!(!path.exists());
+            assert_eq!(link.protected_sends, 0);
+            gate.close().unwrap();
+            continue;
+        }
+        let mut client = client.unwrap();
+        parent.store(mode == "allowed", Ordering::SeqCst);
+        let result = client.exchange(&mut a, &mut link);
+        if mode == "allowed" {
+            let delivery = result.unwrap();
+            assert_eq!(delivery.status(), "completed");
+            assert_eq!(link.protected_sends, 1);
+            assert_eq!(sink.effects.load(Ordering::SeqCst), 1);
+        } else {
+            assert!(result.is_err());
+            assert_eq!(link.protected_sends, 0);
+            assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+        }
+        client.close().unwrap();
+        gate.close().unwrap();
+    }
+}
 
 struct ClientTime(Local);
 impl g::ClientClock for ClientTime {

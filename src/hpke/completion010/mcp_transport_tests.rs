@@ -2,6 +2,7 @@
 use super::*;
 use g::mcp_admission::workers::Workers;
 use g::mcp_lifecycle::OwnerMonitor;
+use g::mcp_owned::HopCapture;
 use g::mcp_transport::{connection::Connection, Config as TransportConfig, Handler, Host, Role};
 use std::sync::mpsc;
 use std::time::Instant;
@@ -96,6 +97,75 @@ struct ClientHandler {
     clock: Local,
     path: std::path::PathBuf,
     status: String,
+}
+struct DeniedHop;
+impl g::HopParent for DeniedHop {
+    fn authorized(&mut self, _: &[u8]) -> g::Result<()> {
+        Err(g::Invalid)
+    }
+}
+struct HopClientHandler {
+    clock: Local,
+    path: std::path::PathBuf,
+}
+impl Handler for HopClientHandler {
+    fn endpoint(&mut self) -> g::Result<CompletionEndpoint010> {
+        Ok(endpoint(true, &self.clock))
+    }
+    fn handle(&mut self, connection: &mut Connection) -> g::Result<()> {
+        connection.open_hop_client(
+            &self.path,
+            true,
+            &envelope(),
+            services(&self.clock),
+            HopCapture {
+                incoming: Vec::new(),
+                services: g::HopServices {
+                    authority: Box::new(authority_for(self.clock.clone(), ALICE)),
+                    policy: Box::new(Policy),
+                    parent: Box::new(DeniedHop),
+                },
+            },
+        )
+    }
+}
+#[test]
+fn tcp_owner_rejects_missing_hop_capture_before_protected_send() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sink = Arc::new(Sink::default());
+    let (server, gate, server_clock) = host(&tmp.path().join("server"), sink.clone(), 2);
+    let (client, client_gate, client_clock) = host(
+        &tmp.path().join("client-gate"),
+        Arc::new(Sink::default()),
+        1,
+    );
+    let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = tcp.local_addr().unwrap();
+    let listener = server
+        .serve(
+            tcp,
+            config(false, Duration::from_secs(5)),
+            vec![Box::new(Server {
+                clock: server_clock,
+            })],
+        )
+        .unwrap();
+    let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(2)).unwrap();
+    let path = tmp.path().join("hop-client");
+    let mut handler = HopClientHandler {
+        clock: client_clock,
+        path: path.clone(),
+    };
+    assert!(client
+        .connection(tcp, &config(true, Duration::from_secs(5)), &mut handler)
+        .is_err());
+    assert!(!path.exists());
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 0);
+    assert!(client.stop(Duration::from_secs(5)).unwrap());
+    assert!(listener.stop(Duration::from_secs(5)).unwrap());
+    assert!(server.stop(Duration::from_secs(5)).unwrap());
+    client_gate.close().unwrap();
+    gate.close().unwrap();
 }
 impl Handler for ClientHandler {
     fn endpoint(&mut self) -> g::Result<CompletionEndpoint010> {
