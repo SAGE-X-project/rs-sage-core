@@ -288,6 +288,10 @@ pub(crate) struct OwnedServices {
     pub(crate) policy: Box<dyn IntentPolicy + Send>,
     pub(crate) clock: Box<dyn ClientClock + Send>,
 }
+pub(crate) struct HopCapture {
+    pub(crate) incoming: Vec<u8>,
+    pub(crate) services: HopServices,
+}
 /// Consumes both the negotiated owner and durable client. No alternate sender,
 /// session export, raw response or invocation token is exposed by this adapter.
 pub(crate) struct OwnedClient {
@@ -305,12 +309,47 @@ impl OwnedClient {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn open(
         pool: Arc<ClientPool>,
+        owner: MCPSetup,
+        endpoint: &mut CompletionEndpoint010,
+        path: &Path,
+        create: bool,
+        intent: &[u8],
+        services: OwnedServices,
+    ) -> Result<Self> {
+        Self::open_inner(pool, owner, endpoint, path, create, intent, services, None)
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn open_hop(
+        pool: Arc<ClientPool>,
+        owner: MCPSetup,
+        endpoint: &mut CompletionEndpoint010,
+        path: &Path,
+        create: bool,
+        intent: &[u8],
+        services: OwnedServices,
+        hop: HopCapture,
+    ) -> Result<Self> {
+        Self::open_inner(
+            pool,
+            owner,
+            endpoint,
+            path,
+            create,
+            intent,
+            services,
+            Some(hop),
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn open_inner(
+        pool: Arc<ClientPool>,
         mut owner: MCPSetup,
         endpoint: &mut CompletionEndpoint010,
         path: &Path,
         create: bool,
         intent: &[u8],
         services: OwnedServices,
+        mut hop: Option<HopCapture>,
     ) -> Result<Self> {
         let mut durable = None;
         let mut lease = None;
@@ -330,20 +369,26 @@ impl OwnedClient {
             let authority = Arc::new(Mutex::new(services.intent_authority));
             let result_authority = Arc::new(Mutex::new(services.result_authority));
             let policy = Arc::new(Mutex::new(services.policy));
-            durable = Some(Client::open(
-                path,
-                create,
-                &intent,
-                ClientServices {
-                    intent_authority: Box::new(Binding(authority.clone())),
-                    result_authority: Box::new(Binding(result_authority.clone())),
-                    policy: Box::new(Policy(policy.clone())),
-                    clock: Box::new(SafeClock(services.clock)),
-                    sender: Box::new(NoSender),
-                    expected_issuer: local.clone(),
-                    expected_recipient: peer.clone(),
-                },
-            )?);
+            let client_services = ClientServices {
+                intent_authority: Box::new(Binding(authority.clone())),
+                result_authority: Box::new(Binding(result_authority.clone())),
+                policy: Box::new(Policy(policy.clone())),
+                clock: Box::new(SafeClock(services.clock)),
+                sender: Box::new(NoSender),
+                expected_issuer: local.clone(),
+                expected_recipient: peer.clone(),
+            };
+            durable = Some(match hop.take() {
+                Some(capture) => Client::open_hop(
+                    path,
+                    create,
+                    &capture.incoming,
+                    &intent,
+                    client_services,
+                    capture.services,
+                )?,
+                None => Client::open(path, create, &intent, client_services)?,
+            });
             let evidence = intent_evidence(
                 &mut owner,
                 endpoint,
