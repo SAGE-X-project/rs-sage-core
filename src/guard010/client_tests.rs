@@ -56,17 +56,69 @@ impl ClientSender for Services {
 }
 impl Services {
     pub(super) fn config(&self) -> ClientServices {
+        let (expected_issuer, expected_recipient) = {
+            let state = self.0.lock().unwrap();
+            (
+                text(&state["input"], "expected_issuer").to_owned(),
+                text(&state["input"], "expected_recipient").to_owned(),
+            )
+        };
         ClientServices {
             intent_authority: Box::new(self.clone()),
             policy: Box::new(self.clone()),
             result_authority: Box::new(self.clone()),
             clock: Box::new(self.clone()),
             sender: Box::new(self.clone()),
+            expected_issuer,
+            expected_recipient,
         }
     }
 }
 fn suite() -> Value {
     serde_json::from_str(include_str!("testdata/guard-client.json")).unwrap()
+}
+#[test]
+fn client_requires_trusted_peer_binding() {
+    let v = suite();
+    let raw = hex::decode(text(&v["input"], "envelope_hex")).unwrap();
+    for (name, issuer, recipient) in [
+        (
+            "missing issuer",
+            "",
+            "did:sage:web:agents.example.com:executor",
+        ),
+        (
+            "other issuer",
+            "did:sage:web:agents.example.com:other",
+            "did:sage:web:agents.example.com:executor",
+        ),
+        (
+            "missing recipient",
+            "did:sage:web:agents.example.com:alice",
+            "",
+        ),
+        (
+            "other recipient",
+            "did:sage:web:agents.example.com:alice",
+            "did:sage:web:agents.example.com:other",
+        ),
+    ] {
+        let services = Services(Arc::new(Mutex::new(
+            json!({"input":v["input"],"public":v["public_key_hex"],"clock_ok":true,"result_active":true,"utc":1700000000000_i64,"mono":0}),
+        )));
+        let mut config = services.config();
+        config.expected_issuer = issuer.into();
+        config.expected_recipient = recipient.into();
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("journal");
+        assert!(Client::open(&path, true, &raw, config).is_err(), "{name}");
+        assert!(!path.exists(), "{name}: created durable state");
+        assert_eq!(
+            services.0.lock().unwrap()["handoffs"],
+            Value::Null,
+            "{name}"
+        );
+    }
 }
 pub(super) fn setup() -> (
     tempfile::TempDir,

@@ -35,6 +35,10 @@ pub struct ClientServices {
     pub clock: Box<dyn ClientClock + Send>,
     /// Protected transport used for each allowed invocation.
     pub sender: Box<dyn ClientSender + Send>,
+    /// Trusted local signer identity; never selected by the signed intent.
+    pub expected_issuer: String,
+    /// Trusted target identity; never selected by the signed intent.
+    pub expected_recipient: String,
 }
 /// Private outstanding invocation bound to one client and outer request identity.
 /// Clones share the same one-use identity; transport must bind it to the real request.
@@ -378,6 +382,12 @@ impl Client {
     ) -> Result<Self> {
         ensure(cfg!(any(target_os = "linux", target_os = "macos")))?;
         let (env, intent) = intent_envelope(raw)?;
+        ensure(
+            did(&services.expected_issuer)
+                && did(&services.expected_recipient)
+                && text(&env["intent"], "issuer") == services.expected_issuer
+                && text(&env["intent"], "recipient") == services.expected_recipient,
+        )?;
         if create {
             verify_intent(
                 &intent,
