@@ -11,6 +11,46 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[derive(Clone)]
+pub(crate) struct ParentAdmission(Arc<ParentState>);
+
+struct ParentState {
+    canonical: Vec<u8>,
+    active: AtomicBool,
+    cancellation: Cancellation,
+}
+
+impl ParentAdmission {
+    fn new(canonical: Vec<u8>, cancellation: Cancellation) -> Self {
+        Self(Arc::new(ParentState {
+            canonical,
+            active: AtomicBool::new(false),
+            cancellation,
+        }))
+    }
+    fn activate(&self) -> ActiveParent {
+        self.0.active.store(true, Ordering::Release);
+        ActiveParent(self.clone())
+    }
+}
+
+struct ActiveParent(ParentAdmission);
+impl Drop for ActiveParent {
+    fn drop(&mut self) {
+        self.0 .0.active.store(false, Ordering::Release);
+    }
+}
+
+impl crate::guard010::client::HopParent for ParentAdmission {
+    fn authorized(&mut self, incoming: &[u8]) -> Result<()> {
+        ensure(
+            self.0.active.load(Ordering::Acquire)
+                && !self.0.cancellation.cancelled()
+                && incoming == self.0.canonical,
+        )
+    }
+}
+
 /// One pinned immutable instance. Run returns only after the actual effect ends;
 /// detached execution, name resolution and unbounded callbacks are forbidden.
 /// Poll cancellation during work and perform bounded cleanup before returning.
@@ -370,6 +410,7 @@ impl MCPGate {
                         owner: s.owner.clone(),
                         canonical: v.canonical.clone(),
                     },
+                    parent: None,
                 };
                 s.component.check(&invocation.manifest, &invocation.tool)?;
                 let mut entry = super::super::ledger::reservation_entry(&v)?;
@@ -552,7 +593,7 @@ impl MCPGate {
         self.run_worker(signer, false)
     }
     fn run_worker(&self, signer: &mut dyn ResultSigner, hosted: bool) -> Result<bool> {
-        let (work, allowed, expired) = {
+        let (mut work, allowed, expired) = {
             let _c = self.coordinator.lock().map_err(|_| Invalid)?;
             let mut q = self.queue.lock().map_err(|_| Invalid)?;
             ensure(q.hosted == hosted)?;
@@ -588,6 +629,10 @@ impl MCPGate {
         }
         let cancellation = work.job.lock().map_err(|_| Invalid)?.cancellation.clone();
         let output = if allowed {
+            let parent =
+                ParentAdmission::new(work.invocation.canonical.clone(), cancellation.clone());
+            work.invocation.parent = Some(parent.clone());
+            let _active = parent.activate();
             catch_unwind(AssertUnwindSafe(|| {
                 self.executor.run(&work.invocation, &cancellation)
             }))

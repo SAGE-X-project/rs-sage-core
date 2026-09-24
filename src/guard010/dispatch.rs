@@ -30,6 +30,7 @@ pub struct Invocation {
     manifest: String,
     digest: String,
     completion: Completion,
+    parent: Option<mcp_admission::ParentAdmission>,
 }
 /// Opaque accepted-execution token, bound to one gate and exact canonical intent.
 /// A recovered UNKNOWN cannot be completed, even with a retained token.
@@ -44,6 +45,13 @@ struct ReplyPermit {
     used: bool,
 }
 impl Invocation {
+    /// Admission for this exact MCP call, valid only while its admitted worker
+    /// is running. Ordinary dispatch invocations have no such capability.
+    pub fn parent_admission(&self) -> Option<Box<dyn super::client::HopParent + Send>> {
+        self.parent
+            .as_ref()
+            .map(|parent| Box::new(parent.clone()) as Box<dyn super::client::HopParent + Send>)
+    }
     /// Retain only in the trusted worker; permits recording, never re-execution.
     pub fn completion(&self) -> Completion {
         self.completion.clone()
@@ -214,6 +222,7 @@ fn dispatch(s: &mut State, raw: &[u8], pending: &mut Option<Entry>) -> Result<Di
             owner: s.owner.clone(),
             canonical: v.canonical.clone(),
         },
+        parent: None,
     };
     s.component.check(&i.manifest, &i.tool)?;
     let mut e = super::ledger::reservation_entry(&v)?;
