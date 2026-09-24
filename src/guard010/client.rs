@@ -82,6 +82,8 @@ fn check_hop(
             && text(child, "recipient") == s.expected_recipient
             && text(child, "request_id") != text(parent, "request_id")
             && text(child, "call_id") != text(parent, "call_id")
+            && (child["parent_call_id"].is_null()
+                || text(child, "parent_call_id") == text(parent, "call_id"))
             && original_commitment(&[incoming.to_vec()])? == text(child, "original_digest"),
     )
 }
@@ -445,26 +447,32 @@ impl Client {
         mut hop: HopServices,
     ) -> Result<Self> {
         check_hop(incoming, outgoing, &services, &mut hop)?;
-        let client = Self::open(path, create, outgoing, services)?;
+        let client = Self::open_inner(path, create, outgoing, services, true)?;
         client.state.lock().map_err(|_| Invalid)?.hop = Some(HopBinding {
             incoming: incoming.to_vec(),
             services: hop,
         });
         Ok(client)
     }
-    /// Initialize a new authorized operation, or reopen its exact protected original.
+    /// Initialize a root operation with no parent ID, or reopen its exact original.
+    /// A declared parent requires `open_hop`.
     /// Reopening never redelivers a terminal and abandons pre-restart transport handles.
     /// Only trusted Linux/macOS paths are supported. No automatic unlock on Drop.
-    pub fn open(
+    pub fn open(path: &Path, create: bool, raw: &[u8], services: ClientServices) -> Result<Self> {
+        Self::open_inner(path, create, raw, services, false)
+    }
+    fn open_inner(
         path: &Path,
         create: bool,
         raw: &[u8],
         mut services: ClientServices,
+        hop: bool,
     ) -> Result<Self> {
         ensure(cfg!(any(target_os = "linux", target_os = "macos")))?;
         let (env, intent) = intent_envelope(raw)?;
         ensure(
-            did(&services.expected_issuer)
+            (hop || env["intent"]["parent_call_id"].is_null())
+                && did(&services.expected_issuer)
                 && did(&services.expected_recipient)
                 && text(&env["intent"], "issuer") == services.expected_issuer
                 && text(&env["intent"], "recipient") == services.expected_recipient,
