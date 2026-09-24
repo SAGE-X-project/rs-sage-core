@@ -172,7 +172,7 @@ impl Handler for ClientHandler {
         Ok(endpoint(true, &self.clock))
     }
     fn handle(&mut self, connection: &mut Connection) -> g::Result<()> {
-        connection.open_client(&self.path, true, &envelope(), services(&self.clock))?;
+        connection.open_client_fixture(&self.path, true, &envelope(), services(&self.clock))?;
         let delivery = connection.exchange()?;
         self.status = delivery.status().to_string();
         if delivery.status() == "completed" {

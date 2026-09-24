@@ -1,6 +1,6 @@
 //! Inert end-to-end exchanges; no external agents, plugins or attack programs.
 use super::*;
-use crate::guard010::mcp_owned::{ClientPool, HopCapture, OwnedClient, OwnedServices};
+use crate::guard010::mcp_owned::{ClientPool, HopCapture, OwnedClient, OwnedServices, RootCapture};
 use crate::guard010::mcp_setup::{SetupClose, SetupIO};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -100,6 +100,60 @@ fn hop_inputs() -> (Vec<u8>, Vec<u8>, HopPolicy, HopPolicy) {
         manifest: canonical(&fixture["approved_manifest"]),
     };
     (incoming, outgoing, upstream, downstream)
+}
+
+#[test]
+fn owned_root_binds_captured_input_before_journal_and_runtime() {
+    for mode in ["wrong request", "changed original", "allowed"] {
+        let (left, right, mut a, mut b, _, tmp) = owner_pair();
+        let sink = Arc::new(Sink::default());
+        let (gate, clock) = gate(&tmp.path().join("execution"), sink.clone(), 2);
+        let pool = Arc::new(ClientPool::new(2, 30000).unwrap());
+        let mut client = pool.setup(left, &mut a, "client", "1").unwrap();
+        let mut server = gate.setup(right, &mut b, "server", "1").unwrap();
+        let mut link = Link::new(&mut server, &mut b, gate.clone(), false);
+        client.run(&mut a, &mut link, &mut || Ok(())).unwrap();
+
+        let mut original: Value = serde_json::from_slice(&envelope()).unwrap();
+        let request_id = original["intent"]["request_id"].as_str().unwrap();
+        let items = vec![b"trusted root input".to_vec()];
+        let digest = g::original_commitment(&items).unwrap();
+        let capture_items = if mode == "changed original" {
+            vec![b"changed root input".to_vec()]
+        } else {
+            items
+        };
+        let capture_id = if mode == "wrong request" {
+            "00000000-0000-4000-8000-000000000099"
+        } else {
+            request_id
+        };
+        let capture = RootCapture::new(&capture_items, capture_id).unwrap();
+        original["intent"]["original_digest"] = json!(digest.clone());
+        let outgoing = signed_hop(original, 1);
+        let f = fixture();
+        let mut outbound = services(&clock);
+        outbound.policy = Box::new(HopPolicy {
+            issuer: ALICE.into(),
+            original: digest,
+            descriptor: canonical(&f["approved_policy"]),
+            manifest: canonical(&f["approved_manifest"]),
+        });
+        let path = tmp.path().join("client");
+        let opened = OwnedClient::open_root(
+            pool, client, &mut a, &path, true, &outgoing, outbound, capture,
+        );
+        if mode != "allowed" {
+            assert!(opened.is_err());
+            assert!(!path.exists());
+            assert_eq!(link.protected_sends, 0);
+        } else {
+            let mut opened = opened.unwrap();
+            assert!(path.exists());
+            opened.close().unwrap();
+        }
+        gate.close().unwrap();
+    }
 }
 
 #[test]
