@@ -1,8 +1,10 @@
 //! Operation-scoped checks over a trusted validating source and durable store.
 //! This is not a network resolver, proof verifier, or authenticated session manager.
 mod journal;
+mod proof;
 use crate::error::{Error, Result};
 pub use journal::{Journal, Watermark};
+pub use proof::pop_challenge010;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
