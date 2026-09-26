@@ -53,7 +53,7 @@ jobs:
     # On pull requests only the new commits are scanned; on pushes and the
     # weekly run the whole history is scanned (empty base and head).
     - name: Run TruffleHog
-      uses: trufflesecurity/trufflehog@v3.97.4
+      uses: trufflesecurity/trufflehog@v3.97.8
       with:
         path: ./
         base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
