@@ -9,6 +9,8 @@ mod web_envelope010;
 mod web_http_record010;
 mod web_media010;
 mod web_origin_policy010;
+#[cfg(not(target_arch = "wasm32"))]
+mod web_public_binding010;
 mod web_record_proofs010;
 mod web_record_shape010;
 #[cfg(not(target_arch = "wasm32"))]
@@ -29,6 +31,8 @@ pub use web_media010::{check_web_registry_media_010, HeaderField010};
 pub use web_origin_policy010::{
     check_web_registry_response_policy_010, web_registry_request_url_010,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use web_public_binding010::observe_web_registry_journal_010;
 pub use web_record_proofs010::check_web_registry_proofs_010;
 pub use web_record_shape010::check_web_registry_record_shape_010;
 #[cfg(not(target_arch = "wasm32"))]

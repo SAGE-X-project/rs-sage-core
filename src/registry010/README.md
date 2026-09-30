@@ -119,6 +119,13 @@ for bounded request framing, trusted clock, exact candidate bytes, certificate
 pin provisioning and rotation, and the public Registry source. The reference
 adapter grants no delegated operator authority or complete REG-08 conformance.
 
+`observe_web_registry_journal_010` compares a fresh, TLS-authenticated public
+record with the same DID and exact HTTPS origin configured for a local
+administrator journal. It rejects a different record. This checks one
+publication snapshot; it does not bind a deployed public server's storage to
+the administrator journal, authorize a later operation, or establish complete
+REG-08 conformance.
+
 `pop_challenge010` constructs the exact five-field REG-04 challenge bytes from
 already validated record components. It keeps the new `sage-pop-0.10.0`
 domain separate from the legacy DID `SAGE-PoP` path. The bundled 0.10.0
