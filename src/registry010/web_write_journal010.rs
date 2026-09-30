@@ -1,5 +1,7 @@
 //! Single-DID local reference journal for complete web Registry writes.
 
+use super::web_origin_policy010::web_registry_request_url_010;
+use super::web_record_proofs010::check_web_registry_proofs_with_policy_010;
 use super::web_transition010::web_write_journal_step_010;
 use super::{
     rejected, unreachable, WebRegistryAdminAuthority010, WebRegistryWriteSnapshot010,
@@ -182,6 +184,24 @@ impl<'a> WebRegistryWriteJournal010<'a> {
     /// Inspect local test state without granting write authority.
     pub fn inspect(&self) -> WebRegistryWriteState010 {
         self.state.clone()
+    }
+
+    /// Produce one fresh public response from this journal's committed state.
+    /// The caller supplies trusted time and must serve these exact bytes only
+    /// from the configured HTTPS origin. This does not bind a deployed server.
+    pub fn public_envelope(&self, did: &str, source: &str, now: i64) -> Result<Vec<u8>> {
+        if self.failed
+            || self.file.is_none()
+            || self.state.history.is_empty()
+            || did != self.did
+            || source != self.source
+        {
+            return Err(unreachable());
+        }
+        web_registry_request_url_010(did, &[source]).map_err(|_| unreachable())?;
+        let fresh = refresh(&self.state.envelope, now)?;
+        check_web_registry_proofs_with_policy_010(&fresh, did, now, false)?;
+        Ok(fresh)
     }
 
     pub(super) fn binding(&self) -> (&str, &str, bool) {
