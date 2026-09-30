@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use super::proof::pop_challenge010;
 use super::web_record_shape010::{
-    array, canonical_base64, check_web_registry_record_shape_010, field, object, string,
+    array, canonical_base64, check_web_registry_record_shape_with_policy_010, field, object, string,
 };
 
 fn invalid() -> Error {
@@ -132,7 +132,21 @@ fn get_key(value: &Value) -> Result<ProofKey> {
 /// history, and any retained historical KEM signer's earlier authority.
 /// Success alone never authorizes a protected operation.
 pub fn check_web_registry_proofs_010(raw: &[u8], expected_did: &str, now: i64) -> Result<()> {
-    check_web_registry_record_shape_010(raw, expected_did, now)?;
+    check_web_registry_proofs_with_policy_010(raw, expected_did, now, true)
+}
+
+pub(super) fn check_web_registry_proofs_with_policy_010(
+    raw: &[u8],
+    expected_did: &str,
+    now: i64,
+    require_usable_signing: bool,
+) -> Result<()> {
+    check_web_registry_record_shape_with_policy_010(
+        raw,
+        expected_did,
+        now,
+        require_usable_signing,
+    )?;
     let wrapper: BTreeMap<String, Box<serde_json::value::RawValue>> =
         serde_json::from_slice(raw).map_err(|_| invalid())?;
     let record_raw = wrapper.get("record").ok_or_else(invalid)?.get();
