@@ -29,7 +29,8 @@ pub use web_record_shape010::check_web_registry_record_shape_010;
 #[cfg(not(target_arch = "wasm32"))]
 pub use web_tls_origin010::check_web_registry_tls_origin_010;
 pub use web_transition010::{
-    check_web_registry_creation_shape_010, check_web_registry_transition_shape_010,
+    check_web_registry_creation_shape_010, check_web_registry_history_continuity_010,
+    check_web_registry_transition_shape_010, WebRegistryHistoryEntry010,
 };
 
 pub(crate) fn rejected() -> Error {

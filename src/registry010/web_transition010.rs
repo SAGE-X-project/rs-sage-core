@@ -40,6 +40,7 @@ struct Service {
     uri: String,
 }
 
+#[derive(PartialEq, Eq)]
 struct Record {
     id: String,
     controller: String,
@@ -231,6 +232,54 @@ pub fn check_web_registry_transition_shape_010(
     }
 }
 
+/// One caller-supplied historical envelope and its trusted mutation time.
+/// The first operation must be `create`.
+pub struct WebRegistryHistoryEntry010<'a> {
+    /// A complete historical Registry envelope.
+    pub envelope: &'a [u8],
+    /// Trusted Unix second when this version was created.
+    pub at: i64,
+    /// The mutation that produced this version.
+    pub operation: &'a str,
+}
+
+/// Check an asserted sequence from version-1 creation to the current record.
+/// A trusted source must supply every envelope and bind each timestamp to the
+/// actual mutation. This predicate cannot establish the source's authenticity
+/// or completeness, authenticate actors, or perform an atomic Registry write.
+pub fn check_web_registry_history_continuity_010(
+    history: &[WebRegistryHistoryEntry010<'_>],
+    current: &[u8],
+    did: &str,
+    current_now: i64,
+) -> Result<()> {
+    let first = history.first().ok_or_else(invalid)?;
+    if first.operation != "create" || first.at > current_now {
+        return Err(invalid());
+    }
+    check_web_registry_creation_shape_010(first.envelope, did, first.at)?;
+    for pair in history.windows(2) {
+        let previous = &pair[0];
+        let next = &pair[1];
+        if next.at < previous.at || next.at > current_now {
+            return Err(invalid());
+        }
+        check_web_registry_transition_shape_010(
+            previous.envelope,
+            next.envelope,
+            did,
+            previous.at,
+            next.at,
+            next.operation,
+        )?;
+    }
+    let last = history.last().ok_or_else(invalid)?;
+    if read_record(last.envelope, did, last.at)? != read_record(current, did, current_now)? {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,5 +383,108 @@ mod tests {
         terminal["state"] = json!("deactivated");
         assert!(check(&after, &terminal, "deactivate").is_ok());
         assert!(check(&terminal, &after, "activate").is_err());
+    }
+
+    #[test]
+    fn history_requires_contiguous_versions_and_current_record() {
+        let created = fixture();
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("2");
+        let mut updated = active.clone();
+        updated["version"] = json!("3");
+        updated["services"] = json!([{"name": "api", "type": "Agent",
+            "uri": "https://agents.example.com/api"}]);
+        let snapshots = [body(&created), body(&active), body(&updated)];
+        let history = [
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[0],
+                at: 100,
+                operation: "create",
+            },
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[1],
+                at: 101,
+                operation: "activate",
+            },
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[2],
+                at: 102,
+                operation: "update-services",
+            },
+        ];
+        let check = |entries: &[WebRegistryHistoryEntry010<'_>], current: &[u8]| {
+            check_web_registry_history_continuity_010(entries, current, DID, 103)
+        };
+        assert!(check(&history, &snapshots[2]).is_ok());
+        assert!(check(&[], &snapshots[2]).is_err());
+        assert!(check(&history[1..], &snapshots[2]).is_err());
+        let skipped = [
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[0],
+                at: 100,
+                operation: "create",
+            },
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[2],
+                at: 102,
+                operation: "update-services",
+            },
+        ];
+        assert!(check(&skipped, &snapshots[2]).is_err());
+        assert!(check(&history, &snapshots[1]).is_err());
+        let regressed = [
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[0],
+                at: 100,
+                operation: "create",
+            },
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[1],
+                at: 101,
+                operation: "activate",
+            },
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[2],
+                at: 99,
+                operation: "update-services",
+            },
+        ];
+        assert!(check(&regressed, &snapshots[2]).is_err());
+        let mut terminal = updated.clone();
+        terminal["version"] = json!("4");
+        terminal["state"] = json!("deactivated");
+        let mut after_terminal = terminal.clone();
+        after_terminal["version"] = json!("5");
+        let terminal_body = body(&terminal);
+        let after_body = body(&after_terminal);
+        let impossible = [
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[0],
+                at: 100,
+                operation: "create",
+            },
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[1],
+                at: 101,
+                operation: "activate",
+            },
+            WebRegistryHistoryEntry010 {
+                envelope: &snapshots[2],
+                at: 102,
+                operation: "update-services",
+            },
+            WebRegistryHistoryEntry010 {
+                envelope: &terminal_body,
+                at: 103,
+                operation: "deactivate",
+            },
+            WebRegistryHistoryEntry010 {
+                envelope: &after_body,
+                at: 103,
+                operation: "update-services",
+            },
+        ];
+        assert!(check(&impossible, &after_body).is_err());
     }
 }

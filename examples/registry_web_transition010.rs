@@ -3,7 +3,8 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use sage_crypto_core::error::Error;
 use sage_crypto_core::registry010::{
-    check_web_registry_creation_shape_010, check_web_registry_transition_shape_010,
+    check_web_registry_creation_shape_010, check_web_registry_history_continuity_010,
+    check_web_registry_transition_shape_010, WebRegistryHistoryEntry010,
 };
 use serde::Deserialize;
 use std::io::{self, Read};
@@ -20,6 +21,16 @@ struct Request {
     previous_now: i64,
     candidate_now: i64,
     #[serde(default)]
+    operation: String,
+    #[serde(default)]
+    history: Vec<HistoryItem>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HistoryItem {
+    envelope: String,
+    at: i64,
     operation: String,
 }
 
@@ -56,6 +67,30 @@ fn main() {
                 request.previous_now,
                 request.candidate_now,
                 &request.operation,
+            )
+        }
+        "history" => {
+            let decoded = request
+                .history
+                .iter()
+                .map(|item| URL_SAFE_NO_PAD.decode(&item.envelope))
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .unwrap_or_else(|_| std::process::exit(2));
+            let history = request
+                .history
+                .iter()
+                .zip(decoded.iter())
+                .map(|(item, envelope)| WebRegistryHistoryEntry010 {
+                    envelope,
+                    at: item.at,
+                    operation: &item.operation,
+                })
+                .collect::<Vec<_>>();
+            check_web_registry_history_continuity_010(
+                &history,
+                &candidate,
+                &request.did,
+                request.candidate_now,
             )
         }
         _ => std::process::exit(2),
