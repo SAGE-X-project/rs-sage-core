@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 use crate::jcs;
 
 use super::web_envelope010::exact_integer;
-use super::web_record_proofs010::check_web_registry_proofs_010;
+use super::web_record_proofs010::check_web_registry_proofs_with_policy_010;
 use super::web_record_shape010::{array, field, object, string};
 
 fn invalid() -> Error {
@@ -79,7 +79,16 @@ struct Record {
 }
 
 fn read_record(raw: &[u8], did: &str, now: i64) -> Result<Record> {
-    check_web_registry_proofs_010(raw, did, now)?;
+    read_record_with_policy(raw, did, now, true)
+}
+
+fn read_record_with_policy(
+    raw: &[u8],
+    did: &str,
+    now: i64,
+    require_usable_signing: bool,
+) -> Result<Record> {
+    check_web_registry_proofs_with_policy_010(raw, did, now, require_usable_signing)?;
     let value =
         jcs::parse(std::str::from_utf8(raw).map_err(|_| invalid())?).map_err(|_| invalid())?;
     let wrapper = object(&value)?;
@@ -171,7 +180,28 @@ pub fn check_web_registry_transition_shape_010(
     candidate_now: i64,
     operation: &str,
 ) -> Result<()> {
-    let before = read_record(previous, did, previous_now)?;
+    check_web_registry_transition_shape_with_policy_010(
+        previous,
+        candidate,
+        did,
+        previous_now,
+        candidate_now,
+        operation,
+        true,
+    )
+}
+
+fn check_web_registry_transition_shape_with_policy_010(
+    previous: &[u8],
+    candidate: &[u8],
+    did: &str,
+    previous_now: i64,
+    candidate_now: i64,
+    operation: &str,
+    require_previous_usable_signing: bool,
+) -> Result<()> {
+    let before =
+        read_record_with_policy(previous, did, previous_now, require_previous_usable_signing)?;
     let after = read_record(candidate, did, candidate_now)?;
     let next_version = before
         .version
@@ -339,7 +369,7 @@ pub fn check_web_registry_mutation_admission_010(
     operation: &str,
 ) -> Result<()> {
     let actor = admin_actor(authority)?;
-    let before = read_record(previous, did, now)?;
+    let before = read_record_with_policy(previous, did, now, false)?;
     if expected_version != before.version {
         return Err(super::stale());
     }
@@ -350,7 +380,9 @@ pub fn check_web_registry_mutation_admission_010(
     {
         return Err(super::rejected());
     }
-    check_web_registry_transition_shape_010(previous, candidate, did, now, now, operation)
+    check_web_registry_transition_shape_with_policy_010(
+        previous, candidate, did, now, now, operation, false,
+    )
 }
 
 #[cfg(test)]
@@ -491,6 +523,87 @@ mod tests {
         authority.fail = true;
         assert!(check_web_registry_mutation_admission_010(
             &authority, &before, &after, DID, 100, "1", "activate"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn expired_signing_key_can_be_replaced_by_authenticated_controller() {
+        let base = fixture();
+        let mut created = base.clone();
+        created["keys"].as_array_mut().unwrap().pop();
+        created["keys"][0]["expires"] = json!(101);
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("2");
+        let mut repaired = active.clone();
+        repaired["version"] = json!("3");
+        repaired["keys"]
+            .as_array_mut()
+            .unwrap()
+            .push(base["keys"][2].clone());
+        let before = body(&active);
+        let after = body(&repaired);
+        assert!(check_web_registry_creation_shape_010(&body(&created), DID, 100).is_ok());
+        assert!(check_web_registry_transition_shape_010(
+            &body(&created),
+            &before,
+            DID,
+            100,
+            100,
+            "activate"
+        )
+        .is_ok());
+        assert!(
+            super::super::web_record_proofs010::check_web_registry_proofs_010(&before, DID, 102)
+                .is_err()
+        );
+        assert!(
+            check_web_registry_transition_shape_010(&before, &after, DID, 100, 102, "add-key")
+                .is_ok()
+        );
+        assert!(
+            check_web_registry_transition_shape_010(&before, &after, DID, 102, 102, "add-key")
+                .is_err()
+        );
+        let authority = TestAuthority {
+            actor: "operator",
+            scope: "",
+            fail: false,
+            calls: Cell::new(0),
+        };
+        assert!(check_web_registry_mutation_admission_010(
+            &authority, &before, &after, DID, 102, "2", "add-key"
+        )
+        .is_ok());
+        assert!(
+            super::super::web_record_proofs010::check_web_registry_proofs_010(&after, DID, 102)
+                .is_ok()
+        );
+        let mut broken = active;
+        broken["keys"][0]["proof"]["value"] = json!("invalid");
+        assert!(check_web_registry_mutation_admission_010(
+            &authority,
+            &body(&broken),
+            &after,
+            DID,
+            102,
+            "2",
+            "add-key"
+        )
+        .is_err());
+        let mut revoked = created;
+        revoked["state"] = json!("active");
+        revoked["version"] = json!("2");
+        revoked["keys"][0]["state"] = json!("revoked");
+        assert!(check_web_registry_mutation_admission_010(
+            &authority,
+            &body(&revoked),
+            &after,
+            DID,
+            102,
+            "2",
+            "add-key"
         )
         .is_err());
     }

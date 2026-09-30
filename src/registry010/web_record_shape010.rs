@@ -153,6 +153,15 @@ fn service_uri(text: &str) -> bool {
 /// key points, proofs, historic immutability, or controller authority; success
 /// must never authorize a protected operation.
 pub fn check_web_registry_record_shape_010(raw: &[u8], expected_did: &str, now: i64) -> Result<()> {
+    check_web_registry_record_shape_with_policy_010(raw, expected_did, now, true)
+}
+
+pub(super) fn check_web_registry_record_shape_with_policy_010(
+    raw: &[u8],
+    expected_did: &str,
+    now: i64,
+    require_usable_signing: bool,
+) -> Result<()> {
     check_web_registry_envelope_010(raw, now)?;
     if !web_did(expected_did) {
         return Err(invalid());
@@ -193,6 +202,7 @@ pub fn check_web_registry_record_shape_010(raw: &[u8], expected_did: &str, now: 
     let mut materials = HashSet::new();
     let mut previous = "";
     let mut active_signing = false;
+    let mut accepted_signing = false;
     for entry in keys {
         let key = object(entry)?;
         if !closed(
@@ -250,11 +260,14 @@ pub fn check_web_registry_record_shape_010(raw: &[u8], expected_did: &str, now: 
         if signature.len() > 87 || canonical_base64(signature, None).is_none() {
             return Err(invalid());
         }
-        if alg != "x25519" && key_state == "accepted" && expires.is_none_or(|expiry| now < expiry) {
-            active_signing = true;
+        if alg != "x25519" && key_state == "accepted" {
+            accepted_signing = true;
+            if expires.is_none_or(|expiry| now < expiry) {
+                active_signing = true;
+            }
         }
     }
-    if state == "active" && !active_signing {
+    if state == "active" && !active_signing && (require_usable_signing || !accepted_signing) {
         return Err(invalid());
     }
     let services = array(field(fields, "services")?)?;
