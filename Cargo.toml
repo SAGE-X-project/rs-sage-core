@@ -96,6 +96,9 @@ harness = false
 # hpke's `getrandom` feature pulls getrandom 0.4, which needs the JS backend in browsers
 getrandom04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rustls = { version = "=0.23.45", default-features = false, features = ["std", "ring", "tls12"] }
+
 [features]
 default = []
 ffi = ["libc"]
