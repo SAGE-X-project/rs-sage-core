@@ -3,10 +3,11 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use sage_crypto_core::error::Error;
 use sage_crypto_core::registry010::{
-    check_web_registry_creation_admission_010, check_web_registry_creation_shape_010,
-    check_web_registry_history_continuity_010, check_web_registry_mutation_admission_010,
-    check_web_registry_transition_shape_010, WebRegistryAdminAuthority010,
-    WebRegistryHistoryEntry010,
+    apply_web_registry_write_010, check_web_registry_creation_admission_010,
+    check_web_registry_creation_shape_010, check_web_registry_history_continuity_010,
+    check_web_registry_mutation_admission_010, check_web_registry_transition_shape_010,
+    WebRegistryAdminAuthority010, WebRegistryHistoryEntry010, WebRegistryOwnedHistoryEntry010,
+    WebRegistryWriteSnapshot010, WebRegistryWriteState010, WebRegistryWriteStore010,
 };
 use serde::Deserialize;
 use std::io::{self, Read};
@@ -32,6 +33,12 @@ struct Request {
     fixture_scope: String,
     #[serde(default)]
     fixture_authenticated: bool,
+    #[serde(default)]
+    fixture_source: String,
+    #[serde(default)]
+    trusted_source: String,
+    #[serde(default)]
+    fixture_tombstoned: bool,
     #[serde(default)]
     history: Vec<HistoryItem>,
 }
@@ -71,6 +78,30 @@ impl WebRegistryAdminAuthority010 for FixtureAuthority<'_> {
     }
 }
 
+// Process-local Inspector fixture only; no durable Registry state is used.
+struct FixtureWriteStore<'a> {
+    state: WebRegistryWriteState010,
+    authority: FixtureAuthority<'a>,
+}
+
+impl WebRegistryWriteStore010 for FixtureWriteStore<'_> {
+    fn update(
+        &mut self,
+        _did: &str,
+        decide: &mut dyn for<'a> FnMut(
+            WebRegistryWriteSnapshot010<'a>,
+        )
+            -> sage_crypto_core::error::Result<WebRegistryWriteState010>,
+    ) -> sage_crypto_core::error::Result<()> {
+        let next = decide(WebRegistryWriteSnapshot010 {
+            state: self.state.clone(),
+            authority: &self.authority,
+        })?;
+        self.state = next;
+        Ok(())
+    }
+}
+
 fn main() {
     let mut raw = Vec::new();
     if io::stdin().take(150_001).read_to_end(&mut raw).is_err() || raw.len() > 150_000 {
@@ -84,6 +115,7 @@ fn main() {
         Ok(value) => value,
         Err(_) => std::process::exit(2),
     };
+    let mut transaction_state = None;
     let result = match request.action.as_str() {
         "create" => {
             check_web_registry_creation_shape_010(&candidate, &request.did, request.candidate_now)
@@ -167,6 +199,56 @@ fn main() {
                 &request.operation,
             )
         }
+        "transaction" => {
+            let previous = request
+                .previous
+                .as_ref()
+                .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
+                .unwrap_or_else(|| std::process::exit(2));
+            let history = request
+                .history
+                .iter()
+                .map(|item| {
+                    let envelope = URL_SAFE_NO_PAD
+                        .decode(&item.envelope)
+                        .unwrap_or_else(|_| std::process::exit(2));
+                    WebRegistryOwnedHistoryEntry010 {
+                        envelope,
+                        at: item.at,
+                        operation: item.operation.clone(),
+                    }
+                })
+                .collect();
+            let mut store = FixtureWriteStore {
+                state: WebRegistryWriteState010 {
+                    source: request.fixture_source.clone(),
+                    envelope: previous,
+                    history,
+                    tombstoned: request.fixture_tombstoned,
+                },
+                authority: FixtureAuthority {
+                    actor: &request.fixture_actor,
+                    scope: &request.fixture_scope,
+                    authenticated: request.fixture_authenticated,
+                },
+            };
+            let before = store.state.clone();
+            let result = apply_web_registry_write_010(
+                &mut store,
+                &request.trusted_source,
+                &request.did,
+                &candidate,
+                request.candidate_now,
+                &request.expected_version,
+                &request.operation,
+            );
+            transaction_state = Some((
+                store.state != before,
+                store.state.history.len(),
+                store.state.tombstoned,
+            ));
+            result
+        }
         _ => std::process::exit(2),
     };
     let verdict = match result {
@@ -174,7 +256,16 @@ fn main() {
         Err(Error::ValidationError(code)) if code == "size.exceeded" => "SIZE_EXCEEDED",
         Err(Error::ValidationError(code)) if code == "record.stale" => "RECORD_STALE",
         Err(Error::ValidationError(code)) if code == "record.rejected" => "WRITE_REJECTED",
+        Err(Error::ValidationError(code)) if code == "record.unreachable" => "RECORD_UNREACHABLE",
         Err(_) => "RECORD_INVALID",
     };
-    println!("{}", serde_json::json!({"verdict": verdict}));
+    if let Some((committed, history_len, tombstoned)) = transaction_state {
+        println!(
+            "{}",
+            serde_json::json!({"verdict": verdict, "committed": committed,
+            "history_len": history_len, "tombstoned": tombstoned})
+        );
+    } else {
+        println!("{}", serde_json::json!({"verdict": verdict}));
+    }
 }

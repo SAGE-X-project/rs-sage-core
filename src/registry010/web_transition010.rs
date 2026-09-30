@@ -385,6 +385,127 @@ pub fn check_web_registry_mutation_admission_010(
     )
 }
 
+/// One committed Registry version at its trusted mutation time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WebRegistryOwnedHistoryEntry010 {
+    /// The complete response envelope as accepted at mutation time.
+    pub envelope: Vec<u8>,
+    /// Trusted Unix second when the version was created.
+    pub at: i64,
+    /// The operation that produced the version.
+    pub operation: String,
+}
+
+/// The complete state supplied and replaced by one trusted transaction.
+/// `envelope` must be a fresh response for the current record; historical
+/// envelopes retain the trusted time at which each version was committed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WebRegistryWriteState010 {
+    /// Authenticated source identity pinned by local deployment configuration.
+    pub source: String,
+    /// Fresh response envelope for the current record, empty when absent.
+    pub envelope: Vec<u8>,
+    /// Every committed version, starting with creation.
+    pub history: Vec<WebRegistryOwnedHistoryEntry010>,
+    /// Deactivated identifiers remain reserved forever.
+    pub tombstoned: bool,
+}
+
+/// Current state and management authority read inside the same transaction.
+pub struct WebRegistryWriteSnapshot010<'a> {
+    /// Complete Registry state at this transaction's serialization point.
+    pub state: WebRegistryWriteState010,
+    /// Actor from verified credentials and controller-authorized delegation.
+    pub authority: &'a dyn WebRegistryAdminAuthority010,
+}
+
+/// A deployment store must serialize writes for each identifier, obtain a
+/// snapshot from its authenticated source, call `decide` exactly once, and
+/// durably replace the complete state only when `decide` succeeds. All errors
+/// leave state unchanged. The
+/// authority must never be built from caller-supplied JSON fields.
+pub trait WebRegistryWriteStore010 {
+    /// Execute one complete Registry write transaction.
+    fn update(
+        &mut self,
+        did: &str,
+        decide: &mut dyn for<'a> FnMut(
+            WebRegistryWriteSnapshot010<'a>,
+        ) -> Result<WebRegistryWriteState010>,
+    ) -> Result<()>;
+}
+
+/// Build the complete next state inside a deployment transaction. The source
+/// identity is local configuration, never request data. This function does
+/// not itself implement a durable store or credential verifier.
+pub fn apply_web_registry_write_010(
+    store: &mut dyn WebRegistryWriteStore010,
+    trusted_source: &str,
+    did: &str,
+    candidate: &[u8],
+    now: i64,
+    expected_version: &str,
+    operation: &str,
+) -> Result<()> {
+    if trusted_source.is_empty() || did.is_empty() {
+        return Err(super::rejected());
+    }
+    store.update(did, &mut |snapshot| {
+        let mut state = snapshot.state;
+        if state.source != trusted_source {
+            return Err(super::unreachable());
+        }
+        if state.envelope.is_empty() {
+            if !state.history.is_empty()
+                || state.tombstoned
+                || operation != "create"
+                || !expected_version.is_empty()
+            {
+                return Err(super::stale());
+            }
+            check_web_registry_creation_admission_010(snapshot.authority, candidate, did, now)?;
+        } else {
+            let last = state.history.last().ok_or_else(invalid)?;
+            if operation == "create" || last.at > now {
+                return Err(invalid());
+            }
+            let history: Vec<_> = state
+                .history
+                .iter()
+                .map(|entry| WebRegistryHistoryEntry010 {
+                    envelope: &entry.envelope,
+                    at: entry.at,
+                    operation: &entry.operation,
+                })
+                .collect();
+            check_web_registry_history_continuity_010(&history, &last.envelope, did, last.at)?;
+            let historical = read_record(&last.envelope, did, last.at)?;
+            let current = read_record_with_policy(&state.envelope, did, now, false)?;
+            if historical != current || state.tombstoned != (current.state == "deactivated") {
+                return Err(invalid());
+            }
+            check_web_registry_mutation_admission_010(
+                snapshot.authority,
+                &state.envelope,
+                candidate,
+                did,
+                now,
+                expected_version,
+                operation,
+            )?;
+        }
+        let record = read_record(candidate, did, now)?;
+        state.envelope = candidate.to_vec();
+        state.history.push(WebRegistryOwnedHistoryEntry010 {
+            envelope: candidate.to_vec(),
+            at: now,
+            operation: operation.to_owned(),
+        });
+        state.tombstoned = record.state == "deactivated";
+        Ok(state)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -468,6 +589,240 @@ mod tests {
                 && expected_version == "1"
                 && self.scope == operation)
         }
+    }
+
+    struct MemoryTransaction {
+        state: WebRegistryWriteState010,
+        authority: TestAuthority,
+    }
+
+    impl WebRegistryWriteStore010 for MemoryTransaction {
+        fn update(
+            &mut self,
+            _did: &str,
+            decide: &mut dyn for<'a> FnMut(
+                WebRegistryWriteSnapshot010<'a>,
+            ) -> Result<WebRegistryWriteState010>,
+        ) -> Result<()> {
+            let next = decide(WebRegistryWriteSnapshot010 {
+                state: self.state.clone(),
+                authority: &self.authority,
+            })?;
+            self.state = next;
+            Ok(())
+        }
+    }
+
+    fn memory_transaction() -> MemoryTransaction {
+        MemoryTransaction {
+            state: WebRegistryWriteState010 {
+                source: "trusted-web-origin".to_owned(),
+                envelope: Vec::new(),
+                history: Vec::new(),
+                tombstoned: false,
+            },
+            authority: TestAuthority {
+                actor: "operator",
+                scope: "",
+                fail: false,
+                calls: Cell::new(0),
+            },
+        }
+    }
+
+    #[test]
+    fn transactional_write_commits_complete_state_and_rejects_stale_versions() {
+        let created = fixture();
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("2");
+        let mut terminal = active.clone();
+        terminal["state"] = json!("deactivated");
+        terminal["version"] = json!("3");
+        let create = body(&created);
+        let activate = body(&active);
+        let deactivate = body(&terminal);
+        let mut store = memory_transaction();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &create,
+            100,
+            "",
+            "create"
+        )
+        .is_ok());
+        assert_eq!(store.state.history.len(), 1);
+        assert!(!store.state.tombstoned);
+        let before = store.state.clone();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &activate,
+            100,
+            "2",
+            "activate"
+        )
+        .is_err());
+        assert_eq!(store.state, before);
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &activate,
+            100,
+            "1",
+            "activate"
+        )
+        .is_ok());
+        assert_eq!(store.state.history.len(), 2);
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &deactivate,
+            100,
+            "2",
+            "deactivate"
+        )
+        .is_ok());
+        assert_eq!(store.state.history.len(), 3);
+        assert!(store.state.tombstoned);
+        let before = store.state.clone();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &create,
+            100,
+            "",
+            "create"
+        )
+        .is_err());
+        assert_eq!(store.state, before);
+    }
+
+    #[test]
+    fn transactional_write_requires_bound_source_history_and_authority() {
+        let created = fixture();
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("2");
+        let create = body(&created);
+        let activate = body(&active);
+        let mut store = memory_transaction();
+        store.state.source = "other-origin".to_owned();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &create,
+            100,
+            "",
+            "create"
+        )
+        .is_err());
+        assert!(store.state.history.is_empty());
+        store.state.source = "trusted-web-origin".to_owned();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &create,
+            100,
+            "",
+            "create"
+        )
+        .is_ok());
+        store.state.history[0].envelope = activate.clone();
+        let before = store.state.clone();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &activate,
+            100,
+            "1",
+            "activate"
+        )
+        .is_err());
+        assert_eq!(store.state, before);
+        store.state.history[0].envelope = create;
+        store.authority.actor = "assistant";
+        let before = store.state.clone();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &activate,
+            100,
+            "1",
+            "activate"
+        )
+        .is_err());
+        assert_eq!(store.state, before);
+    }
+
+    #[test]
+    fn transactional_write_recovers_expired_signer_and_checks_tombstone() {
+        let base = fixture();
+        let mut created = base.clone();
+        created["keys"].as_array_mut().unwrap().pop();
+        created["keys"][0]["expires"] = json!(101);
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("2");
+        let mut repaired = active.clone();
+        repaired["version"] = json!("3");
+        repaired["keys"]
+            .as_array_mut()
+            .unwrap()
+            .push(base["keys"][2].clone());
+        let create = body(&created);
+        let before = body(&active);
+        let after = body(&repaired);
+        let mut store = memory_transaction();
+        store.state.envelope = before.clone();
+        store.state.history = vec![
+            WebRegistryOwnedHistoryEntry010 {
+                envelope: create,
+                at: 100,
+                operation: "create".into(),
+            },
+            WebRegistryOwnedHistoryEntry010 {
+                envelope: before,
+                at: 100,
+                operation: "activate".into(),
+            },
+        ];
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &after,
+            102,
+            "2",
+            "add-key"
+        )
+        .is_ok());
+        assert_eq!(store.state.history.len(), 3);
+        assert!(!store.state.tombstoned);
+        assert!(read_record(&store.state.envelope, DID, 102).is_ok());
+        store.state.tombstoned = true;
+        let prior = store.state.clone();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &after,
+            102,
+            "3",
+            "add-key"
+        )
+        .is_err());
+        assert_eq!(store.state, prior);
     }
 
     #[test]
