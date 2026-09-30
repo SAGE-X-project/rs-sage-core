@@ -4,6 +4,7 @@ mod journal;
 mod proof;
 mod web_envelope010;
 mod web_media010;
+mod web_record_shape010;
 use crate::error::{Error, Result};
 pub use journal::{Journal, Watermark};
 pub use proof::pop_challenge010;
@@ -11,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 pub use web_envelope010::check_web_registry_envelope_010;
 pub use web_media010::{check_web_registry_media_010, HeaderField010};
+pub use web_record_shape010::check_web_registry_record_shape_010;
 
 pub(crate) fn rejected() -> Error {
     Error::ValidationError("record.rejected".into())
