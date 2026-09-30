@@ -24,6 +24,23 @@ pub fn check_web_registry_tls_origin_010(
     allowed_destinations: &[SocketAddr],
     root_der: &[u8],
 ) -> Result<()> {
+    connect_web_registry_tls_010(
+        did,
+        allowed_origins,
+        destination,
+        allowed_destinations,
+        root_der,
+    )?;
+    Ok(())
+}
+
+pub(super) fn connect_web_registry_tls_010(
+    did: &str,
+    allowed_origins: &[&str],
+    destination: SocketAddr,
+    allowed_destinations: &[SocketAddr],
+    root_der: &[u8],
+) -> Result<(ClientConnection, TcpStream)> {
     web_registry_request_url_010(did, allowed_origins)?;
     if destination.port() == 0
         || destination.ip().is_unspecified()
@@ -67,7 +84,7 @@ pub fn check_web_registry_tls_origin_010(
     {
         return Err(unreachable());
     }
-    Ok(())
+    Ok((connection, socket))
 }
 
 #[cfg(test)]

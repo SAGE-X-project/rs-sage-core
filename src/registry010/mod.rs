@@ -3,6 +3,8 @@
 mod journal;
 mod proof;
 mod web_envelope010;
+#[cfg(not(target_arch = "wasm32"))]
+mod web_http_record010;
 mod web_media010;
 mod web_origin_policy010;
 mod web_record_proofs010;
@@ -15,6 +17,8 @@ pub use proof::pop_challenge010;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 pub use web_envelope010::check_web_registry_envelope_010;
+#[cfg(not(target_arch = "wasm32"))]
+pub use web_http_record010::fetch_web_registry_record_010;
 pub use web_media010::{check_web_registry_media_010, HeaderField010};
 pub use web_origin_policy010::{
     check_web_registry_response_policy_010, web_registry_request_url_010,
