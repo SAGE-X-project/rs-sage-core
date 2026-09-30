@@ -2,6 +2,8 @@
 //! This is not a network resolver, proof verifier, or authenticated session manager.
 mod journal;
 mod proof;
+#[cfg(not(target_arch = "wasm32"))]
+mod web_admin_mtls010;
 mod web_envelope010;
 #[cfg(not(target_arch = "wasm32"))]
 mod web_http_record010;
@@ -18,6 +20,8 @@ pub use journal::{Journal, Watermark};
 pub use proof::pop_challenge010;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+#[cfg(not(target_arch = "wasm32"))]
+pub use web_admin_mtls010::WebRegistryAdminMTLSSession010;
 pub use web_envelope010::check_web_registry_envelope_010;
 #[cfg(not(target_arch = "wasm32"))]
 pub use web_http_record010::fetch_web_registry_record_010;
