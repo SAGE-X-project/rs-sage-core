@@ -998,6 +998,42 @@ mod tests {
     }
 
     #[test]
+    fn public_envelope_uses_committed_journal_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("writes.log");
+        let source = "https://agents.example.com";
+        let authority = TestAuthority {
+            actor: "operator",
+            scope: "",
+            fail: false,
+            calls: Cell::new(0),
+        };
+        let mut journal = crate::registry010::WebRegistryWriteJournal010::open(
+            &path, DID, source, &authority, true,
+        )
+        .unwrap();
+        assert!(journal.public_envelope(DID, source, 100).is_err());
+        assert!(apply_web_registry_write_010(
+            &mut journal,
+            source,
+            DID,
+            &body(&fixture()),
+            100,
+            "",
+            "create",
+        )
+        .is_ok());
+        assert!(journal.public_envelope(DID, "other-origin", 101).is_err());
+        let response = journal.public_envelope(DID, source, 101).unwrap();
+        let value: JsonValue = serde_json::from_slice(&response).unwrap();
+        assert_eq!(value["issued"], json!(101));
+        assert_eq!(value["expires"], json!(106));
+        assert!(crate::registry010::check_web_registry_proofs_010(&response, DID, 101).is_ok());
+        journal.close().unwrap();
+        assert!(journal.public_envelope(DID, source, 102).is_err());
+    }
+
+    #[test]
     fn write_journal_rejects_incomplete_tail() {
         use std::io::Write;
         let dir = tempfile::tempdir().unwrap();
