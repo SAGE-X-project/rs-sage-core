@@ -14,7 +14,7 @@ fn invalid() -> Error {
     Error::ValidationError("record.invalid".into())
 }
 
-fn object(value: &Value) -> Result<&[(String, Value)]> {
+pub(super) fn object(value: &Value) -> Result<&[(String, Value)]> {
     if let Value::Object(fields) = value {
         Ok(fields)
     } else {
@@ -22,7 +22,7 @@ fn object(value: &Value) -> Result<&[(String, Value)]> {
     }
 }
 
-fn array(value: &Value) -> Result<&[Value]> {
+pub(super) fn array(value: &Value) -> Result<&[Value]> {
     if let Value::Array(items) = value {
         Ok(items)
     } else {
@@ -30,7 +30,7 @@ fn array(value: &Value) -> Result<&[Value]> {
     }
 }
 
-fn string(value: &Value) -> Result<&str> {
+pub(super) fn string(value: &Value) -> Result<&str> {
     if let Value::String(text) = value {
         Ok(text)
     } else {
@@ -38,7 +38,7 @@ fn string(value: &Value) -> Result<&str> {
     }
 }
 
-fn field<'a>(fields: &'a [(String, Value)], name: &str) -> Result<&'a Value> {
+pub(super) fn field<'a>(fields: &'a [(String, Value)], name: &str) -> Result<&'a Value> {
     fields
         .iter()
         .find(|(key, _)| key == name)
@@ -105,7 +105,7 @@ fn web_did(did: &str) -> bool {
     })
 }
 
-fn canonical_base64(text: &str, expected_len: Option<usize>) -> Option<Vec<u8>> {
+pub(super) fn canonical_base64(text: &str, expected_len: Option<usize>) -> Option<Vec<u8>> {
     let bytes = URL_SAFE_NO_PAD.decode(text).ok()?;
     if bytes.is_empty()
         || expected_len.is_some_and(|size| bytes.len() != size)
