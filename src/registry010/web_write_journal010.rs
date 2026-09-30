@@ -184,6 +184,10 @@ impl<'a> WebRegistryWriteJournal010<'a> {
         self.state.clone()
     }
 
+    pub(super) fn binding(&self) -> (&str, &str, bool) {
+        (&self.did, &self.source, !self.failed && self.file.is_some())
+    }
+
     /// Release a clean writer lock. A quarantined store retains its lock.
     pub fn close(&mut self) -> Result<()> {
         if self.failed {
