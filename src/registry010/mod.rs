@@ -12,6 +12,7 @@ mod web_record_shape010;
 #[cfg(not(target_arch = "wasm32"))]
 mod web_tls_origin010;
 mod web_transition010;
+mod web_write_journal010;
 use crate::error::{Error, Result};
 pub use journal::{Journal, Watermark};
 pub use proof::pop_challenge010;
@@ -35,6 +36,7 @@ pub use web_transition010::{
     WebRegistryAdminAuthority010, WebRegistryHistoryEntry010, WebRegistryOwnedHistoryEntry010,
     WebRegistryWriteSnapshot010, WebRegistryWriteState010, WebRegistryWriteStore010,
 };
+pub use web_write_journal010::WebRegistryWriteJournal010;
 
 pub(crate) fn rejected() -> Error {
     Error::ValidationError("record.rejected".into())

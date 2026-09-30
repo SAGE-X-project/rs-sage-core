@@ -2,6 +2,7 @@
 
 use crate::error::{Error, Result};
 use crate::jcs;
+use serde::{Deserialize, Serialize};
 
 use super::web_envelope010::exact_integer;
 use super::web_record_proofs010::check_web_registry_proofs_with_policy_010;
@@ -386,7 +387,8 @@ pub fn check_web_registry_mutation_admission_010(
 }
 
 /// One committed Registry version at its trusted mutation time.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WebRegistryOwnedHistoryEntry010 {
     /// The complete response envelope as accepted at mutation time.
     pub envelope: Vec<u8>,
@@ -397,9 +399,11 @@ pub struct WebRegistryOwnedHistoryEntry010 {
 }
 
 /// The complete state supplied and replaced by one trusted transaction.
-/// `envelope` must be a fresh response for the current record; historical
+/// `envelope` is the committed response for the current record; the store
+/// refreshes response timestamps in the transaction snapshot. Historical
 /// envelopes retain the trusted time at which each version was committed.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WebRegistryWriteState010 {
     /// Authenticated source identity pinned by local deployment configuration.
     pub source: String,
@@ -420,15 +424,18 @@ pub struct WebRegistryWriteSnapshot010<'a> {
 }
 
 /// A deployment store must serialize writes for each identifier, obtain a
-/// snapshot from its authenticated source, call `decide` exactly once, and
-/// durably replace the complete state only when `decide` succeeds. All errors
-/// leave state unchanged. The
+/// snapshot from its authenticated source with an envelope fresh at `now`,
+/// call `decide` exactly once, and
+/// durably replace the complete state only when `decide` succeeds. Decision
+/// errors leave state unchanged. An I/O failure must quarantine the store
+/// because commit status may be uncertain. The
 /// authority must never be built from caller-supplied JSON fields.
 pub trait WebRegistryWriteStore010 {
     /// Execute one complete Registry write transaction.
     fn update(
         &mut self,
         did: &str,
+        now: i64,
         decide: &mut dyn for<'a> FnMut(
             WebRegistryWriteSnapshot010<'a>,
         ) -> Result<WebRegistryWriteState010>,
@@ -450,7 +457,7 @@ pub fn apply_web_registry_write_010(
     if trusted_source.is_empty() || did.is_empty() {
         return Err(super::rejected());
     }
-    store.update(did, &mut |snapshot| {
+    store.update(did, now, &mut |snapshot| {
         let mut state = snapshot.state;
         if state.source != trusted_source {
             return Err(super::unreachable());
@@ -504,6 +511,48 @@ pub fn apply_web_registry_write_010(
         state.tombstoned = record.state == "deactivated";
         Ok(state)
     })
+}
+
+pub(super) fn web_write_journal_step_010(
+    previous: &WebRegistryWriteState010,
+    next: &WebRegistryWriteState010,
+    source: &str,
+    did: &str,
+) -> Result<()> {
+    if next.source != source
+        || next.history.len() != previous.history.len() + 1
+        || previous.tombstoned
+        || (previous.envelope.is_empty() && !previous.history.is_empty())
+        || previous.history != next.history[..previous.history.len()]
+    {
+        return Err(invalid());
+    }
+    let last = next.history.last().ok_or_else(invalid)?;
+    if last.envelope != next.envelope {
+        return Err(invalid());
+    }
+    let history = next
+        .history
+        .iter()
+        .map(|entry| WebRegistryHistoryEntry010 {
+            envelope: &entry.envelope,
+            at: entry.at,
+            operation: &entry.operation,
+        })
+        .collect::<Vec<_>>();
+    check_web_registry_history_continuity_010(&history, &next.envelope, did, last.at)?;
+    let record = read_record(&next.envelope, did, last.at)?;
+    if next.tombstoned != (record.state == "deactivated") {
+        return Err(invalid());
+    }
+    if previous.history.is_empty() {
+        if !previous.envelope.is_empty() || last.operation != "create" {
+            return Err(invalid());
+        }
+    } else if last.at < previous.history.last().ok_or_else(invalid)?.at {
+        return Err(invalid());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -600,6 +649,7 @@ mod tests {
         fn update(
             &mut self,
             _did: &str,
+            _now: i64,
             decide: &mut dyn for<'a> FnMut(
                 WebRegistryWriteSnapshot010<'a>,
             ) -> Result<WebRegistryWriteState010>,
@@ -823,6 +873,244 @@ mod tests {
         )
         .is_err());
         assert_eq!(store.state, prior);
+    }
+
+    #[test]
+    fn write_journal_survives_restart_and_refreshes_response() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("writes.log");
+        let created = fixture();
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("2");
+        let mut terminal = active.clone();
+        terminal["state"] = json!("deactivated");
+        terminal["version"] = json!("3");
+        let body_at = |record: &JsonValue, now: i64| {
+            json!({"record": record, "issued": now, "expires": now + 5})
+                .to_string()
+                .into_bytes()
+        };
+        let authority = TestAuthority {
+            actor: "operator",
+            scope: "",
+            fail: false,
+            calls: Cell::new(0),
+        };
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            true,
+        )
+        .unwrap();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body_at(&created, 100),
+            100,
+            "",
+            "create"
+        )
+        .is_ok());
+        assert!(crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            false
+        )
+        .is_err());
+        store.close().unwrap();
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            false,
+        )
+        .unwrap();
+        assert_eq!(store.inspect().history.len(), 1);
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body_at(&active, 200),
+            200,
+            "1",
+            "activate"
+        )
+        .is_ok());
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body_at(&terminal, 300),
+            300,
+            "1",
+            "deactivate"
+        )
+        .is_err());
+        assert_eq!(store.inspect().history.len(), 2);
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body_at(&terminal, 300),
+            300,
+            "2",
+            "deactivate"
+        )
+        .is_ok());
+        store.close().unwrap();
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            false,
+        )
+        .unwrap();
+        assert_eq!(store.inspect().history.len(), 3);
+        assert!(store.inspect().tombstoned);
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body_at(&created, 400),
+            400,
+            "",
+            "create"
+        )
+        .is_err());
+        assert_eq!(store.inspect().history.len(), 3);
+        store.close().unwrap();
+        assert!(crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "other-origin",
+            &authority,
+            false
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn write_journal_rejects_incomplete_tail() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("writes.log");
+        let authority = TestAuthority {
+            actor: "operator",
+            scope: "",
+            fail: false,
+            calls: Cell::new(0),
+        };
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            true,
+        )
+        .unwrap();
+        store.close().unwrap();
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"{\"source\":")
+            .unwrap();
+        assert!(crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            false
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn write_journal_recovers_expired_signer_after_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("writes.log");
+        let base = fixture();
+        let mut created = base.clone();
+        created["keys"].as_array_mut().unwrap().pop();
+        created["keys"][0]["expires"] = json!(101);
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("2");
+        let mut repaired = active.clone();
+        repaired["version"] = json!("3");
+        repaired["keys"]
+            .as_array_mut()
+            .unwrap()
+            .push(base["keys"][2].clone());
+        let body_at = |record: &JsonValue, now: i64| {
+            json!({"record": record, "issued": now, "expires": now + 5})
+                .to_string()
+                .into_bytes()
+        };
+        let authority = TestAuthority {
+            actor: "operator",
+            scope: "",
+            fail: false,
+            calls: Cell::new(0),
+        };
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            true,
+        )
+        .unwrap();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body_at(&created, 100),
+            100,
+            "",
+            "create"
+        )
+        .is_ok());
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body_at(&active, 100),
+            100,
+            "1",
+            "activate"
+        )
+        .is_ok());
+        store.close().unwrap();
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            false,
+        )
+        .unwrap();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body_at(&repaired, 200),
+            200,
+            "2",
+            "add-key"
+        )
+        .is_ok());
+        assert_eq!(store.inspect().history.len(), 3);
+        assert!(read_record(&store.inspect().envelope, DID, 200).is_ok());
+        store.close().unwrap();
     }
 
     #[test]
