@@ -29,8 +29,17 @@ fn lock_path(path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+#[cfg(unix)]
 fn sync_parent(path: &Path) -> Result<()> {
     File::open(path.parent().unwrap_or_else(|| Path::new(".")))?.sync_all()?;
+    Ok(())
+}
+
+// Windows does not expose a portable directory fsync through std::fs. Journal
+// contents are synced, but new file and lock names need platform-specific
+// durability guarantees before claiming power-loss recovery on Windows.
+#[cfg(not(unix))]
+fn sync_parent(_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -51,7 +60,8 @@ fn refresh(raw: &[u8], now: i64) -> Result<Vec<u8>> {
 /// configuration. A crash or uncertain I/O leaves the exclusive lock in place;
 /// an operator must establish ownership and inspect the journal before recovery.
 /// Malicious disk rollback and deployed source/credential binding are outside
-/// this type's guarantee.
+/// this type's guarantee. Windows lacks a portable directory sync here, so
+/// power-loss recovery of newly created journal and lock names is not claimed.
 pub struct WebRegistryWriteJournal010<'a> {
     file: Option<File>,
     lock: PathBuf,
