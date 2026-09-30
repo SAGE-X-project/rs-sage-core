@@ -71,7 +71,7 @@ fn key_id(text: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
 }
 
-fn web_did(did: &str) -> bool {
+pub(super) fn web_did(did: &str) -> bool {
     if did.len() > 256 {
         return false;
     }
