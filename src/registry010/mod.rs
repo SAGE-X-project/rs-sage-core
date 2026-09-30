@@ -11,6 +11,7 @@ mod web_record_proofs010;
 mod web_record_shape010;
 #[cfg(not(target_arch = "wasm32"))]
 mod web_tls_origin010;
+mod web_transition010;
 use crate::error::{Error, Result};
 pub use journal::{Journal, Watermark};
 pub use proof::pop_challenge010;
@@ -27,6 +28,9 @@ pub use web_record_proofs010::check_web_registry_proofs_010;
 pub use web_record_shape010::check_web_registry_record_shape_010;
 #[cfg(not(target_arch = "wasm32"))]
 pub use web_tls_origin010::check_web_registry_tls_origin_010;
+pub use web_transition010::{
+    check_web_registry_creation_shape_010, check_web_registry_transition_shape_010,
+};
 
 pub(crate) fn rejected() -> Error {
     Error::ValidationError("record.rejected".into())
