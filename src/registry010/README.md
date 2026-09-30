@@ -77,6 +77,16 @@ last supplied version. Sequence continuity does not prove that the source
 supplied every real mutation; the Registry deployment must authenticate and
 retain the log and bind each historical time to the committed write.
 
+`check_web_registry_creation_admission_010` and
+`check_web_registry_mutation_admission_010` enforce controller identity, exact
+expected version and operation-scoped delegation through a deployment-supplied
+administration authority. That authority must derive the actor from verified
+credentials and supply controller-authorized management state. These functions
+only check a proposed write; the deployment must repeat the decision while
+atomically reserving or comparing and writing the record and durable history.
+They do not define an administrative API, authenticate transport credentials,
+or grant a reusable authorization token.
+
 `pop_challenge010` constructs the exact five-field REG-04 challenge bytes from
 already validated record components. It keeps the new `sage-pop-0.10.0`
 domain separate from the legacy DID `SAGE-PoP` path. The bundled 0.10.0

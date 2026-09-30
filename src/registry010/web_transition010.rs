@@ -11,6 +11,34 @@ fn invalid() -> Error {
     Error::ValidationError("record.invalid".into())
 }
 
+/// Deployment-provided administration authority. Actor identity must come
+/// from verified transport credentials, never from a record or JSON field.
+/// Delegation must come from controller-authorized, operation-scoped
+/// management state bound to the expected version.
+pub trait WebRegistryAdminAuthority010 {
+    /// Return the authenticated actor's authorization identifier.
+    fn authenticated_actor(&self) -> Result<String>;
+    /// Check one delegated operation at the expected Registry version.
+    fn delegated(
+        &self,
+        controller: &str,
+        actor: &str,
+        did: &str,
+        operation: &str,
+        expected_version: &str,
+    ) -> Result<bool>;
+}
+
+fn admin_actor(authority: &dyn WebRegistryAdminAuthority010) -> Result<String> {
+    let actor = authority
+        .authenticated_actor()
+        .map_err(|_| super::rejected())?;
+    if actor.is_empty() || actor.len() > 256 || !actor.is_ascii() {
+        return Err(super::rejected());
+    }
+    Ok(actor)
+}
+
 #[derive(PartialEq, Eq)]
 struct Key {
     name: String,
@@ -280,12 +308,58 @@ pub fn check_web_registry_history_continuity_010(
     Ok(())
 }
 
+/// Check creation by the deployment-authenticated controller. The deployment
+/// must still reserve the name and repeat admission inside an atomic write.
+pub fn check_web_registry_creation_admission_010(
+    authority: &dyn WebRegistryAdminAuthority010,
+    candidate: &[u8],
+    did: &str,
+    now: i64,
+) -> Result<()> {
+    let actor = admin_actor(authority)?;
+    check_web_registry_creation_shape_010(candidate, did, now)?;
+    let record = read_record(candidate, did, now)?;
+    if actor != record.controller {
+        return Err(super::rejected());
+    }
+    Ok(())
+}
+
+/// Check expected-version and actor policy for one proposed mutation. An
+/// operator must have the exact operation in trusted management state.
+/// Authentication, delegation, version and write still require one atomic
+/// deployment transaction; this predicate grants no durable write authority.
+pub fn check_web_registry_mutation_admission_010(
+    authority: &dyn WebRegistryAdminAuthority010,
+    previous: &[u8],
+    candidate: &[u8],
+    did: &str,
+    now: i64,
+    expected_version: &str,
+    operation: &str,
+) -> Result<()> {
+    let actor = admin_actor(authority)?;
+    let before = read_record(previous, did, now)?;
+    if expected_version != before.version {
+        return Err(super::stale());
+    }
+    if actor != before.controller
+        && !authority
+            .delegated(&before.controller, &actor, did, operation, expected_version)
+            .unwrap_or(false)
+    {
+        return Err(super::rejected());
+    }
+    check_web_registry_transition_shape_010(previous, candidate, did, now, now, operation)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use ed25519_dalek::Signer;
     use serde_json::{json, Value as JsonValue};
+    use std::cell::Cell;
 
     const DID: &str = "did:sage:web:agents.example.com:billing-bot";
 
@@ -330,6 +404,95 @@ mod tests {
         json!({"record": record, "issued": 100, "expires": 105})
             .to_string()
             .into_bytes()
+    }
+
+    struct TestAuthority {
+        actor: &'static str,
+        scope: &'static str,
+        fail: bool,
+        calls: Cell<usize>,
+    }
+
+    impl WebRegistryAdminAuthority010 for TestAuthority {
+        fn authenticated_actor(&self) -> Result<String> {
+            if self.fail {
+                return Err(invalid());
+            }
+            Ok(self.actor.to_owned())
+        }
+
+        fn delegated(
+            &self,
+            controller: &str,
+            actor: &str,
+            did: &str,
+            operation: &str,
+            expected_version: &str,
+        ) -> Result<bool> {
+            self.calls.set(self.calls.get() + 1);
+            Ok(controller == "operator"
+                && actor == "assistant"
+                && did == DID
+                && expected_version == "1"
+                && self.scope == operation)
+        }
+    }
+
+    #[test]
+    fn write_admission_requires_authenticated_controller_or_exact_scope() {
+        let created = fixture();
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("2");
+        let before = body(&created);
+        let after = body(&active);
+        let mut authority = TestAuthority {
+            actor: "operator",
+            scope: "",
+            fail: false,
+            calls: Cell::new(0),
+        };
+        assert!(check_web_registry_creation_admission_010(&authority, &before, DID, 100).is_ok());
+        assert!(check_web_registry_mutation_admission_010(
+            &authority, &before, &after, DID, 100, "1", "activate"
+        )
+        .is_ok());
+        assert_eq!(authority.calls.get(), 0);
+        assert!(check_web_registry_mutation_admission_010(
+            &authority, &before, &after, DID, 100, "2", "activate"
+        )
+        .is_err());
+        authority.actor = "assistant";
+        authority.scope = "activate";
+        assert!(check_web_registry_creation_admission_010(&authority, &before, DID, 100).is_err());
+        assert!(check_web_registry_mutation_admission_010(
+            &authority, &before, &after, DID, 100, "1", "activate"
+        )
+        .is_ok());
+        assert_eq!(authority.calls.get(), 1);
+        authority.scope = "update-services";
+        assert!(check_web_registry_mutation_admission_010(
+            &authority, &before, &after, DID, 100, "1", "activate"
+        )
+        .is_err());
+        authority.scope = "activate";
+        let mut invalid_version = active;
+        invalid_version["version"] = json!("3");
+        assert!(check_web_registry_mutation_admission_010(
+            &authority,
+            &before,
+            &body(&invalid_version),
+            DID,
+            100,
+            "1",
+            "activate"
+        )
+        .is_err());
+        authority.fail = true;
+        assert!(check_web_registry_mutation_admission_010(
+            &authority, &before, &after, DID, 100, "1", "activate"
+        )
+        .is_err());
     }
 
     #[test]
