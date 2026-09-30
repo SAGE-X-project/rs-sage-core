@@ -55,7 +55,7 @@ fn valid_numbers(value: &Value) -> bool {
     }
 }
 
-fn exact_integer(value: &Value) -> Option<i64> {
+pub(super) fn exact_integer(value: &Value) -> Option<i64> {
     let Value::Number(literal) = value else {
         return None;
     };
