@@ -55,6 +55,12 @@ struct HistoryItem {
     envelope: String,
     at: i64,
     operation: String,
+    #[serde(default)]
+    actor: String,
+    #[serde(default)]
+    target: String,
+    #[serde(default)]
+    scope: String,
 }
 
 // Local Inspector fixture only; no transport credentials are inspected here.
@@ -223,6 +229,9 @@ fn main() {
                         envelope,
                         at: item.at,
                         operation: item.operation.clone(),
+                        actor: item.actor.clone(),
+                        target: item.target.clone(),
+                        scope: item.scope.clone(),
                     }
                 })
                 .collect();
@@ -231,6 +240,7 @@ fn main() {
                     source: request.fixture_source.clone(),
                     envelope: previous,
                     history,
+                    grants: Vec::new(),
                     tombstoned: request.fixture_tombstoned,
                 },
                 authority: FixtureAuthority {

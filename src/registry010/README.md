@@ -105,7 +105,7 @@ an exclusive writer lock, appends one complete state row and syncs it before
 exposing the change, and rejects incomplete state on restart. A prior response
 is re-enveloped at the trusted mutation time so later legitimate writes are
 not blocked by its five-second HTTP response lifetime. The path, source
-identity, credentials, delegation and disk integrity are deployment inputs;
+identity, credentials and disk integrity are deployment inputs;
 this journal does not authenticate them or establish REG-08 deployment
 conformance.
 
@@ -125,6 +125,20 @@ administrator journal. It rejects a different record. This checks one
 publication snapshot; it does not bind a deployed public server's storage to
 the administrator journal, authorize a later operation, or establish complete
 REG-08 conformance.
+
+`apply_web_registry_operator_command_010` adds controller-only grant and
+revoke transactions to the same durable journal. Exact operator and scope
+pairs, authenticated actor history, the public record version and terminal
+tombstone are committed together. Lifecycle writes use the committed grant
+set rather than a separately asserted positive delegation result, and retire
+scopes invalid in the next state. Writes reconstruct grants from the complete
+history; restart checks each grant transition. The `operator-1` journal header
+rejects older files lacking the actor and grant history needed for safe
+migration. The standalone `check_web_registry_mutation_admission_010` remains
+a bounded predicate using deployment-supplied delegation and does not itself
+establish the atomic grant contract. A deployed service must still bind the
+administrative command encoding, verified credentials, storage ownership and
+an authenticated read-only Inspector view before claiming conformance.
 
 `WebRegistryWriteJournal010::public_envelope` creates a new five-second
 response from the same committed journal that accepted an administrator write.

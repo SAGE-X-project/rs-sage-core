@@ -38,10 +38,11 @@ pub use web_record_shape010::check_web_registry_record_shape_010;
 #[cfg(not(target_arch = "wasm32"))]
 pub use web_tls_origin010::check_web_registry_tls_origin_010;
 pub use web_transition010::{
-    apply_web_registry_write_010, check_web_registry_creation_admission_010,
-    check_web_registry_creation_shape_010, check_web_registry_history_continuity_010,
-    check_web_registry_mutation_admission_010, check_web_registry_transition_shape_010,
-    WebRegistryAdminAuthority010, WebRegistryHistoryEntry010, WebRegistryOwnedHistoryEntry010,
+    apply_web_registry_operator_command_010, apply_web_registry_write_010,
+    check_web_registry_creation_admission_010, check_web_registry_creation_shape_010,
+    check_web_registry_history_continuity_010, check_web_registry_mutation_admission_010,
+    check_web_registry_transition_shape_010, WebRegistryAdminAuthority010,
+    WebRegistryHistoryEntry010, WebRegistryOperatorGrant010, WebRegistryOwnedHistoryEntry010,
     WebRegistryWriteSnapshot010, WebRegistryWriteState010, WebRegistryWriteStore010,
 };
 pub use web_write_journal010::WebRegistryWriteJournal010;

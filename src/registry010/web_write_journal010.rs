@@ -15,7 +15,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-const HEADER: &[u8] = b"sage-web-registry-writes|0.10.0\n";
+const HEADER: &[u8] = b"sage-web-registry-writes|0.10.0|operator-1\n";
 const LIMIT: u64 = 64 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -151,6 +151,7 @@ impl<'a> WebRegistryWriteJournal010<'a> {
                 source: source.to_owned(),
                 envelope: Vec::new(),
                 history: Vec::new(),
+                grants: Vec::new(),
                 tombstoned: false,
             };
             for line in lines {

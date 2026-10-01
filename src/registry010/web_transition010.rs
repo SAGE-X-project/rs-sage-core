@@ -40,7 +40,7 @@ fn admin_actor(authority: &dyn WebRegistryAdminAuthority010) -> Result<String> {
     Ok(actor)
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct Key {
     name: String,
     alg: String,
@@ -62,14 +62,14 @@ impl Key {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct Service {
     name: String,
     kind: String,
     uri: String,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct Record {
     id: String,
     controller: String,
@@ -203,7 +203,8 @@ fn check_web_registry_transition_shape_with_policy_010(
 ) -> Result<()> {
     let before =
         read_record_with_policy(previous, did, previous_now, require_previous_usable_signing)?;
-    let after = read_record(candidate, did, candidate_now)?;
+    let management = matches!(operation, "authorize-operator" | "revoke-operator");
+    let mut after = read_record_with_policy(candidate, did, candidate_now, !management)?;
     let next_version = before
         .version
         .parse::<u64>()
@@ -215,6 +216,14 @@ fn check_web_registry_transition_shape_with_policy_010(
         || before.state == "deactivated"
     {
         return Err(invalid());
+    }
+    if management {
+        after.version = before.version.clone();
+        return if after == before {
+            Ok(())
+        } else {
+            Err(invalid())
+        };
     }
     let mut revoked = 0;
     for old in &before.keys {
@@ -323,17 +332,20 @@ pub fn check_web_registry_history_continuity_010(
         if next.at < previous.at || next.at > current_now {
             return Err(invalid());
         }
-        check_web_registry_transition_shape_010(
+        check_web_registry_transition_shape_with_policy_010(
             previous.envelope,
             next.envelope,
             did,
             previous.at,
             next.at,
             next.operation,
+            false,
         )?;
     }
     let last = history.last().ok_or_else(invalid)?;
-    if read_record(last.envelope, did, last.at)? != read_record(current, did, current_now)? {
+    if read_record_with_policy(last.envelope, did, last.at, false)?
+        != read_record_with_policy(current, did, current_now, false)?
+    {
         return Err(invalid());
     }
     Ok(())
@@ -396,6 +408,15 @@ pub struct WebRegistryOwnedHistoryEntry010 {
     pub at: i64,
     /// The operation that produced the version.
     pub operation: String,
+    /// Authenticated actor at the committed write.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub actor: String,
+    /// Target of a management operation.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub target: String,
+    /// Exact management scope.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scope: String,
 }
 
 /// The complete state supplied and replaced by one trusted transaction.
@@ -411,8 +432,144 @@ pub struct WebRegistryWriteState010 {
     pub envelope: Vec<u8>,
     /// Every committed version, starting with creation.
     pub history: Vec<WebRegistryOwnedHistoryEntry010>,
+    /// Active exact-scope operator grants, committed with the public version.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grants: Vec<WebRegistryOperatorGrant010>,
     /// Deactivated identifiers remain reserved forever.
     pub tombstoned: bool,
+}
+
+/// One exact active management grant; never a public record member.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebRegistryOperatorGrant010 {
+    /// Credential-mapped authorization identifier.
+    pub operator: String,
+    /// One named lifecycle operation.
+    pub scope: String,
+}
+
+fn operator_scope(scope: &str, state: &str) -> bool {
+    match state {
+        "created" => matches!(scope, "activate" | "deactivate"),
+        "active" => matches!(
+            scope,
+            "add-key" | "revoke-key" | "update-services" | "deactivate"
+        ),
+        _ => false,
+    }
+}
+
+fn valid_operator(operator: &str, controller: &str) -> bool {
+    !operator.is_empty() && operator.len() <= 256 && operator.is_ascii() && operator != controller
+}
+
+fn valid_grants(grants: &[WebRegistryOperatorGrant010], controller: &str, state: &str) -> bool {
+    grants.len() <= 128
+        && grants.iter().all(|grant| {
+            valid_operator(&grant.operator, controller) && operator_scope(&grant.scope, state)
+        })
+        && grants.windows(2).all(|pair| pair[0] < pair[1])
+}
+
+fn next_grants(
+    previous: &[WebRegistryOperatorGrant010],
+    before: &Record,
+    after: &Record,
+    entry: &WebRegistryOwnedHistoryEntry010,
+) -> Result<Vec<WebRegistryOperatorGrant010>> {
+    if !valid_grants(previous, &before.controller, &before.state)
+        || (entry.actor != before.controller && !valid_operator(&entry.actor, &before.controller))
+    {
+        return Err(invalid());
+    }
+    let mut next = previous.to_vec();
+    if matches!(
+        entry.operation.as_str(),
+        "authorize-operator" | "revoke-operator"
+    ) {
+        if entry.actor != before.controller
+            || !valid_operator(&entry.target, &before.controller)
+            || !operator_scope(&entry.scope, &before.state)
+        {
+            return Err(super::rejected());
+        }
+        let grant = WebRegistryOperatorGrant010 {
+            operator: entry.target.clone(),
+            scope: entry.scope.clone(),
+        };
+        let position = next.binary_search(&grant);
+        if entry.operation == "authorize-operator" {
+            if position.is_ok() || next.len() == 128 {
+                return Err(super::rejected());
+            }
+            next.insert(position.unwrap_err(), grant);
+        } else {
+            next.remove(position.map_err(|_| super::rejected())?);
+        }
+    } else {
+        if !entry.target.is_empty()
+            || !entry.scope.is_empty()
+            || (entry.actor != before.controller
+                && !previous
+                    .iter()
+                    .any(|grant| grant.operator == entry.actor && grant.scope == entry.operation))
+        {
+            return Err(super::rejected());
+        }
+        next.retain(|grant| operator_scope(&grant.scope, &after.state));
+    }
+    if !valid_grants(&next, &after.controller, &after.state) {
+        return Err(invalid());
+    }
+    Ok(next)
+}
+
+fn check_grant_history(state: &WebRegistryWriteState010, did: &str) -> Result<()> {
+    let mut grants = Vec::new();
+    let mut prior = None;
+    for entry in &state.history {
+        let after = read_record_with_policy(&entry.envelope, did, entry.at, false)?;
+        if let Some(before) = prior.as_ref() {
+            grants = next_grants(&grants, before, &after, entry).map_err(|_| invalid())?;
+        } else if entry.operation != "create"
+            || entry.actor != after.controller
+            || !entry.target.is_empty()
+            || !entry.scope.is_empty()
+        {
+            return Err(invalid());
+        }
+        prior = Some(after);
+    }
+    if grants != state.grants {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
+pub(super) fn verify_grant_step(
+    previous: &WebRegistryWriteState010,
+    next: &WebRegistryWriteState010,
+    did: &str,
+) -> Result<()> {
+    let entry = next.history.last().ok_or_else(invalid)?;
+    let after = read_record_with_policy(&entry.envelope, did, entry.at, false)?;
+    if previous.history.is_empty() {
+        if entry.actor != after.controller
+            || !entry.target.is_empty()
+            || !entry.scope.is_empty()
+            || !next.grants.is_empty()
+        {
+            return Err(invalid());
+        }
+    } else {
+        let prior = previous.history.last().ok_or_else(invalid)?;
+        let before = read_record_with_policy(&prior.envelope, did, prior.at, false)?;
+        if next_grants(&previous.grants, &before, &after, entry)? != next.grants {
+            return Err(invalid());
+        }
+    }
+    Ok(())
 }
 
 /// Current state and management authority read inside the same transaction.
@@ -464,6 +621,7 @@ pub fn apply_web_registry_write_010(
         }
         if state.envelope.is_empty() {
             if !state.history.is_empty()
+                || !state.grants.is_empty()
                 || state.tombstoned
                 || operation != "create"
                 || !expected_version.is_empty()
@@ -486,29 +644,145 @@ pub fn apply_web_registry_write_010(
                 })
                 .collect();
             check_web_registry_history_continuity_010(&history, &last.envelope, did, last.at)?;
-            let historical = read_record(&last.envelope, did, last.at)?;
+            check_grant_history(&state, did)?;
+            let historical = read_record_with_policy(&last.envelope, did, last.at, false)?;
             let current = read_record_with_policy(&state.envelope, did, now, false)?;
             if historical != current || state.tombstoned != (current.state == "deactivated") {
                 return Err(invalid());
             }
-            check_web_registry_mutation_admission_010(
-                snapshot.authority,
+            if expected_version != current.version {
+                return Err(super::stale());
+            }
+            check_web_registry_transition_shape_with_policy_010(
                 &state.envelope,
                 candidate,
                 did,
                 now,
-                expected_version,
+                now,
                 operation,
+                false,
             )?;
         }
+        let actor = admin_actor(snapshot.authority)?;
+        let prior = if state.envelope.is_empty() {
+            None
+        } else {
+            Some(read_record_with_policy(&state.envelope, did, now, false)?)
+        };
         let record = read_record(candidate, did, now)?;
-        state.envelope = candidate.to_vec();
-        state.history.push(WebRegistryOwnedHistoryEntry010 {
+        let entry = WebRegistryOwnedHistoryEntry010 {
             envelope: candidate.to_vec(),
             at: now,
             operation: operation.to_owned(),
-        });
+            actor: actor.clone(),
+            target: String::new(),
+            scope: String::new(),
+        };
+        if let Some(before) = prior.as_ref() {
+            state.grants = next_grants(&state.grants, before, &record, &entry)?;
+        } else if actor != record.controller {
+            return Err(super::rejected());
+        }
+        state.envelope = candidate.to_vec();
+        state.history.push(entry);
         state.tombstoned = record.state == "deactivated";
+        Ok(state)
+    })
+}
+
+/// Commit a controller-only grant or revoke with one public record version.
+/// The supplied store must durably replace the complete state before success.
+pub fn apply_web_registry_operator_command_010(
+    store: &mut dyn WebRegistryWriteStore010,
+    trusted_source: &str,
+    did: &str,
+    now: i64,
+    expected_version: &str,
+    operation: &str,
+    grant: &WebRegistryOperatorGrant010,
+) -> Result<()> {
+    if trusted_source.is_empty()
+        || did.is_empty()
+        || !(0..=9007199254740986).contains(&now)
+        || !matches!(operation, "authorize-operator" | "revoke-operator")
+    {
+        return Err(super::rejected());
+    }
+    store.update(did, now, &mut |snapshot| {
+        let mut state = snapshot.state;
+        if state.source != trusted_source || state.history.is_empty() || state.tombstoned {
+            return Err(super::unreachable());
+        }
+        let last = state.history.last().ok_or_else(invalid)?;
+        if last.at > now {
+            return Err(invalid());
+        }
+        let history: Vec<_> = state
+            .history
+            .iter()
+            .map(|entry| WebRegistryHistoryEntry010 {
+                envelope: &entry.envelope,
+                at: entry.at,
+                operation: &entry.operation,
+            })
+            .collect();
+        check_web_registry_history_continuity_010(&history, &last.envelope, did, last.at)?;
+        check_grant_history(&state, did)?;
+        let historical = read_record_with_policy(&last.envelope, did, last.at, false)?;
+        let before = read_record_with_policy(&state.envelope, did, now, false)?;
+        if historical != before || state.tombstoned != (before.state == "deactivated") {
+            return Err(invalid());
+        }
+        if before.version != expected_version || before.state == "deactivated" {
+            return Err(super::stale());
+        }
+        let actor = admin_actor(snapshot.authority)?;
+        if actor != before.controller {
+            return Err(super::rejected());
+        }
+        let next_version = before
+            .version
+            .parse::<u64>()
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .ok_or_else(super::rejected)?;
+        let mut after = before.clone();
+        after.version = next_version.to_string();
+        let mut entry = WebRegistryOwnedHistoryEntry010 {
+            envelope: Vec::new(),
+            at: now,
+            operation: operation.to_owned(),
+            actor,
+            target: grant.operator.clone(),
+            scope: grant.scope.clone(),
+        };
+        let grants = next_grants(&state.grants, &before, &after, &entry)?;
+        let mut wrapper: serde_json::Value =
+            serde_json::from_slice(&state.envelope).map_err(|_| invalid())?;
+        wrapper
+            .get_mut("record")
+            .and_then(serde_json::Value::as_object_mut)
+            .ok_or_else(invalid)?
+            .insert(
+                "version".to_owned(),
+                serde_json::Value::String(after.version),
+            );
+        wrapper["issued"] = serde_json::json!(now);
+        wrapper["expires"] = serde_json::json!(now + 5);
+        let candidate = serde_json::to_vec(&wrapper).map_err(|_| invalid())?;
+        check_web_registry_transition_shape_with_policy_010(
+            &state.envelope,
+            &candidate,
+            did,
+            now,
+            now,
+            operation,
+            false,
+        )?;
+        state.envelope = candidate.clone();
+        entry.envelope = candidate;
+        state.history.push(entry);
+        state.grants = grants;
         Ok(state)
     })
 }
@@ -541,7 +815,7 @@ pub(super) fn web_write_journal_step_010(
         })
         .collect::<Vec<_>>();
     check_web_registry_history_continuity_010(&history, &next.envelope, did, last.at)?;
-    let record = read_record(&next.envelope, did, last.at)?;
+    let record = read_record_with_policy(&next.envelope, did, last.at, false)?;
     if next.tombstoned != (record.state == "deactivated") {
         return Err(invalid());
     }
@@ -552,6 +826,7 @@ pub(super) fn web_write_journal_step_010(
     } else if last.at < previous.history.last().ok_or_else(invalid)?.at {
         return Err(invalid());
     }
+    verify_grant_step(previous, next, did)?;
     Ok(())
 }
 
@@ -615,6 +890,20 @@ mod tests {
         calls: Cell<usize>,
     }
 
+    struct MutableAuthority {
+        actor: Cell<&'static str>,
+    }
+
+    impl WebRegistryAdminAuthority010 for MutableAuthority {
+        fn authenticated_actor(&self) -> Result<String> {
+            Ok(self.actor.get().to_owned())
+        }
+
+        fn delegated(&self, _: &str, _: &str, _: &str, _: &str, _: &str) -> Result<bool> {
+            Ok(false)
+        }
+    }
+
     impl WebRegistryAdminAuthority010 for TestAuthority {
         fn authenticated_actor(&self) -> Result<String> {
             if self.fail {
@@ -669,6 +958,7 @@ mod tests {
                 source: "trusted-web-origin".to_owned(),
                 envelope: Vec::new(),
                 history: Vec::new(),
+                grants: Vec::new(),
                 tombstoned: false,
             },
             authority: TestAuthority {
@@ -678,6 +968,227 @@ mod tests {
                 calls: Cell::new(0),
             },
         }
+    }
+
+    fn operator_grant(operator: &str, scope: &str) -> WebRegistryOperatorGrant010 {
+        WebRegistryOperatorGrant010 {
+            operator: operator.to_owned(),
+            scope: scope.to_owned(),
+        }
+    }
+
+    #[test]
+    fn operator_journal_commits_grants_and_recovers_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("operator.log");
+        let created = fixture();
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("3");
+        let authority = MutableAuthority {
+            actor: Cell::new("operator"),
+        };
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            true,
+        )
+        .unwrap();
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body(&created),
+            100,
+            "",
+            "create"
+        )
+        .is_ok());
+        assert!(apply_web_registry_operator_command_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            101,
+            "1",
+            "authorize-operator",
+            &operator_grant("assistant", "activate")
+        )
+        .is_ok());
+        let granted = store.inspect();
+        assert_eq!(granted.grants.len(), 1);
+        assert_eq!(granted.history[1].target, "assistant");
+        assert_eq!(granted.history[1].scope, "activate");
+        assert!(apply_web_registry_operator_command_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            102,
+            "1",
+            "authorize-operator",
+            &operator_grant("other", "activate")
+        )
+        .is_err());
+        assert!(apply_web_registry_operator_command_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            102,
+            "2",
+            "authorize-operator",
+            &operator_grant("assistant", "activate")
+        )
+        .is_err());
+        assert_eq!(store.inspect(), granted);
+        authority.actor.set("assistant");
+        assert!(apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &json!({"record": active, "issued": 102, "expires": 107})
+                .to_string()
+                .into_bytes(),
+            102,
+            "2",
+            "activate"
+        )
+        .is_ok());
+        let retired = store.inspect();
+        assert!(retired.grants.is_empty());
+        assert_eq!(retired.history[2].actor, "assistant");
+        store.close().unwrap();
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            false,
+        )
+        .unwrap();
+        assert_eq!(store.inspect(), retired);
+        assert!(apply_web_registry_operator_command_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            103,
+            "3",
+            "authorize-operator",
+            &operator_grant("assistant", "update-services")
+        )
+        .is_err());
+        authority.actor.set("operator");
+        assert!(apply_web_registry_operator_command_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            103,
+            "3",
+            "authorize-operator",
+            &operator_grant("assistant", "update-services")
+        )
+        .is_ok());
+        assert!(apply_web_registry_operator_command_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            104,
+            "4",
+            "revoke-operator",
+            &operator_grant("assistant", "update-services")
+        )
+        .is_ok());
+        assert!(store.inspect().grants.is_empty());
+        assert_eq!(store.inspect().history.len(), 5);
+        store.close().unwrap();
+    }
+
+    #[test]
+    fn operator_grants_reject_uncommitted_and_invalid_authority() {
+        let created = fixture();
+        let mut store = memory_transaction();
+        apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body(&created),
+            100,
+            "",
+            "create",
+        )
+        .unwrap();
+        store.state.grants.push(WebRegistryOperatorGrant010 {
+            operator: "assistant".into(),
+            scope: "activate".into(),
+        });
+        let prior = store.state.clone();
+        assert!(apply_web_registry_operator_command_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            101,
+            "1",
+            "authorize-operator",
+            &operator_grant("other", "activate")
+        )
+        .is_err());
+        assert_eq!(store.state, prior);
+        let before = read_record_with_policy(&prior.envelope, DID, 100, false).unwrap();
+        let grant = WebRegistryOwnedHistoryEntry010 {
+            envelope: Vec::new(),
+            at: 101,
+            operation: "authorize-operator".into(),
+            actor: "operator".into(),
+            target: "assistant".into(),
+            scope: "activate".into(),
+        };
+        assert!(next_grants(&[], &before, &before, &grant).is_ok());
+        assert!(next_grants(&prior.grants, &before, &before, &grant).is_err());
+        let bad_scope = WebRegistryOwnedHistoryEntry010 {
+            scope: "add-key".into(),
+            ..grant.clone()
+        };
+        assert!(next_grants(&[], &before, &before, &bad_scope).is_err());
+        let bad_actor = WebRegistryOwnedHistoryEntry010 {
+            actor: "assistant".into(),
+            ..grant
+        };
+        assert!(next_grants(&[], &before, &before, &bad_actor).is_err());
+        let full: Vec<_> = (1000..1128)
+            .map(|number| WebRegistryOperatorGrant010 {
+                operator: format!("actor-{number}"),
+                scope: "activate".into(),
+            })
+            .collect();
+        let overflow = WebRegistryOwnedHistoryEntry010 {
+            envelope: Vec::new(),
+            at: 101,
+            operation: "authorize-operator".into(),
+            actor: "operator".into(),
+            target: "overflow".into(),
+            scope: "activate".into(),
+        };
+        assert!(next_grants(&full, &before, &before, &overflow).is_err());
+        let mut active = before.clone();
+        active.state = "active".into();
+        let retired = next_grants(
+            &[WebRegistryOperatorGrant010 {
+                operator: "assistant".into(),
+                scope: "activate".into(),
+            }],
+            &before,
+            &active,
+            &WebRegistryOwnedHistoryEntry010 {
+                envelope: Vec::new(),
+                at: 102,
+                operation: "activate".into(),
+                actor: "assistant".into(),
+                target: String::new(),
+                scope: String::new(),
+            },
+        )
+        .unwrap();
+        assert!(retired.is_empty());
     }
 
     #[test]
@@ -840,11 +1351,17 @@ mod tests {
                 envelope: create,
                 at: 100,
                 operation: "create".into(),
+                actor: "operator".into(),
+                target: String::new(),
+                scope: String::new(),
             },
             WebRegistryOwnedHistoryEntry010 {
                 envelope: before,
                 at: 100,
                 operation: "activate".into(),
+                actor: "operator".into(),
+                target: String::new(),
+                scope: String::new(),
             },
         ];
         assert!(apply_web_registry_write_010(
