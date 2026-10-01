@@ -1104,6 +1104,89 @@ mod tests {
     }
 
     #[test]
+    fn operator_journal_revokes_after_signer_expiry() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("expired-operator.log");
+        let mut created = fixture();
+        created["keys"].as_array_mut().unwrap().truncate(2);
+        created["keys"][0]["expires"] = json!(101);
+        let mut active = created.clone();
+        active["state"] = json!("active");
+        active["version"] = json!("2");
+        let authority = MutableAuthority {
+            actor: Cell::new("operator"),
+        };
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            true,
+        )
+        .unwrap();
+        apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body(&created),
+            100,
+            "",
+            "create",
+        )
+        .unwrap();
+        apply_web_registry_write_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            &body(&active),
+            100,
+            "1",
+            "activate",
+        )
+        .unwrap();
+        let grant = operator_grant("assistant", "add-key");
+        apply_web_registry_operator_command_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            100,
+            "2",
+            "authorize-operator",
+            &grant,
+        )
+        .unwrap();
+        assert!(
+            super::super::check_web_registry_proofs_010(&store.inspect().envelope, DID, 102)
+                .is_err()
+        );
+        apply_web_registry_operator_command_010(
+            &mut store,
+            "trusted-web-origin",
+            DID,
+            102,
+            "3",
+            "revoke-operator",
+            &grant,
+        )
+        .unwrap();
+        let committed = store.inspect();
+        assert!(committed.grants.is_empty());
+        assert_eq!(committed.history.len(), 4);
+        assert_eq!(committed.history[3].operation, "revoke-operator");
+        store.close().unwrap();
+        let mut store = crate::registry010::WebRegistryWriteJournal010::open(
+            &path,
+            DID,
+            "trusted-web-origin",
+            &authority,
+            false,
+        )
+        .unwrap();
+        assert_eq!(store.inspect(), committed);
+        store.close().unwrap();
+    }
+
+    #[test]
     fn operator_grants_reject_uncommitted_and_invalid_authority() {
         let created = fixture();
         let mut store = memory_transaction();
