@@ -11,6 +11,7 @@
 pub mod a2a;
 pub mod proof;
 pub mod resolver;
+pub mod strict010;
 
 use crate::crypto::{KeyType, PublicKey};
 use crate::error::{Error, Result};
@@ -22,6 +23,7 @@ pub use crate::hpke::types::{
 pub use a2a::{A2AAgentCard, A2AEndpoint, A2AProof, A2APublicKey, CardMetadata};
 pub use proof::{generate_key_pop, pop_challenge, verify_key_pop};
 pub use resolver::{DIDResolver, MemoryDIDResolver, MockDIDResolver};
+pub use strict010::{parse_did_010, parse_did_url_010, Did010, DidUrl010};
 
 /// Chains a `did:sage` identifier can live on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
