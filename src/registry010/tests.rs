@@ -142,3 +142,100 @@ fn blank_journal_row_is_invalid() {
         .unwrap();
     assert!(Journal::open(&path, false).is_err());
 }
+
+#[test]
+fn rejects_noncanonical_identity_before_source_read() {
+    #[derive(Clone)]
+    struct Counter(Rc<RefCell<(usize, usize)>>);
+    impl Clock for Counter {
+        fn now(&mut self) -> Result<Stamp> {
+            self.0.borrow_mut().0 += 1;
+            Ok(Stamp {
+                mono_ms: 1,
+                unix: 1,
+            })
+        }
+    }
+    impl Source for Counter {
+        fn read(&mut self, _: &str) -> Result<Snapshot> {
+            self.0.borrow_mut().1 += 1;
+            Err(unreachable())
+        }
+    }
+    let valid = "did:sage:eip155:1:0xabababababababababababababababababababab:alice";
+    let registry = "eip155:1:0xabababababababababababababababababababab";
+    for (name, identity, key_url, observe) in [
+        ("legacy kind", "did:sage:chain:x:alice", "", true),
+        (
+            "noncanonical chain",
+            "did:sage:eip155:01:0xabababababababababababababababababababab:alice",
+            "",
+            true,
+        ),
+        (
+            "different registry",
+            "did:sage:web:agents.example.com:alice",
+            "",
+            true,
+        ),
+        ("missing fragment", valid, valid, false),
+        (
+            "extra fragment",
+            valid,
+            "did:sage:eip155:1:0xabababababababababababababababababababab:alice#signing-1#other",
+            false,
+        ),
+        (
+            "other sender",
+            valid,
+            "did:sage:eip155:1:0xabababababababababababababababababababab:bob#signing-1",
+            false,
+        ),
+    ] {
+        let counts = Rc::new(RefCell::new((0, 0)));
+        let counter = Counter(counts.clone());
+        let temp = tempfile::tempdir().unwrap();
+        let mut gate = Gate::new(
+            Config {
+                source: "fixture".into(),
+                registry: registry.into(),
+                network: "1".into(),
+                blockchain: true,
+            },
+            Box::new(counter.clone()),
+            Box::new(counter),
+            Box::new(Journal::open(&temp.path().join("state"), true).unwrap()),
+        )
+        .unwrap();
+        let error = if observe {
+            gate.observe(identity).err()
+        } else {
+            gate.select(identity, key_url, false).err()
+        };
+        assert!(
+            error.is_some_and(|e| e.to_string().contains("record.rejected")),
+            "{name}"
+        );
+        assert_eq!(*counts.borrow(), (0, 0), "{name}");
+    }
+    for registry in [
+        "eip155:01:0xabababababababababababababababababababab",
+        "web:Agents.example.com",
+        "solana:mainnet",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let counter = Counter(Rc::new(RefCell::new((0, 0))));
+        let gate = Gate::new(
+            Config {
+                source: "fixture".into(),
+                registry: registry.into(),
+                network: "local".into(),
+                blockchain: false,
+            },
+            Box::new(counter.clone()),
+            Box::new(counter),
+            Box::new(Journal::open(&temp.path().join("state"), true).unwrap()),
+        );
+        assert!(gate.is_err(), "{registry}");
+    }
+}

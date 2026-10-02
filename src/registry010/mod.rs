@@ -17,6 +17,7 @@ mod web_record_shape010;
 mod web_tls_origin010;
 mod web_transition010;
 mod web_write_journal010;
+use crate::did::{parse_did_010, parse_did_url_010};
 use crate::error::{Error, Result};
 pub use journal::{Journal, Watermark};
 pub use proof::pop_challenge010;
@@ -200,6 +201,8 @@ impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C
         if [&cfg.source, &cfg.registry, &cfg.network]
             .iter()
             .any(|v| v.is_empty() || v.len() > 256 || v.contains(['\0', '\r', '\n']))
+            || !parse_did_010(&format!("did:sage:{}:a", cfg.registry))
+                .is_ok_and(|parsed| format!("{}:{}", parsed.kind, parsed.locator) == cfg.registry)
         {
             return Err(rejected());
         }
@@ -226,17 +229,8 @@ impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C
         Ok(t)
     }
     fn valid_did(&self, did: &str) -> bool {
-        did.len() <= 256
-            && did
-                .strip_prefix(&format!("did:sage:{}:", self.cfg.registry))
-                .is_some_and(|s| {
-                    !s.is_empty()
-                        && s.len() <= 64
-                        && s != "."
-                        && s != ".."
-                        && s.bytes()
-                            .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
-                })
+        parse_did_010(did)
+            .is_ok_and(|parsed| format!("{}:{}", parsed.kind, parsed.locator) == self.cfg.registry)
     }
     fn read(&mut self, did: &str) -> Result<(Snapshot, Stamp)> {
         if !self.valid_did(did) {
@@ -329,6 +323,13 @@ impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C
         signing_url: &str,
         require_kem: bool,
     ) -> Result<(Pinned, Stamp)> {
+        parse_did_url_010(signing_url).map_err(|_| rejected())?;
+        if signing_url
+            .split_once('#')
+            .is_none_or(|(parent, _)| parent != did)
+        {
+            return Err(rejected());
+        }
         let (s, now) = self.read(did)?;
         if s.state != "active" {
             return Err(rejected());
