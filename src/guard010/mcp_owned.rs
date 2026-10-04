@@ -291,19 +291,21 @@ pub(crate) struct OwnedServices {
 /// Binds the exact original input list to a root request. The trusted host must
 /// capture those bytes and assign a fresh request ID before plugin or model
 /// expansion, then retain the bytes in protected storage.
-pub(crate) struct RootCapture {
+pub struct RootCapture {
     request_id: String,
     digest: String,
 }
 impl RootCapture {
-    pub(crate) fn new(items: &[Vec<u8>], request_id: &str) -> Result<Self> {
+    /// Commit the exact ordered UTF-8 inputs and trusted root request ID.
+    /// The host separately retains the original bytes in protected storage.
+    pub fn new(items: &[Vec<u8>], request_id: &str) -> Result<Self> {
         ensure(uuid(request_id))?;
         Ok(Self {
             request_id: request_id.into(),
             digest: original_commitment(items)?,
         })
     }
-    fn matches(&self, raw: &[u8]) -> Result<()> {
+    pub(crate) fn matches(&self, raw: &[u8]) -> Result<()> {
         let (env, _) = intent_envelope(raw)?;
         let intent = &env["intent"];
         ensure(

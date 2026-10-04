@@ -461,6 +461,19 @@ impl Client {
     pub fn open(path: &Path, create: bool, raw: &[u8], services: ClientServices) -> Result<Self> {
         Self::open_inner(path, create, raw, services, false)
     }
+    /// Bind a root intent to the trusted pre-expansion capture before creating
+    /// or reopening its journal. The host separately protects the capture,
+    /// stable journal path, and every effect and result route.
+    pub fn open_captured(
+        path: &Path,
+        create: bool,
+        raw: &[u8],
+        services: ClientServices,
+        capture: &RootCapture,
+    ) -> Result<Self> {
+        capture.matches(raw)?;
+        Self::open(path, create, raw, services)
+    }
     fn open_inner(
         path: &Path,
         create: bool,

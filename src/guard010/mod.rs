@@ -579,6 +579,7 @@ pub(crate) use dispatch::mcp_admission;
 
 #[allow(dead_code)]
 pub(crate) mod mcp_owned;
+pub use mcp_owned::RootCapture;
 
 #[allow(dead_code)]
 pub(crate) mod mcp_lifecycle;
