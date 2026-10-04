@@ -161,6 +161,19 @@ const bytes = hexToBytes("48656c6c6f");
 cargo build --release
 ```
 
+Native Rust hosts can import `sage_crypto_core::guard010::{RootCapture,
+Client}`. Create `RootCapture::new(&original_items, request_id)` at the trusted
+input boundary before model or plugin expansion, then call
+`Client::open_captured(path, create, signed_intent, services, &capture)`. A
+missing or changed original or a different request ID is rejected before the
+journal is created. Retain the exact original bytes and capture in protected
+storage for reopening; use `Client::open_hop` for an authorized child call.
+
+The host still owns trusted service providers, signing-key custody, all effect
+and output routes, and proof that capture occurred at the real input boundary.
+The C ABI does not expose this protected Guard entry point. A native import or
+optional MCP tool alone does not establish complete Agent-host mediation.
+
 ### C FFI Library
 
 ```bash
