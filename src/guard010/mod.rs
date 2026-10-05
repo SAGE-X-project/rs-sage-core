@@ -594,3 +594,9 @@ pub use issuance::{
 };
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod issuance_tests;
+
+mod mcp_public;
+pub use mcp_public::{
+    MCPCancellation, MCPClientServices, MCPConnection, MCPConnectionConfig, MCPConnectionHandler,
+    MCPExecutor, MCPHopServices, MCPHost, MCPHostBounds, MCPHostServices, MCPListener, MCPRole,
+};
