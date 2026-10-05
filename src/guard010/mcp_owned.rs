@@ -480,7 +480,13 @@ impl OwnedClient {
                     client_services,
                     capture.services,
                 )?,
-                None => Client::open(path, create, &intent, client_services)?,
+                None => Client::open_captured(
+                    path,
+                    create,
+                    &intent,
+                    client_services,
+                    root.as_ref().ok_or(Invalid)?,
+                )?,
             });
             let evidence = intent_evidence(
                 &mut owner,
