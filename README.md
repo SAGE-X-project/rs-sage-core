@@ -174,6 +174,11 @@ and output routes, and proof that capture occurred at the real input boundary.
 The C ABI does not expose this protected Guard entry point. A native import or
 optional MCP tool alone does not establish complete Agent-host mediation.
 
+For protected issuance before Client creation, use the native
+[`IntentIssuer` API](docs/guides/PROTECTED_INTENT_ISSUANCE.md). It binds full
+approval and measurement before key use and preserves one-use issuance and
+exact journal recovery for root and admitted downstream calls.
+
 ### C FFI Library
 
 ```bash
