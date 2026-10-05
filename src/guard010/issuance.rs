@@ -71,16 +71,11 @@ pub struct IntentIssuer {
 }
 const HEADER: &str = "sage-intent-issuance|0.10.0\n";
 
-fn unsigned(body: &[u8]) -> Vec<u8> {
-    [
-        b"{\"intent\":".as_slice(),
-        body,
-        b",\"proof\":\"",
-        B64.encode([0; 64]).as_bytes(),
-        b"\"}",
-    ]
-    .concat()
+fn unsigned(body: &[u8]) -> Result<Vec<u8>> {
+    let (intent, _) = object(body)?;
+    encode(&json!({"intent":intent,"proof":B64.encode([0;64])}))
 }
+
 fn policy_check(policy: &mut dyn IntentPolicy, i: &Value) -> Result<()> {
     let bindings = policy.bindings(text(i, "issuer"), text(i, "request_id"))?;
     let (descriptor, _) = object(&bindings.policy)?;
@@ -176,7 +171,7 @@ impl IntentIssuer {
     }
     fn check(&mut self, body: &[u8]) -> Result<[u8; 32]> {
         ensure(!self.retired)?;
-        let (env, _) = intent_envelope(&unsigned(body))?;
+        let (env, _) = intent_envelope(&unsigned(body)?)?;
         let i = &env["intent"];
         let s = self.services.as_mut().ok_or(Invalid)?;
         ensure(
@@ -187,7 +182,7 @@ impl IntentIssuer {
                 && text(i, "keyid") == s.key_id,
         )?;
         if let Some(hop) = self.hop.as_mut() {
-            super::client::check_hop(&self.incoming, &unsigned(body), &s.client, hop)?;
+            super::client::check_hop(&self.incoming, &unsigned(body)?, &s.client, hop)?;
         } else {
             ensure(i["parent_call_id"].is_null())?;
         }

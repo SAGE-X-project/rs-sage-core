@@ -481,3 +481,32 @@ fn issuer_rejects_other_key_role_and_weak_key() {
         assert_eq!(f.count("signs"), 0);
     }
 }
+
+#[test]
+fn issuer_preserves_quoted_argument_strings() {
+    let f = Services::new();
+    let directory = tempfile::tempdir().unwrap();
+    let path = f.path(directory.path());
+    let mut issuer = f.issuer();
+    let expected = "notes \"quoted\" \\ folder\nname <>&";
+    let mut p = proposal();
+    p.arguments = serde_json::to_vec(&json!({"path":expected})).unwrap();
+    let mut token = issuer.authorize(p).unwrap();
+    let client = issuer.issue(&path, &mut token).unwrap();
+    let invocation = client
+        .begin("00000000-0000-4000-8000-000000000050")
+        .unwrap();
+    assert_eq!(
+        intent_envelope(invocation.intent()).unwrap().0["intent"]["arguments"]["path"],
+        expected
+    );
+    let recipient = text(&f.0.lock().unwrap()["input"], "expected_recipient").to_owned();
+    verify_intent(
+        invocation.intent(),
+        &recipient,
+        &mut f.clone(),
+        &mut f.clone(),
+    )
+    .unwrap();
+    client.close().unwrap();
+}
