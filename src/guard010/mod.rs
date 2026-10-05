@@ -586,3 +586,11 @@ pub(crate) mod mcp_lifecycle;
 
 #[allow(dead_code)]
 pub(crate) mod mcp_transport;
+
+mod issuance;
+pub use issuance::{
+    AuthorizedIntent, IntentIssuer, IntentMeasurement, IntentProposal, IntentSigner,
+    IssuancePolicy, IssuerServices,
+};
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod issuance_tests;

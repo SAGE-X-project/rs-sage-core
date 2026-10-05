@@ -292,8 +292,8 @@ pub(crate) struct OwnedServices {
 /// capture those bytes and assign a fresh request ID before plugin or model
 /// expansion, then retain the bytes in protected storage.
 pub struct RootCapture {
-    request_id: String,
-    digest: String,
+    pub(super) request_id: String,
+    pub(super) digest: String,
 }
 impl RootCapture {
     /// Commit the exact ordered UTF-8 inputs and trusted root request ID.

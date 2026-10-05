@@ -59,7 +59,7 @@ struct HopBinding {
     incoming: Vec<u8>,
     services: HopServices,
 }
-fn check_hop(
+pub(super) fn check_hop(
     incoming: &[u8],
     outgoing: &[u8],
     s: &ClientServices,
@@ -150,8 +150,8 @@ impl Event {
         }
     }
 }
-const HEADER: &[u8] = b"sage-guard-client|0.10.0\n";
-const MAX_SIZE: u64 = 8 << 20;
+pub(super) const HEADER: &[u8] = b"sage-guard-client|0.10.0\n";
+pub(super) const MAX_SIZE: u64 = 8 << 20;
 /// One durable protected operation. Host code must keep one stable journal per
 /// issuer/call and never initialize a second journal for the same operation.
 /// Reopen cannot recreate missing state. Failed writes retain the exclusive lock;
