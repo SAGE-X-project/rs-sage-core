@@ -371,3 +371,15 @@ configuration rejection and retained capacity during incomplete shutdown.
 Separate-process TCP interoperability is bounded evidence, not complete host
 conformance or an FFI/WASM host claim. Earlier private-component sections retain
 their adapter scope; this native public coordinator assembles those adapters.
+
+### Issued journal transfer to a native MCP owner
+
+`Client::journaled_intent` copies the signed envelope from a healthy open
+journal without signing, sending, refreshing verification or appending an
+event. After protected issuance, obtain the snapshot, close the issuing Client,
+and call `MCPConnection::open_root_client` with `create=false`, the same stable
+path, independent capture and current protected services. Hop transfers use
+the corresponding admitted-parent entry. The owner repeats current verification
+and adopts the existing journal without re-signing. Never initialize another
+journal or reset the issuance fence on failure. Polling and the reopen monotonic
+delay still apply; a snapshot is data and grants no invocation authority.

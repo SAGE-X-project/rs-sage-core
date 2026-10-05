@@ -629,6 +629,15 @@ impl Client {
             }
         }
     }
+    /// Copy the unchanged signed envelope from a healthy open journal, without
+    /// signing, verification refresh, handoff or event append. This grants no
+    /// invocation authority; an owner must reverify peers, capture and policy
+    /// when reopening the same stable protected journal.
+    pub fn journaled_intent(&self) -> Result<Vec<u8>> {
+        let state = self.state.lock().map_err(|_| Invalid)?;
+        ensure(state.file.is_some() && !state.failed)?;
+        Ok(state.intent.clone())
+    }
     /// Release a healthy exclusive lock; failed state needs protected administration.
     pub fn close(&self) -> Result<()> {
         self.state.lock().map_err(|_| Invalid)?.close()

@@ -510,3 +510,28 @@ fn issuer_preserves_quoted_argument_strings() {
     .unwrap();
     client.close().unwrap();
 }
+
+#[test]
+fn journaled_intent_snapshot_does_not_use_authority_or_transport() {
+    let f = Services::new();
+    let directory = tempfile::tempdir().unwrap();
+    let path = f.path(directory.path());
+    let mut issuer = f.issuer();
+    let mut token = issuer.authorize(proposal()).unwrap();
+    let client = issuer.issue(&path, &mut token).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let original = client.journaled_intent().unwrap();
+    let mut altered = original.clone();
+    altered[0] ^= 1;
+    assert_eq!(client.journaled_intent().unwrap(), original);
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert_eq!(f.count("signs"), 1);
+    assert_eq!(f.count("sends"), 0);
+    client.close().unwrap();
+    assert!(client.journaled_intent().is_err());
+    let resumed = f.issuer().reopen(&path).unwrap();
+    assert_eq!(resumed.journaled_intent().unwrap(), original);
+    assert_eq!(f.count("signs"), 1);
+    assert_eq!(f.count("sends"), 0);
+    resumed.close().unwrap();
+}
