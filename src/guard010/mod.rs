@@ -336,6 +336,46 @@ pub trait IntentPolicy {
     fn bindings(&mut self, issuer: &str, _request_id: &str) -> Result<Bindings>;
     /// Authorize the exact tool and canonical final arguments.
     fn authorize(&mut self, issuer: &str, tool: &str, arguments: &[u8]) -> Result<()>;
+    /// Receiver mapping used by `verify_received_intent` instead of the original
+    /// commitment. Only `ReceiverPolicy` returns one; `verify_intent` and every
+    /// Client or issuance path refuse a policy that does.
+    fn receiver_mapping(&mut self) -> Option<&mut dyn ReceiverMapping> {
+        None
+    }
+}
+/// Protected receiver administration. `approved` returns the policy and
+/// component descriptors that trusted administration mapped to exactly this
+/// issuer and policy digest, and fails for unknown, retired or
+/// issuer-mismatched commitments. `authorize` evaluates the permitted receiver
+/// operation for the complete final arguments.
+pub trait ReceiverMapping {
+    /// Return provisioned (policy, manifest) descriptors for the commitment.
+    fn approved(&mut self, issuer: &str, policy_digest: &str) -> Result<(Vec<u8>, Vec<u8>)>;
+    /// Authorize the exact tool and canonical final arguments.
+    fn authorize(&mut self, issuer: &str, tool: &str, arguments: &[u8]) -> Result<()>;
+}
+/// Receiver policy for a separate receiver that holds no original request. As
+/// an `IntentPolicy` its `bindings` always fails, so it cannot approve issuance
+/// or verify for a Client that holds the original.
+pub struct ReceiverPolicy<M: ReceiverMapping> {
+    mapping: M,
+}
+impl<M: ReceiverMapping> ReceiverPolicy<M> {
+    /// Wrap a required mapping.
+    pub fn new(mapping: M) -> Self {
+        Self { mapping }
+    }
+}
+impl<M: ReceiverMapping> IntentPolicy for ReceiverPolicy<M> {
+    fn bindings(&mut self, _: &str, _: &str) -> Result<Bindings> {
+        Err(Invalid)
+    }
+    fn authorize(&mut self, issuer: &str, tool: &str, arguments: &[u8]) -> Result<()> {
+        self.mapping.authorize(issuer, tool, arguments)
+    }
+    fn receiver_mapping(&mut self) -> Option<&mut dyn ReceiverMapping> {
+        Some(&mut self.mapping)
+    }
 }
 /// Return exact previously authorized intent bytes only for an outstanding
 /// transport invocation. Durable single terminal consumption is a host duty.
@@ -456,25 +496,57 @@ fn authenticate(a: &mut dyn Authority, e: &Value, kind: &str, domain: &str) -> R
     key.verify_strict(&msg, &sig).map_err(|_| Invalid)?;
     times(v, a.now()?)
 }
-/// Verify mandatory Ed25519, bindings and policy. Optional algorithms reject.
-/// Revalidate current authority at a serialized dispatch boundary before effects.
+/// Verify mandatory Ed25519, bindings (including the exact original commitment)
+/// and policy. Optional algorithms reject. A receiver mapping policy is refused;
+/// receivers without the original use `verify_received_intent`. Revalidate
+/// current authority at a serialized dispatch boundary before effects.
 pub fn verify_intent(
     raw: &[u8],
     recipient: &str,
     a: &mut dyn Authority,
     p: &mut dyn IntentPolicy,
 ) -> Result<VerifiedIntent> {
+    verify_intent_at(raw, recipient, a, p, false)
+}
+/// `verify_intent` at a receiver. An ordinary policy behaves exactly as in
+/// `verify_intent`. With a `ReceiverPolicy` the provisioned (issuer,
+/// policy_digest) mapping replaces the original comparison: the receiver
+/// recomputes both commitments from its descriptors, and the original digest
+/// stays a signed audit field (Agent/MCP policy commitment rules).
+pub fn verify_received_intent(
+    raw: &[u8],
+    recipient: &str,
+    a: &mut dyn Authority,
+    p: &mut dyn IntentPolicy,
+) -> Result<VerifiedIntent> {
+    verify_intent_at(raw, recipient, a, p, true)
+}
+fn verify_intent_at(
+    raw: &[u8],
+    recipient: &str,
+    a: &mut dyn Authority,
+    p: &mut dyn IntentPolicy,
+    receiver: bool,
+) -> Result<VerifiedIntent> {
     let (e, b) = intent_envelope(raw)?;
     let v = &e["intent"];
     ensure(text(v, "recipient") == recipient)?;
+    let mapped = p.receiver_mapping().is_some();
+    ensure(receiver || !mapped)?;
     authenticate(a, &e, "intent", "sage-execution-intent")?;
-    let bindings = p.bindings(text(v, "issuer"), text(v, "request_id"))?;
+    let (policy_raw, manifest_raw) = match p.receiver_mapping() {
+        Some(m) => m.approved(text(v, "issuer"), text(v, "policy_digest"))?,
+        None => {
+            let bindings = p.bindings(text(v, "issuer"), text(v, "request_id"))?;
+            ensure(bindings.original == text(v, "original_digest"))?;
+            (bindings.policy, bindings.manifest)
+        }
+    };
     ensure(
-        bindings.original == text(v, "original_digest")
-            && policy_commitment(&bindings.policy)? == text(v, "policy_digest")
-            && manifest_commitment(&bindings.manifest)? == text(v, "manifest_digest"),
+        policy_commitment(&policy_raw)? == text(v, "policy_digest")
+            && manifest_commitment(&manifest_raw)? == text(v, "manifest_digest"),
     )?;
-    let (policy, _) = object(&bindings.policy)?;
+    let (policy, _) = object(&policy_raw)?;
     ensure(text(&policy, "issuer") == text(v, "issuer"))?;
     p.authorize(
         text(v, "issuer"),
@@ -525,6 +597,8 @@ pub fn verify_result(
 
 #[cfg(test)]
 mod fixtures_test;
+#[cfg(test)]
+mod receiver_tests;
 #[cfg(test)]
 mod tests;
 
