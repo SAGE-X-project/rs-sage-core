@@ -68,7 +68,7 @@ pub(super) fn check_hop(
     let (parent_envelope, parent_canonical) = intent_envelope(incoming)?;
     let parent = &parent_envelope["intent"];
     ensure(incoming == parent_canonical && text(parent, "recipient") == s.expected_issuer)?;
-    verify_intent(
+    verify_received_intent(
         incoming,
         &s.expected_issuer,
         h.authority.as_mut(),
