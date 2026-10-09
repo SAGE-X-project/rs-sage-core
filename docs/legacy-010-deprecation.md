@@ -66,8 +66,12 @@ to retire the feature.
 2. **P1. Decouple and migrate inside this crate, without behavior change.**
    - Done: 0.10.0 modules call the crate-private `jcs::canonical`; output is
      unchanged because `jcs::canonicalize` delegates to it.
-   - Move examples, benches and tests that demonstrate 0.10.0 behavior to the
-     0.10.0 APIs; keep legacy tests explicitly labeled legacy.
+   - Reviewed: no remaining in-crate caller should move. The legacy users
+     are the tests and benches of the legacy APIs themselves
+     (`tests/phase4_*`, `benches/hpke_benchmarks.rs`), the sage-spec
+     `1.0.0-draft.1` vector runner (`tests/spec_vectors.rs`), the
+     `SessionManager` example (class C), legacy HPKE types, the A2A card and
+     FFI/WASM. P2 gives each a scoped `#[allow(deprecated)]` with that reason.
    - Decide the FFI/WASM surface (keep with `#[allow(deprecated)]`, or add
      0.10.0 entry points first).
 3. **P2. Mark class A** with `#[deprecated(since = "…", note = "use …")]`,
