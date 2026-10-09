@@ -106,10 +106,12 @@ impl Connection {
                 pool.clients
                     .setup(owner, &mut endpoint.0, &config.name, &config.version)?
             }
-            Role::Responder => {
-                pool.gate
-                    .setup(owner, &mut endpoint.0, &config.name, &config.version)?
-            }
+            Role::Responder => pool.gate.as_ref().ok_or(Invalid)?.setup(
+                owner,
+                &mut endpoint.0,
+                &config.name,
+                &config.version,
+            )?,
         };
         stream.socket.bind(setup.closer())?;
         setup.run(&mut endpoint.0, &mut stream, &mut || handler.prepare())?;
@@ -146,11 +148,10 @@ impl Connection {
                 .mono_ms
                 .checked_add(self.stream.bound_ms())
                 .ok_or(Invalid)?;
+            let gate = self.pool.gate.as_ref().ok_or(Invalid)?;
             let wire = self.stream.receive(deadline, &owner.closer())?;
-            self.pool.gate.admit(owner, &mut self.endpoint.0, &wire)?;
-            self.pool
-                .gate
-                .reply(owner, &mut self.endpoint.0, &mut self.stream, signer)
+            gate.admit(owner, &mut self.endpoint.0, &wire)?;
+            gate.reply(owner, &mut self.endpoint.0, &mut self.stream, signer)
         })();
         if result.is_err() {
             self.stream.socket.close();

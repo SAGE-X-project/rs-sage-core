@@ -634,3 +634,93 @@ fn public_process_helper() {
     )
     .unwrap();
 }
+
+fn client_host_bounds() -> g::MCPClientHostBounds {
+    g::MCPClientHostBounds {
+        clients: 2,
+        owners: 4,
+        client: Duration::from_secs(20),
+        tick: Duration::from_millis(1),
+    }
+}
+
+/// An initiator-only host completes a root call against a full receiver host
+/// without a gate, ledger, executor, policy or result signer.
+#[test]
+fn initiator_only_host_completes_root_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let sink = Arc::new(PublicSink::default());
+    let clock = public_clock();
+    let server = public_host(&dir.path().join("server"), sink.clone(), &clock);
+    let client = g::MCPHost::open_client(Box::new(clock.clone()), client_host_bounds()).unwrap();
+    let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = tcp.local_addr().unwrap();
+    let listener = server
+        .serve(
+            tcp,
+            public_config(false),
+            vec![Box::new(PublicServer {
+                clock: clock.clone(),
+                prepared: Arc::new(AtomicBool::new(false)),
+                deny: false,
+            })],
+        )
+        .unwrap();
+    let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(1)).unwrap();
+    let mut handler = PublicClient {
+        clock: clock.clone(),
+        path: dir.path().join("client"),
+        called: false,
+        completed: false,
+        wrong_capture: false,
+    };
+    client
+        .connect(tcp, &public_config(true), &mut handler)
+        .unwrap();
+    assert!(handler.completed);
+    assert_eq!(sink.effects.load(Ordering::SeqCst), 1);
+    assert!(client.close(Duration::from_secs(3)).unwrap());
+    assert!(client.close(Duration::from_secs(3)).unwrap());
+    assert!(listener.close(Duration::from_secs(3)).unwrap());
+    assert!(server.close(Duration::from_secs(3)).unwrap());
+}
+
+#[test]
+fn initiator_only_host_refuses_receiver_roles() {
+    let clock = public_clock();
+    let client = g::MCPHost::open_client(Box::new(clock.clone()), client_host_bounds()).unwrap();
+    let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
+    assert!(client
+        .serve(
+            tcp,
+            public_config(false),
+            vec![Box::new(RejectFactory(Arc::new(AtomicUsize::new(0))))]
+        )
+        .is_err());
+    let (left, _right) = tcp_pair();
+    let count = Arc::new(AtomicUsize::new(0));
+    assert!(client
+        .connect(left, &public_config(false), &mut RejectFactory(count))
+        .is_err());
+    for bounds in [
+        g::MCPClientHostBounds {
+            clients: 0,
+            ..client_host_bounds()
+        },
+        g::MCPClientHostBounds {
+            owners: 0,
+            ..client_host_bounds()
+        },
+        g::MCPClientHostBounds {
+            tick: Duration::from_secs(20),
+            ..client_host_bounds()
+        },
+        g::MCPClientHostBounds {
+            client: Duration::from_micros(20_000_500),
+            ..client_host_bounds()
+        },
+    ] {
+        assert!(g::MCPHost::open_client(Box::new(clock.clone()), bounds).is_err());
+    }
+    assert!(client.close(Duration::from_secs(3)).unwrap());
+}

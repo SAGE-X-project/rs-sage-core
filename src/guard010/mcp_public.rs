@@ -127,7 +127,18 @@ impl MCPHostBounds {
 /// transport, reservation or worker token is exposed. Keep this in the trusted host.
 pub struct MCPHost {
     inner: mcp_transport::Host,
-    gate: Arc<MCPGate>,
+    gate: Option<Arc<MCPGate>>,
+}
+/// Finite quotas for an initiator-only host; whole-millisecond durations.
+pub struct MCPClientHostBounds {
+    /// Maximum shared outbound operations (1..=128).
+    pub clients: usize,
+    /// Maximum owned sessions and transport connections (1..=256).
+    pub owners: usize,
+    /// Outbound operation lifetime, at most 300 seconds.
+    pub client: Duration,
+    /// Independent supervision period, shorter than `client` (1..=1000ms).
+    pub tick: Duration,
 }
 impl MCPHost {
     /// Assemble every coordinator before peer input. Explicit creation is only
@@ -163,14 +174,45 @@ impl MCPHost {
         clients.attach_owners(owners.registry())?;
         let workers = Workers::start(gate.clone(), s.signers, b.tick, millis(b.worker, 300_000)?)?;
         let inner = mcp_transport::Host::start(
-            gate.clone(),
+            Some(gate.clone()),
             clients,
             owners,
-            workers,
+            Some(workers),
             b.owners,
             Box::new(SharedClock(shared)),
         )?;
-        Ok(Self { inner, gate })
+        Ok(Self {
+            inner,
+            gate: Some(gate),
+        })
+    }
+    /// Assemble a host that only initiates root Client calls. It opens no
+    /// admission gate, execution ledger, executor, policy or result signer and
+    /// refuses `serve` and responder connections. A participant that also
+    /// receives calls, including every hop participant, uses `open`.
+    pub fn open_client(clock: Box<dyn Clock + Send>, b: MCPClientHostBounds) -> Result<Self> {
+        ensure(cfg!(any(target_os = "linux", target_os = "macos")))?;
+        ensure(
+            (1..=128).contains(&b.clients)
+                && (1..=256).contains(&b.owners)
+                && b.tick >= Duration::from_millis(1)
+                && b.tick <= Duration::from_millis(1000)
+                && b.tick.subsec_nanos() % 1_000_000 == 0
+                && b.tick < b.client,
+        )?;
+        let shared = Arc::new(Mutex::new(clock));
+        let clients = Arc::new(ClientPool::new(b.clients, millis(b.client, 300_000)?)?);
+        let owners = OwnerMonitor::start(b.owners, b.tick, Box::new(SharedClock(shared.clone())))?;
+        clients.attach_owners(owners.registry())?;
+        let inner = mcp_transport::Host::start(
+            None,
+            clients,
+            owners,
+            None,
+            b.owners,
+            Box::new(SharedClock(shared)),
+        )?;
+        Ok(Self { inner, gate: None })
     }
     /// Permanently retire all rights first, then drain every charged lifetime.
     /// False retains the ledger lock and host cleanup responsibility. Retry close
@@ -179,7 +221,9 @@ impl MCPHost {
         if !self.inner.stop(timeout)? {
             return Ok(false);
         }
-        self.gate.close()?;
+        if let Some(gate) = &self.gate {
+            gate.close()?;
+        }
         Ok(true)
     }
     /// Transfer exclusive socket ownership even on rejection. Run synchronously
@@ -201,6 +245,7 @@ impl MCPHost {
         config: MCPConnectionConfig,
         handlers: Vec<Box<dyn MCPConnectionHandler + Send>>,
     ) -> Result<MCPListener> {
+        ensure(self.gate.is_some())?;
         let config = config.private()?;
         let handlers = handlers
             .into_iter()

@@ -44,7 +44,8 @@ struct Pool {
     changed: Condvar,
     capacity: usize,
     time: Mutex<Time>,
-    gate: Arc<MCPGate>,
+    // None for a host that only initiates; responder setup then refuses.
+    gate: Option<Arc<MCPGate>>,
     clients: Arc<ClientPool>,
 }
 impl Pool {
@@ -122,7 +123,7 @@ impl Pool {
 pub(crate) struct Host {
     pool: Arc<Pool>,
     owners: OwnerMonitor,
-    workers: Workers,
+    workers: Option<Workers>,
 }
 impl Host {
     #[cfg(test)]
@@ -142,19 +143,25 @@ impl Host {
         result
     }
 
+    /// A gate and its workers are present together for a receiving host and
+    /// absent together for a host that only initiates.
     pub(crate) fn start(
-        gate: Arc<MCPGate>,
+        gate: Option<Arc<MCPGate>>,
         clients: Arc<ClientPool>,
         owners: OwnerMonitor,
-        workers: Workers,
+        workers: Option<Workers>,
         capacity: usize,
         clock: Box<dyn Clock + Send>,
     ) -> Result<Self> {
+        let receiver = match (&gate, &workers) {
+            (Some(g), Some(w)) => w.bound_to(g) && g.transport_ready(&owners.registry()),
+            (None, None) => true,
+            _ => false,
+        };
         ensure(
             (1..=256).contains(&capacity)
                 && owners.registry().live()
-                && workers.bound_to(&gate)
-                && gate.transport_ready(&owners.registry())
+                && receiver
                 && clients.transport_ready(&owners.registry()),
         )?;
         let pool = Arc::new(Pool {
@@ -221,7 +228,9 @@ impl Host {
         let end = Instant::now().checked_add(timeout).ok_or(Invalid)?;
         self.pool.retire();
         // Signal every subsystem before waiting for any provider or worker.
-        let _ = self.workers.stop(Duration::ZERO)?;
+        if let Some(workers) = &self.workers {
+            let _ = workers.stop(Duration::ZERO)?;
+        }
         let _ = self.owners.stop(Duration::ZERO)?;
         let mut state = self.pool.state.lock().map_err(|_| Invalid)?;
         while !state.reaper_done {
@@ -237,11 +246,10 @@ impl Host {
                 .0;
         }
         drop(state);
-        if !self
-            .workers
-            .stop(end.saturating_duration_since(Instant::now()))?
-        {
-            return Ok(false);
+        if let Some(workers) = &self.workers {
+            if !workers.stop(end.saturating_duration_since(Instant::now()))? {
+                return Ok(false);
+            }
         }
         self.owners
             .stop(end.saturating_duration_since(Instant::now()))

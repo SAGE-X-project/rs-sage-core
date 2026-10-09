@@ -671,6 +671,7 @@ mod issuance_tests;
 
 mod mcp_public;
 pub use mcp_public::{
-    MCPCancellation, MCPClientServices, MCPConnection, MCPConnectionConfig, MCPConnectionHandler,
-    MCPExecutor, MCPHopServices, MCPHost, MCPHostBounds, MCPHostServices, MCPListener, MCPRole,
+    MCPCancellation, MCPClientHostBounds, MCPClientServices, MCPConnection, MCPConnectionConfig,
+    MCPConnectionHandler, MCPExecutor, MCPHopServices, MCPHost, MCPHostBounds, MCPHostServices,
+    MCPListener, MCPRole,
 };
