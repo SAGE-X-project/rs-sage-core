@@ -41,6 +41,22 @@ impl g::IntentPolicy for PublicPolicy {
         Ok(())
     }
 }
+/// Receiver administration for the fixture's one provisioned commitment. It
+/// never holds the caller's original request.
+struct PublicMapping;
+impl g::ReceiverMapping for PublicMapping {
+    fn approved(&mut self, issuer: &str, digest: &str) -> g::Result<(Vec<u8>, Vec<u8>)> {
+        let f = fixture();
+        let policy = canonical(&f["approved_policy"]);
+        if issuer != ALICE || g::policy_commitment(&policy)? != digest {
+            return Err(g::Invalid);
+        }
+        Ok((policy, canonical(&f["approved_manifest"])))
+    }
+    fn authorize(&mut self, issuer: &str, tool: &str, args: &[u8]) -> g::Result<()> {
+        g::IntentPolicy::authorize(&mut PublicPolicy, issuer, tool, args)
+    }
+}
 #[derive(Default)]
 struct PublicSink {
     effects: AtomicUsize,
@@ -549,7 +565,13 @@ fn public_process_helper() {
         g::MCPHostServices {
             intent_authority: process_authority(&clock, ALICE),
             result_authority: process_authority(&clock, BOB),
-            policy: Box::new(PublicPolicy),
+            policy: if mode == "server"
+                && std::env::var("SAGE_MCP_PUBLIC_RECEIVER_MAPPING").as_deref() == Ok("1")
+            {
+                Box::new(g::ReceiverPolicy::new(PublicMapping))
+            } else {
+                Box::new(PublicPolicy)
+            },
             executor: sink.clone(),
             signers: vec![Box::new(ProcessSigner(clock.clone()))],
             clock: Box::new(ProcessClock(clock.clone())),
