@@ -39,7 +39,7 @@ pub use replay_journal010::ReplayJournal010;
 type Raw = BTreeMap<String, Box<RawValue>>;
 type Fields = BTreeMap<String, String>;
 fn canonical(v: &impl Serialize) -> Vec<u8> {
-    crate::jcs::canonicalize(&serde_json::to_vec(v).expect("serializable closed object"))
+    crate::jcs::canonical(&serde_json::to_vec(v).expect("serializable closed object"))
         .expect("closed ASCII object")
 }
 fn raw(raw: &[u8], names: &[&str]) -> Result<Raw> {
