@@ -8,7 +8,7 @@ use crate::{
     registry010::{Clock, Gate, Key, Pinned, Stamp},
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
-use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use rand::TryRng;
 use serde::{
     de::{MapAccess, Visitor},
@@ -19,9 +19,13 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 use zeroize::Zeroizing;
+mod custody010;
 mod http_handshake010;
 mod owner010;
 mod record010;
+pub(crate) use custody010::open_export as custody_open_export;
+pub use custody010::{Ed25519Custody010, X25519Custody010};
+use custody010::{EndpointKem, EndpointSigner};
 pub use http_handshake010::{encode_http_010, parse_http_010};
 pub use owner010::NonHTTPOwner010;
 pub(crate) use owner010::OwnerLife;
@@ -163,11 +167,19 @@ fn verify_wire(m: &Raw, response: bool, key: &Key) -> Result<()> {
     data.extend(canonical(&unsigned));
     verify(&data, &sig, key)
 }
-fn signed(mut m: Value, domain: &[u8], key: &SigningKey) -> Vec<u8> {
+#[cfg(test)]
+fn signed_with(mut m: Value, domain: &[u8], key: &SigningKey) -> Vec<u8> {
+    use ed25519_dalek::Signer;
     let mut data = domain.to_vec();
     data.extend(canonical(&m));
     m["signature"] = json!(B64.encode(key.sign(&data).to_bytes()));
     canonical(&m)
+}
+fn signed(mut m: Value, domain: &[u8], key: &mut EndpointSigner) -> Result<Vec<u8>> {
+    let mut data = domain.to_vec();
+    data.extend(canonical(&m));
+    m["signature"] = json!(B64.encode(key.sign(&data)?));
+    Ok(canonical(&m))
 }
 fn envelope(
     did: &str,
@@ -248,8 +260,8 @@ pub struct CompletionEndpoint010 {
     replay: Box<dyn ReplayStore010>,
     did: String,
     kid: String,
-    signing: Option<SigningKey>,
-    kem: Zeroizing<Vec<u8>>,
+    signing: Option<EndpointSigner>,
+    kem: EndpointKem,
     last: Option<Stamp>,
     identity: uuid::Uuid,
 }
@@ -278,8 +290,43 @@ impl CompletionEndpoint010 {
             replay,
             did: did.into(),
             kid: kid.into(),
-            signing: Some(SigningKey::from_bytes(seed)),
-            kem: Zeroizing::new(kem.to_vec()),
+            signing: Some(EndpointSigner::Local(SigningKey::from_bytes(seed))),
+            kem: EndpointKem::Local(Zeroizing::new(kem.to_vec())),
+            last: None,
+            identity: uuid::Uuid::new_v4(),
+        })
+    }
+    /// Keeps the Ed25519 signing key and the optional X25519 KEM key in
+    /// external custody; `kem` is None for an endpoint that only initiates.
+    /// Public keys are read once here. Every custody signature must verify
+    /// strictly, the KEM public key must equal the current registered KEM key
+    /// on every response, and custody performs only the X25519 operation.
+    pub fn new_protected(
+        did: &str,
+        kid: &str,
+        signer: Box<dyn Ed25519Custody010>,
+        kem: Option<Box<dyn X25519Custody010>>,
+        registry: Gate,
+        clock: Box<dyn Clock>,
+        replay: Box<dyn ReplayStore010>,
+    ) -> Result<Self> {
+        if !d::did(did) || !d::key(kid, did) {
+            return Err(bad());
+        }
+        Ok(Self {
+            http_target: String::new(),
+            http_authority: String::new(),
+            used: false,
+            registry,
+            clock,
+            replay,
+            did: did.into(),
+            kid: kid.into(),
+            signing: Some(EndpointSigner::custody(signer)?),
+            kem: match kem {
+                Some(k) => EndpointKem::custody(k)?,
+                None => EndpointKem::Local(Zeroizing::new(Vec::new())),
+            },
             last: None,
             identity: uuid::Uuid::new_v4(),
         })
@@ -323,12 +370,7 @@ impl CompletionEndpoint010 {
         if local.did() != self.did
             || format!("{}#{}", local.did(), local.signing().name) != self.kid
             || hex::decode(&local.signing().material).map_err(|_| bad())?
-                != self
-                    .signing
-                    .as_ref()
-                    .ok_or_else(bad)?
-                    .verifying_key()
-                    .to_bytes()
+                != self.signing.as_ref().ok_or_else(bad)?.public()
         {
             return Err(bad());
         }
@@ -368,12 +410,7 @@ impl CompletionEndpoint010 {
             .map_err(|_| bad())?;
         let kem = b.kem().ok_or_else(bad)?;
         if hex::decode(&a.signing().material).map_err(|_| bad())?
-            != self
-                .signing
-                .as_ref()
-                .ok_or_else(bad)?
-                .verifying_key()
-                .to_bytes()
+            != self.signing.as_ref().ok_or_else(bad)?.public()
         {
             return Err(bad());
         }
@@ -400,8 +437,8 @@ impl CompletionEndpoint010 {
         let request = signed(
             w,
             b"sage-wire-request|0.10.0\n",
-            self.signing.as_ref().ok_or_else(bad)?,
-        );
+            self.signing.as_mut().ok_or_else(bad)?,
+        )?;
         let end = self.sample()?;
         if end.mono_ms - start.mono_ms > 5000
             || !pinned_live(end.unix, &a, &b)
@@ -443,7 +480,7 @@ impl CompletionEndpoint010 {
     ) -> Result<(AuthenticatedCompletion010, Vec<u8>)> {
         self.used = true;
         let start = self.sample()?;
-        if !(1..=300).contains(&ttl) || self.kem.len() != 32 {
+        if !(1..=300).contains(&ttl) || !self.kem.ready() {
             return Err(bad());
         }
         let start = proof.map_or(start, |p| p.start);
@@ -465,24 +502,28 @@ impl CompletionEndpoint010 {
         if let Some(p) = proof {
             record010::http010::verify_proof(p, &w, a.signing(), None)?;
         }
-        let kem: [u8; 32] = self.kem.as_slice().try_into().map_err(|_| bad())?;
-        if x25519(kem, X25519_BASEPOINT_BYTES).as_slice()
-            != hex::decode(&b.kem().ok_or_else(bad)?.material).map_err(|_| bad())?
-        {
-            return Err(bad());
-        }
-        let result = respond_fresh_010(&body, &self.kem)?;
+        let registered = hex::decode(&b.kem().ok_or_else(bad)?.material).map_err(|_| bad())?;
+        let result = match &mut self.kem {
+            EndpointKem::Local(private) => {
+                let kem: [u8; 32] = private.as_slice().try_into().map_err(|_| bad())?;
+                if x25519(kem, X25519_BASEPOINT_BYTES).as_slice() != registered {
+                    return Err(bad());
+                }
+                respond_fresh_010(&body, private)?
+            }
+            EndpointKem::Custody { public, custody } => {
+                if public.as_slice() != registered {
+                    return Err(bad());
+                }
+                let pk = *public;
+                d::respond_fresh_custody_010(&body, custody.as_mut(), &pk)?
+            }
+        };
         let t: Value = serde_json::from_slice(&result.transcript).map_err(|_| bad())?;
         let mut c = json!({"v":"0.10.0","task":"hpke/complete@0.10.0","transcript":t,"ackTagB64":B64.encode(result.ack_tag)});
         let mut data = b"sage-hpke-complete|0.10.0\n".to_vec();
         data.extend(canonical(&c));
-        c["sigB64"] = json!(B64.encode(
-            self.signing
-                .as_ref()
-                .ok_or_else(bad)?
-                .sign(&data)
-                .to_bytes()
-        ));
+        c["sigB64"] = json!(B64.encode(self.signing.as_mut().ok_or_else(bad)?.sign(&data)?));
         let expires = number(&w, "expires")?.min(start.unix + ttl);
         let mut response = envelope(
             &self.did,
@@ -502,8 +543,8 @@ impl CompletionEndpoint010 {
         let bytes = signed(
             response,
             b"sage-wire-response|0.10.0\n",
-            self.signing.as_ref().ok_or_else(bad)?,
-        );
+            self.signing.as_mut().ok_or_else(bad)?,
+        )?;
         let end = self.sample()?;
         if end.mono_ms - start.mono_ms > 5000
             || !pinned_live(end.unix, &a, &b)
@@ -524,10 +565,17 @@ impl CompletionEndpoint010 {
             bytes,
         ))
     }
+    #[cfg(test)]
+    fn local_signing_key(&self) -> &SigningKey {
+        match self.signing.as_ref() {
+            Some(EndpointSigner::Local(k)) => k,
+            _ => panic!("test endpoint has no local signing key"),
+        }
+    }
     /// Retire local private copies; owners must also close returned pending/results.
     pub fn close(&mut self) {
         self.signing = None;
-        self.kem = Zeroizing::new(Vec::new());
+        self.kem = EndpointKem::Local(Zeroizing::new(Vec::new()));
     }
 }
 fn pinned_live(now: i64, a: &Pinned, b: &Pinned) -> bool {
