@@ -1,5 +1,6 @@
 use super::*;
 use crate::registry010::{Config, Journal, Snapshot, Source};
+use ed25519_dalek::Signer;
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 const ALICE: &str = "did:sage:web:agent.example:alice";
 const BOB: &str = "did:sage:web:agent.example:bob";
@@ -320,7 +321,7 @@ fn changed(request: &[u8], response: &[u8], kind: &str) -> Vec<u8> {
     }
     w["data"] = json!(B64.encode(body));
     w.as_object_mut().unwrap().remove("signature");
-    signed(w, b"sage-wire-response|0.10.0\n", &key)
+    signed_with(w, b"sage-wire-response|0.10.0\n", &key)
 }
 #[test]
 fn completion_scenarios() {
@@ -528,11 +529,7 @@ fn authenticated_record_scenarios() {
         }
         if mutated {
             m.as_object_mut().unwrap().remove("signature");
-            w = signed(
-                m,
-                b"sage-wire-request|0.10.0\n",
-                a.signing.as_ref().unwrap(),
-            )
+            w = signed_with(m, b"sage-wire-request|0.10.0\n", a.local_signing_key())
         }
         let mut accept = false;
         let mut closed = false;
@@ -696,11 +693,7 @@ fn response_mutation(
         _ => return raw.to_vec(),
     }
     w.as_object_mut().unwrap().remove("signature");
-    signed(
-        w,
-        b"sage-wire-response|0.10.0\n",
-        e.signing.as_ref().unwrap(),
-    )
+    signed_with(w, b"sage-wire-response|0.10.0\n", e.local_signing_key())
 }
 #[test]
 fn session_response_scenarios() {
@@ -1596,3 +1589,5 @@ fn non_http_lifecycle_monitor_and_endpoint_share_time_watermark() {
         }
     }
 }
+#[path = "custody_tests.rs"]
+mod custody;

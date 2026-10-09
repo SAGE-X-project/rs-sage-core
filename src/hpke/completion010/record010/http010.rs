@@ -294,7 +294,7 @@ impl AuthenticatedCompletion010 {
     }
     fn sign_http(
         &self,
-        e: &CompletionEndpoint010,
+        e: &mut CompletionEndpoint010,
         body: Vec<u8>,
         status: u16,
         q: Option<&HTTPContext010>,
@@ -412,12 +412,10 @@ pub(in crate::hpke::completion010) fn resign_test(
             .collect();
         context(q, &h)
     });
-    let sig = e.signing.as_ref().unwrap().sign(&base(
-        m,
-        &h,
-        &h["signature-input"][5..],
-        context.as_ref(),
-    ));
+    use ed25519_dalek::Signer;
+    let sig =
+        e.local_signing_key()
+            .sign(&base(m, &h, &h["signature-input"][5..], context.as_ref()));
     m.headers.iter_mut().find(|p| p[0] == "signature").unwrap()[1] =
         format!("sig1=:{}:", STANDARD.encode(sig.to_bytes()));
 }
@@ -580,7 +578,7 @@ pub(in crate::hpke::completion010) fn verify_proof(
     )
 }
 pub(in crate::hpke::completion010) fn sign(
-    e: &CompletionEndpoint010,
+    e: &mut CompletionEndpoint010,
     target: &str,
     authority: &str,
     body: Vec<u8>,
@@ -618,10 +616,9 @@ pub(in crate::hpke::completion010) fn sign(
             "sig1=:{}:",
             STANDARD.encode(
                 e.signing
-                    .as_ref()
+                    .as_mut()
                     .ok_or_else(bad)?
-                    .sign(&base(&m, &h, &input, q))
-                    .to_bytes()
+                    .sign(&base(&m, &h, &input, q))?
             )
         ),
     );

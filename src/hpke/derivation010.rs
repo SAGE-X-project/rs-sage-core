@@ -240,6 +240,44 @@ pub fn derive_responder_010(
     m.insert("kid".into(), kid.into());
     finish(&m, &exporter, e2e, "ephC")
 }
+/// `derive_responder_010` with the KEM key in custody. `pk_r` is the custody's
+/// public key, already matched to the current registered KEM key.
+pub(crate) fn derive_responder_custody_010(
+    raw: &[u8],
+    kem: &mut dyn super::completion010::X25519Custody010,
+    pk_r: &[u8; 32],
+    e2e_private: &[u8],
+    kid: &str,
+) -> Result<Derivation010> {
+    let (mut m, dom) = initiation(raw)?;
+    if !uuid(kid) {
+        return Err(invalid());
+    }
+    let e2e: &[u8; 32] = e2e_private.try_into().map_err(|_| invalid())?;
+    let enc = binary(&m["enc"], 32)?;
+    let exporter =
+        super::completion010::custody_open_export(kem, pk_r, &enc, &dom.info, &dom.export_context)
+            .map_err(|_| invalid())?;
+    m.insert(
+        "ephS".into(),
+        URL_SAFE_NO_PAD.encode(x25519(*e2e, X25519_BASEPOINT_BYTES)),
+    );
+    m.insert("kid".into(), kid.into());
+    finish(&m, &exporter, e2e, "ephC")
+}
+/// `respond_fresh_010` with the KEM key in custody.
+pub(crate) fn respond_fresh_custody_010(
+    raw: &[u8],
+    kem: &mut dyn super::completion010::X25519Custody010,
+    pk_r: &[u8; 32],
+) -> Result<Derivation010> {
+    initiation(raw)?;
+    let mut private = Zeroizing::new([0; 32]);
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut *private)
+        .map_err(|_| invalid())?;
+    derive_responder_custody_010(raw, kem, pk_r, &*private, &uuid::Uuid::new_v4().to_string())
+}
 /// Generates the responder E2E key and UUIDv4 handle with the system CSPRNG.
 pub fn respond_fresh_010(raw: &[u8], kem_private: &[u8]) -> Result<Derivation010> {
     initiation(raw)?;
@@ -325,6 +363,44 @@ mod tests {
                 assert_eq!(result.unwrap(), c["expected"], "{}", c["id"]);
             }
         }
+    }
+    /// In-process stand-in for KEM custody; not a protected service.
+    struct TestKem([u8; 32]);
+    impl crate::hpke::completion010::X25519Custody010 for TestKem {
+        fn public_key(&mut self) -> Result<[u8; 32]> {
+            Ok(x25519(self.0, X25519_BASEPOINT_BYTES))
+        }
+        fn ecdh(&mut self, peer: &[u8; 32]) -> Result<Zeroizing<[u8; 32]>> {
+            Ok(Zeroizing::new(x25519(self.0, *peer)))
+        }
+    }
+    /// The custody exporter reproduces every applicable independent responder
+    /// vector; vectors with an invalid local private key do not apply.
+    #[test]
+    fn kem_custody_matches_independent_vectors() {
+        let f = fixture();
+        let mut checked = 0;
+        for c in f["cases"].as_array().unwrap() {
+            if c["operation"] == "domains" {
+                continue;
+            }
+            let input = &c["input"];
+            let d = |k: &str| hex::decode(input[k].as_str().unwrap()).unwrap();
+            let Ok(private) = <[u8; 32]>::try_from(d("kem_private_hex").as_slice()) else {
+                continue;
+            };
+            let mut kem = TestKem(private);
+            let pk = x25519(private, X25519_BASEPOINT_BYTES);
+            let result = derive_responder_custody_010(&d("initiation_hex"), &mut kem, &pk, &d("e2e_private_hex"), input["kid"].as_str().unwrap())
+                .map(|v| serde_json::json!({"transcript_hex":hex::encode(v.transcript),"th_hex":hex::encode(v.th),"seed_hex":hex::encode(&*v.seed),"ack_tag_hex":hex::encode(v.ack_tag),"sid":v.sid}));
+            if c["expected"].is_null() {
+                assert!(result.is_err(), "{}", c["id"]);
+            } else {
+                assert_eq!(result.unwrap(), c["expected"], "{}", c["id"]);
+            }
+            checked += 1;
+        }
+        assert!(checked >= 20, "only {checked} vectors checked");
     }
     fn controls() -> (Vec<u8>, [u8; 32], [u8; 32]) {
         let f = fixture();

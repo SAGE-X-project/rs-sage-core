@@ -179,11 +179,20 @@ impl AuthenticatedCompletion010 {
         };
         w["payload"] = json!(B64.encode(wire));
         let id = w["id"].as_str().ok_or_else(bad)?.to_owned();
-        let result = signed(
-            w,
-            b"sage-wire-request|0.10.0\n",
-            e.signing.as_ref().ok_or_else(bad)?,
-        );
+        // The record sequence is already consumed; a failed signature retires
+        // the session instead of leaving a gap.
+        let result = match e
+            .signing
+            .as_mut()
+            .ok_or_else(bad)
+            .and_then(|k| signed(w, b"sage-wire-request|0.10.0\n", k))
+        {
+            Ok(v) => v,
+            Err(_) => {
+                self.close();
+                return Err(bad());
+            }
+        };
         let end = match e.sample() {
             Ok(t) => t,
             Err(_) => {
@@ -450,11 +459,20 @@ impl AuthenticatedCompletion010 {
             }
         };
         w["data"] = json!(B64.encode(record));
-        let result = signed(
-            w,
-            b"sage-wire-response|0.10.0\n",
-            e.signing.as_ref().ok_or_else(bad)?,
-        );
+        // The record sequence is already consumed; a failed signature retires
+        // the session instead of leaving a gap.
+        let result = match e
+            .signing
+            .as_mut()
+            .ok_or_else(bad)
+            .and_then(|k| signed(w, b"sage-wire-response|0.10.0\n", k))
+        {
+            Ok(v) => v,
+            Err(_) => {
+                self.close();
+                return Err(bad());
+            }
+        };
         let end = match e.sample() {
             Ok(t) => t,
             Err(_) => {

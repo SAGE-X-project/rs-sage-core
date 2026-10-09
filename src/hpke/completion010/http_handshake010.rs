@@ -31,7 +31,8 @@ impl CompletionEndpoint010 {
             return Err(bad());
         }
         let (mut p, body) = self.start_inner(recipient, kid, ttl)?;
-        let m = h::sign(self, &self.http_target, &self.http_authority, body, 0, None)?;
+        let (target, authority) = (self.http_target.clone(), self.http_authority.clone());
+        let m = h::sign(self, &target, &authority, body, 0, None)?;
         self.http_end(start, p.expires, &p.a, &p.b)?;
         p.http = Some(h::context(&m, &h::headers(&m)?));
         Ok((p, m))
@@ -45,11 +46,12 @@ impl CompletionEndpoint010 {
         let start = self.sample()?;
         let proof = h::prepare(&self.http_target, &self.http_authority, m, false, start)?;
         let (mut s, body) = self.respond_inner(&m.body, ttl, Some(&proof))?;
+        let (target, authority) = (self.http_target.clone(), self.http_authority.clone());
         let result = (|| {
             let response = h::sign(
                 self,
-                &self.http_target,
-                &self.http_authority,
+                &target,
+                &authority,
                 body,
                 200,
                 Some(&h::context(m, &proof.headers)),
