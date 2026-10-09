@@ -35,7 +35,9 @@ pub mod schedule010;
 pub mod server;
 pub mod types;
 
+#[allow(deprecated)] // re-export of the legacy HPKE client
 pub use client::{HpkeClient, HpkeClientConfig, HpkeClientSession, HpkeClientState};
+#[allow(deprecated)] // re-exports include legacy v1 helpers
 pub use common::{
     combine_secrets, derive_traffic_keys, hmac_expand, is_all_zero_32, kem_open, kem_seal,
     make_ack_tag, sha256_hash, sha256_hash_hex, verify_ack_tag, zero_bytes,
@@ -44,10 +46,13 @@ pub use derivation010::{
     build_domains_010, derive_responder_010, respond_fresh_010, start_initiator_010, Derivation010,
     Domains010, Initiator010,
 };
+#[allow(deprecated)] // re-export of the legacy replay store
 pub use nonce_store::NonceStore;
 pub use resolver::{DidDocumentKemResolver, MemoryKeyResolver};
 pub use schedule010::{combine_secrets_010, make_ack_tag_010, verify_ack_tag_010};
+#[allow(deprecated)] // re-export of the legacy HPKE server
 pub use server::{HpkeServer, HpkeServerConfig, HpkeServerSession};
+#[allow(deprecated)] // re-exports include legacy info builders
 pub use types::{
     CookieSource, CookieVerifier, DefaultInfoBuilder, HpkeInitPayload, InfoBuilder, KemKeyResolver,
     KeyIDBinder, ServerSigEnvelope, SigningKeyResolver, TrafficKeys, ACK_KEY_LABEL, ACK_MSG_LABEL,
@@ -57,6 +62,7 @@ pub use types::{
 };
 
 #[cfg(test)]
+#[allow(deprecated)] // tests of the legacy handshake
 mod tests {
     use super::*;
     use crate::crypto::{KeyPair, KeyType, X25519KeyPair};

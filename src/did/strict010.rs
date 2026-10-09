@@ -140,6 +140,7 @@ fn valid_key_id(value: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // compares the strict parser with the legacy one
 mod tests {
     use super::*;
 

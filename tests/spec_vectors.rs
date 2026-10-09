@@ -4,6 +4,8 @@
 //! `../sage-spec/vectors` (sibling checkout). Suites the crate does not
 //! implement yet are listed in `NOT_YET` and reported, not failed; the list
 //! shrinks with every alignment step.
+// The sage-spec 1.0.0-draft.1 vectors are defined by the legacy APIs.
+#![allow(deprecated)]
 
 use serde::Deserialize;
 use std::path::PathBuf;

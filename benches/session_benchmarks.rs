@@ -1,4 +1,6 @@
 //! Session Management Benchmarks
+// Benchmarks of the legacy session.
+#![allow(deprecated)]
 
 use std::hint::black_box;
 

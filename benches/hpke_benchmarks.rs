@@ -1,4 +1,6 @@
 //! HPKE and Cryptographic Key Derivation Benchmarks
+// Benchmarks of the legacy HPKE helpers.
+#![allow(deprecated)]
 
 use std::hint::black_box;
 

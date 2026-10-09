@@ -40,6 +40,7 @@ pub const ACK_MSG_LABEL: &[u8] = b"SAGE-ack-msg|v1|";
 pub const SESSION_LABEL: &str = "sage/hpke+e2e v1";
 
 /// Builds the HPKE `info` and export-context strings.
+#[deprecated(since = "0.4.0", note = "use build_domains_010")]
 pub trait InfoBuilder: Send + Sync {
     /// `info` for `SetupBase`
     fn build_info(&self, ctx_id: &str, init_did: &str, resp_did: &str) -> Vec<u8>;
@@ -49,8 +50,10 @@ pub trait InfoBuilder: Send + Sync {
 
 /// The sage-spec strings (`04-hpke.md` §2).
 #[derive(Debug, Clone, Copy, Default)]
+#[deprecated(since = "0.4.0", note = "use build_domains_010")]
 pub struct DefaultInfoBuilder;
 
+#[allow(deprecated)] // implementation of the legacy info builder
 impl InfoBuilder for DefaultInfoBuilder {
     fn build_info(&self, ctx_id: &str, init_did: &str, resp_did: &str) -> Vec<u8> {
         format!(
@@ -250,6 +253,7 @@ pub struct ServerSigEnvelope {
     pub sig_b64: Option<String>,
 }
 
+#[allow(deprecated)] // legacy handshake envelope
 impl ServerSigEnvelope {
     /// JCS bytes of the envelope without `sigB64` (what is signed).
     pub fn canonical_bytes(&self) -> Result<Vec<u8>> {
