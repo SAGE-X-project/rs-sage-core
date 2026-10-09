@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+- `guard010::canonical_manifest` validates an artifact manifest under the
+  same limits as `manifest_commitment` (up to 8194 JSON members) and returns
+  the canonical bytes that the commitment hashes. Hosts no longer need the
+  lenient `jcs::canonicalize` for manifests; `guard010::canonicalize` is not a
+  replacement because its general member limit is lower.
+
 ### Dependency compatibility
 - Upgrade direct dependencies to `rand` 0.10, `sha2` 0.11, `hmac` 0.13 and
   `hkdf` 0.13 together. HMAC initialization uses `KeyInit`; key derivation

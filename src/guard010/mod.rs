@@ -265,9 +265,14 @@ fn manifest(v: &Value, nonempty: bool) -> Result<()> {
 }
 /// Descriptor validation does not prove physical file or loaded instance identity.
 pub fn manifest_commitment(raw: &[u8]) -> Result<String> {
+    Ok(hash(&canonical_manifest(raw)?))
+}
+/// Validate an artifact manifest under the same limits as
+/// [`manifest_commitment`] and return the canonical bytes that it hashes.
+pub fn canonical_manifest(raw: &[u8]) -> Result<Vec<u8>> {
     let (v, b) = object_limit(raw, 8194)?;
     manifest(&v, false)?;
-    Ok(hash(&b))
+    Ok(b)
 }
 /// Verify the exact artifact set; hosts enforce regular files, no symlinks and
 /// immutable loading separately.
