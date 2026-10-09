@@ -73,6 +73,7 @@ pub fn verify_ack_tag_010(seed: &[u8], th: &[u8], tag: &[u8]) -> bool {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // compares the 0.10.0 schedule with the legacy one
 mod tests {
     use super::*;
     #[test]

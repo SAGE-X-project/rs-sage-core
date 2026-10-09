@@ -1,5 +1,7 @@
 //! WASM bindings for JCS, `did:sage`, proofs of possession, agent cards and
 //! session records.
+// Stable WASM surface keeps the legacy functions; deprecated items are used on purpose.
+#![allow(deprecated)]
 
 use super::*;
 use crate::session::{SecureSession, Session, SessionConfig};

@@ -1,4 +1,6 @@
 //! Session seed and id derivation (sage-spec `05-session.md` §1).
+// The legacy session derivation; deprecated items are used on purpose.
+#![allow(deprecated)]
 
 use crate::error::{Error, Result};
 use base64::{engine::general_purpose, Engine as _};
@@ -37,6 +39,10 @@ impl SessionParams {
 
 /// `seed = HKDF-Extract(SHA-256, sharedSecret, salt = SHA-256(label || ctx || lo || hi))`
 /// with `(lo, hi)` the byte-sorted ephemeral public keys.
+#[deprecated(
+    since = "0.4.0",
+    note = "SAGE 0.10.0 sessions derive keys inside CompletionEndpoint010"
+)]
 pub fn derive_session_seed(shared_secret: &[u8], params: &SessionParams) -> Result<Vec<u8>> {
     if shared_secret.is_empty() {
         return Err(Error::InvalidInput("empty shared secret".into()));
@@ -60,6 +66,10 @@ pub fn derive_session_seed(shared_secret: &[u8], params: &SessionParams) -> Resu
 }
 
 /// `sid = base64url-raw(SHA-256(label || seed)[0:16])`
+#[deprecated(
+    since = "0.4.0",
+    note = "SAGE 0.10.0 session identifiers come from CompletionEndpoint010"
+)]
 pub fn compute_session_id(seed: &[u8], label: &str) -> Result<String> {
     if seed.is_empty() {
         return Err(Error::InvalidInput("empty seed".into()));

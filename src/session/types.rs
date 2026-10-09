@@ -1,4 +1,6 @@
 //! Session types and configuration.
+// The legacy session types; deprecated items are used on purpose.
+#![allow(deprecated)]
 
 use crate::error::Result;
 use chrono::{DateTime, Duration, Utc};
@@ -9,6 +11,10 @@ pub const DEFAULT_REKEY_INTERVAL: u64 = 256;
 
 /// Session lifetime and rotation policy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated(
+    since = "0.4.0",
+    note = "SAGE 0.10.0 sessions are RecordSession010 values from CompletionEndpoint010"
+)]
 pub struct SessionConfig {
     /// Maximum age before the session expires (absolute)
     pub max_age: Duration,
@@ -43,6 +49,10 @@ pub enum SessionStatus {
 }
 
 /// The session interface shared by every session type.
+#[deprecated(
+    since = "0.4.0",
+    note = "SAGE 0.10.0 sessions are RecordSession010 values from CompletionEndpoint010"
+)]
 pub trait Session: Send + Sync {
     /// Session id
     fn get_id(&self) -> &str;

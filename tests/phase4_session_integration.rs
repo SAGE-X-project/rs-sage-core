@@ -7,6 +7,8 @@
 //! - Concurrent session access
 //!
 //! Note: Encryption/decryption functionality is tested in unit tests
+// Integration tests of the legacy session.
+#![allow(deprecated)]
 
 use sage_crypto_core::hpke::common::derive_traffic_keys;
 use sage_crypto_core::session::{

@@ -52,6 +52,7 @@ impl std::fmt::Display for Chain {
 
 /// Parse a chain name: trimmed, case-insensitive, with the `eth` and `sol`
 /// aliases (`06-did-sage.md` §2).
+#[deprecated(since = "0.4.0", note = "use parse_did_010 for SAGE 0.10.0 DIDs")]
 pub fn parse_chain(name: &str) -> Result<Chain> {
     match name.trim().to_lowercase().as_str() {
         "ethereum" | "eth" => Ok(Chain::Ethereum),
@@ -67,6 +68,11 @@ pub fn generate_did(chain: Chain, identifier: &str) -> String {
 
 /// Parse `did:sage:<chain>:<identifier>`; the identifier keeps any further
 /// colons (`06-did-sage.md` §1).
+#[deprecated(
+    since = "0.4.0",
+    note = "use parse_did_010 or parse_did_url_010 for SAGE 0.10.0 DIDs"
+)]
+#[allow(deprecated)] // the legacy parser builds on the legacy chain parser
 pub fn parse_did(did: &str) -> Result<(Chain, String)> {
     if did.len() < 10 || !did.starts_with("did:") {
         return Err(Error::InvalidInput("invalid DID".into()));
@@ -86,6 +92,11 @@ pub fn parse_did(did: &str) -> Result<(Chain, String)> {
 }
 
 /// Whether the string is a well-formed `did:sage` identifier.
+#[deprecated(
+    since = "0.4.0",
+    note = "use parse_did_010 or parse_did_url_010 for SAGE 0.10.0 DIDs"
+)]
+#[allow(deprecated)] // the legacy validator wraps the legacy parser
 pub fn validate_did(did: &str) -> bool {
     parse_did(did).is_ok()
 }
@@ -119,6 +130,7 @@ pub trait DIDExt {
     fn as_str(&self) -> &str;
 }
 
+#[allow(deprecated)] // the legacy DID extension wraps the legacy parser
 impl DIDExt for DID {
     fn identifier(&self) -> String {
         parse_did(self).map(|(_, id)| id).unwrap_or_default()
@@ -132,6 +144,7 @@ impl DIDExt for DID {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // tests of the legacy parser
 mod tests {
     use super::*;
 

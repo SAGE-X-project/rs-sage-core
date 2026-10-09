@@ -1,9 +1,9 @@
 # Legacy APIs and the SAGE 0.10.0 deprecation plan
 
-Status: preparation (phase P0). No item is newly marked `#[deprecated]` by this
-document. It classifies public APIs that predate the SAGE 0.10.0 protocol,
-names their 0.10.0 replacements, records known callers at `f464a5a`, and orders
-the work needed before marking them. The Go core keeps a matching plan in
+Status: phase P2. Class A items carry `#[deprecated]`. This document
+classifies public APIs that predate the SAGE 0.10.0 protocol, names their
+0.10.0 replacements, records known callers (surveyed at `f464a5a`) and orders
+the work. The Go core keeps a matching plan in
 `sage/docs/LEGACY_010_DEPRECATION.md`.
 
 Legacy APIs remain available and keep their historical behavior. They are not
@@ -72,11 +72,13 @@ to retire the feature.
      `1.0.0-draft.1` vector runner (`tests/spec_vectors.rs`), the
      `SessionManager` example (class C), legacy HPKE types, the A2A card and
      FFI/WASM. P2 gives each a scoped `#[allow(deprecated)]` with that reason.
-   - Decide the FFI/WASM surface (keep with `#[allow(deprecated)]`, or add
-     0.10.0 entry points first).
-3. **P2. Mark class A** with `#[deprecated(since = "…", note = "use …")]`,
-   add a CHANGELOG Deprecated section, and add scoped
-   `#[allow(deprecated)]` only on intentional legacy callers.
+   - Decided: keep the FFI/WASM surface with `#[allow(deprecated)]`; 0.10.0
+     C or JS entry points are added separately when needed.
+3. **P2. Mark class A.** Done: class A items carry
+   `#[deprecated(since = "0.4.0", note = "…")]` naming the replacement, the
+   CHANGELOG lists them under Deprecated, and intended legacy callers carry a
+   scoped `#[allow(deprecated)]` with the reason. The FFI and WASM surfaces
+   stay unchanged.
 4. **P3. Consumers.** Update sage-inspector harness adapters to route 0.10.0
    cases to 0.10.0 entry points; legacy routes stay labeled legacy.
 5. **Removal** in a later minor release after consumers move.

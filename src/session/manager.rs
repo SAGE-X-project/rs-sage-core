@@ -2,6 +2,8 @@
 //!
 //! This module provides the SessionManager for managing multiple secure sessions,
 //! key ID binding, and session lifecycle.
+// SessionManager manages legacy sessions (no 0.10.0 replacement); deprecated items are used on purpose.
+#![allow(deprecated)]
 
 use crate::error::Result;
 use crate::session::secure_session::SecureSession;
