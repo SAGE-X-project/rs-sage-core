@@ -29,6 +29,7 @@
 use crate::error::{Error, Result};
 use ed25519_dalek::SigningKey;
 use rand::TryRng;
+use subtle::ConstantTimeEq;
 use x25519_dalek::{x25519, X25519_BASEPOINT_BYTES};
 
 /// X25519 key pair for Diffie-Hellman key exchange
@@ -211,7 +212,8 @@ impl X25519KeyPair {
     /// # Security
     ///
     /// The shared secret should be passed through a KDF (Key Derivation Function)
-    /// before using it as an encryption key.
+    /// before using it as an encryption key. An all-zero result, produced by a
+    /// low-order peer public key, is rejected as SAGE 0.10.0 requires.
     ///
     /// # Example
     ///
@@ -242,6 +244,11 @@ impl X25519KeyPair {
         public_bytes.copy_from_slice(their_public);
 
         let shared_secret = x25519(self.secret, public_bytes);
+        if bool::from(shared_secret.ct_eq(&[0u8; 32])) {
+            return Err(Error::InvalidInput(
+                "X25519 shared secret is all zero (low-order public key)".into(),
+            ));
+        }
 
         Ok(shared_secret.to_vec())
     }
@@ -339,6 +346,23 @@ mod tests {
 
         let result = keypair.diffie_hellman(&invalid_key);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_diffie_hellman_rejects_low_order_public_keys() {
+        let keypair = X25519KeyPair::generate();
+        // The identity and a point of order 8 both yield an all-zero shared value.
+        let mut order8 = [0u8; 32];
+        hex::decode_to_slice(
+            "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800",
+            &mut order8,
+        )
+        .unwrap();
+        for low in [[0u8; 32], order8] {
+            assert!(keypair.diffie_hellman(&low).is_err());
+        }
+        let peer = X25519KeyPair::generate();
+        assert!(keypair.diffie_hellman(peer.public_key_bytes()).is_ok());
     }
 
     #[test]
