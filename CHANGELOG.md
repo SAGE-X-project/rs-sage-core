@@ -9,6 +9,13 @@
   lenient `jcs::canonicalize` for manifests; `guard010::canonicalize` is not a
   replacement because its general member limit is lower.
 
+### Changed (behavior)
+- `X25519KeyPair::diffie_hellman` returns an error when the shared value is
+  all zero, which happens for low-order peer public keys. It previously
+  returned the zero value. SAGE 0.10.0 requires rejecting it; the 0.10.0
+  handshake derivation already did, and the Go core's `crypto/ecdh` path
+  already returns an error for such keys.
+
 ### Dependency compatibility
 - Upgrade direct dependencies to `rand` 0.10, `sha2` 0.11, `hmac` 0.13 and
   `hkdf` 0.13 together. HMAC initialization uses `KeyInit`; key derivation
