@@ -25,10 +25,10 @@ fn host(path: &std::path::Path, sink: Arc<Sink>, capacity: usize) -> (Host, Arc<
     )
     .unwrap();
     let host = Host::start(
-        gate.clone(),
+        Some(gate.clone()),
         clients,
         owners,
-        workers,
+        Some(workers),
         capacity,
         Box::new(clock.clone()),
     )

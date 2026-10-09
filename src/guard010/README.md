@@ -26,6 +26,12 @@ comparing the original commitment, which remains a signed audit field.
 receiver mapping and keep the exact original comparison. Unknown or retired
 commitments must fail in `approved`.
 
+`MCPHost::open_client` builds a host that only initiates root Client calls. It
+opens no admission gate, execution ledger, executor, policy or result signer,
+refuses `serve` and responder connections, and supervises only Client
+exchanges. A participant that also receives calls, including every hop
+participant, still uses `MCPHost::open`. This matches the Go `OpenMCPClientHost`.
+
 Successful verification owns the canonical complete envelope including proof.
 Intent digests therefore bind signatures as well as claims. Accessors expose copies
 in Go and immutable borrows in Rust. They do not create a dispatch capability.
