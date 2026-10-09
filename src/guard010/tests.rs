@@ -121,3 +121,40 @@ fn canonical_public_key_encoding() {
     p[0] = 0xec;
     assert!(canonical_edwards_y(p));
 }
+
+fn manifest_json(n: usize) -> Vec<u8> {
+    let files: Vec<_> = (0..n)
+        .map(|i| json!({"sha256":"a".repeat(64),"path":format!("f/{i:05}")}))
+        .collect();
+    serde_json::to_vec(&json!({"version":"0.10.0","files":files})).unwrap()
+}
+
+#[test]
+fn canonical_manifest_is_what_the_commitment_hashes() {
+    for n in [1, 3000] {
+        let raw = manifest_json(n);
+        let bytes = canonical_manifest(&raw).unwrap();
+        assert_eq!(manifest_commitment(&raw).unwrap(), hash(&bytes));
+        assert!(bytes.starts_with(br#"{"files":[{"path":"f/00000","sha256":""#));
+    }
+    // 3000 files exceed the general member limit; only the manifest path accepts them.
+    assert!(canonicalize(&manifest_json(3000)).is_err());
+}
+
+#[test]
+fn canonical_manifest_refuses_invalid_manifests() {
+    let d = "a".repeat(64);
+    for raw in [
+        r#"{"version":"0.10.0","files":[],"files":[]}"#.to_string(),
+        r#"{"version":"0.9.0","files":[]}"#.to_string(),
+        r#"{"version":"0.10.0","files":[],"x":1}"#.to_string(),
+        format!(
+            r#"{{"version":"0.10.0","files":[{{"path":"b","sha256":"{d}"}},{{"path":"a","sha256":"{d}"}}]}}"#
+        ),
+        format!(r#"{{"version":"0.10.0","files":[{{"path":"a/../b","sha256":"{d}"}}]}}"#),
+        String::from_utf8(manifest_json(4097)).unwrap(),
+        r#"{"version":"#.to_string(),
+    ] {
+        assert!(canonical_manifest(raw.as_bytes()).is_err(), "{raw:.60}");
+    }
+}
