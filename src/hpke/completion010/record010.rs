@@ -18,7 +18,7 @@ fn session_record(bytes: &[u8], now: i64, response: bool) -> Result<(Raw, Vec<u8
     if bytes.len() > 32768 {
         return Err(bad());
     }
-    crate::jcs::canonicalize(bytes).map_err(|_| bad())?;
+    crate::jcs::canonical(bytes).map_err(|_| bad())?;
     let mut names = WIRE.to_vec();
     names.push("session_id");
     let field = if response { "data" } else { "payload" };

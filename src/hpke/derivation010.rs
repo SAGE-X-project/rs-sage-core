@@ -138,7 +138,7 @@ pub(super) fn binding(m: &Fields) -> Result<Fields> {
         .collect())
 }
 pub(super) fn canonical(m: &Fields) -> Result<Vec<u8>> {
-    crate::jcs::canonicalize(&serde_json::to_vec(m).map_err(|_| invalid())?).map_err(|_| invalid())
+    crate::jcs::canonical(&serde_json::to_vec(m).map_err(|_| invalid())?).map_err(|_| invalid())
 }
 /// Public context bytes recomputed locally from the validated closed B object.
 pub struct Domains010 {

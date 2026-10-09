@@ -17,10 +17,11 @@ deprecated item; a changed C header signature is a minor bump.
   turns every in-crate use of a `#[deprecated]` item into a failure, including
   tests, benches, examples and the `ffi`/`wasm` features. There is no
   `#[allow(deprecated)]` in the crate today.
-- **0.10.0 code uses the legacy JCS module.** `hpke/completion010.rs`,
-  `hpke/derivation010.rs` and `hpke/completion010/record010.rs` call
-  `jcs::canonicalize`; `guard010` and `registry010` build on `jcs::parse` and
-  `jcs::to_string`.
+- **0.10.0 code used the legacy JCS entry point.** `hpke/completion010.rs`,
+  `hpke/derivation010.rs` and `hpke/completion010/record010.rs` called
+  `jcs::canonicalize`. P1 added the crate-private `jcs::canonical`, which
+  these modules now call; `jcs::canonicalize` delegates to it. `guard010` and
+  `registry010` build on `jcs::parse` and `jcs::to_string`, which stay.
 - **FFI and WASM expose legacy APIs as stable surface:** `sage_jcs_canonicalize`,
   `sage_did_validate` (`parse_did`), key proof-of-possession, legacy session
   identifiers and a `SecureSession`-backed session.
@@ -63,8 +64,8 @@ to retire the feature.
 
 1. **P0 (this document).** Classify, list callers and replacements.
 2. **P1. Decouple and migrate inside this crate, without behavior change.**
-   - Give 0.10.0 modules a crate-private canonical-JSON entry point so they no
-     longer call the lenient `jcs::canonicalize`.
+   - Done: 0.10.0 modules call the crate-private `jcs::canonical`; output is
+     unchanged because `jcs::canonicalize` delegates to it.
    - Move examples, benches and tests that demonstrate 0.10.0 behavior to the
      0.10.0 APIs; keep legacy tests explicitly labeled legacy.
    - Decide the FFI/WASM surface (keep with `#[allow(deprecated)]`, or add
