@@ -17,6 +17,7 @@ pub mod jcs;
 pub mod rfc9421;
 
 pub mod did;
+pub mod didsource010;
 pub mod hpke;
 pub mod registry010;
 pub mod session;

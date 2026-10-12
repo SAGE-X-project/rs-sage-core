@@ -1,5 +1,9 @@
 //! Operation-scoped checks over a trusted validating source and durable store.
 //! This is not a network resolver, proof verifier, or authenticated session manager.
+mod record_observer010;
+pub use record_observer010::{
+    ObservedRecord, RecordObserver, RecordOrigin, RecordReader, RecordSnapshot,
+};
 mod journal;
 mod proof;
 #[cfg(not(target_arch = "wasm32"))]
@@ -174,6 +178,17 @@ pub struct RegistryGate<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized
 pub type Gate = RegistryGate<dyn Source, dyn Clock, dyn Store>;
 /// A gate whose trusted dependencies can move into a serialized Guard owner.
 pub type SendGate = RegistryGate<dyn Source + Send, dyn Clock + Send, dyn Store + Send>;
+fn check_config(cfg: &Config) -> Result<()> {
+    if [&cfg.source, &cfg.registry, &cfg.network]
+        .iter()
+        .any(|v| v.is_empty() || v.len() > 256 || v.contains(['\0', '\r', '\n']))
+        || !parse_did_010(&format!("did:sage:{}:a", cfg.registry))
+            .is_ok_and(|parsed| format!("{}:{}", parsed.kind, parsed.locator) == cfg.registry)
+    {
+        return Err(rejected());
+    }
+    Ok(())
+}
 impl Gate {
     /// Construct with explicitly trusted dependencies. No default positive cache.
     pub fn new(
@@ -198,14 +213,7 @@ impl SendGate {
 }
 impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C, T> {
     fn from_parts(cfg: Config, source: Box<S>, clock: Box<C>, store: Box<T>) -> Result<Self> {
-        if [&cfg.source, &cfg.registry, &cfg.network]
-            .iter()
-            .any(|v| v.is_empty() || v.len() > 256 || v.contains(['\0', '\r', '\n']))
-            || !parse_did_010(&format!("did:sage:{}:a", cfg.registry))
-                .is_ok_and(|parsed| format!("{}:{}", parsed.kind, parsed.locator) == cfg.registry)
-        {
-            return Err(rejected());
-        }
+        check_config(&cfg)?;
         Ok(Self {
             cfg,
             source,

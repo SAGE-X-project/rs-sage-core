@@ -151,7 +151,11 @@ pub(super) fn check_web_registry_proofs_with_policy_010(
         serde_json::from_slice(raw).map_err(|_| invalid())?;
     let record_raw = wrapper.get("record").ok_or_else(invalid)?.get();
     let record = jcs::parse(record_raw).map_err(|_| invalid())?;
-    let keys = array(field(object(&record)?, "keys")?)?;
+    check_record_proofs_010(&record, expected_did)
+}
+
+pub(super) fn check_record_proofs_010(record: &Value, expected_did: &str) -> Result<()> {
+    let keys = array(field(object(record)?, "keys")?)?;
     let Some(rest) = expected_did.strip_prefix("did:sage:") else {
         return Err(invalid());
     };

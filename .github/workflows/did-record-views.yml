@@ -1,0 +1,45 @@
+name: DID Record Views
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: did-record-views-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  views:
+    name: Native DID views and Go reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.8"
+          cache-dependency-path: tests/go-did-reference/go.sum
+      - name: Install coverage tool
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.6.21
+      - name: Prepare the library lockfile
+        run: cargo generate-lockfile
+      - name: Run units and collect coverage
+        run: cargo llvm-cov --locked --lib --test did_record_projection010 --json --output-path did-record-coverage.json
+      - name: Enforce coverage of each new production file
+        run: python3 scripts/check_did_record_coverage010.py did-record-coverage.json
+      - name: Check strict comparison parsing
+        run: python3 tests/test_did_view_comparison010.py
+      - name: Compare separate fixture processes with independent expected views
+        run: python3 scripts/check_did_record_views010.py
