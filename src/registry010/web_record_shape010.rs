@@ -169,10 +169,34 @@ pub(super) fn check_web_registry_record_shape_with_policy_010(
     let wrapper: BTreeMap<String, Box<serde_json::value::RawValue>> =
         serde_json::from_slice(raw).map_err(|_| invalid())?;
     let record_raw = wrapper.get("record").ok_or_else(invalid)?.get();
-    if record_raw.len() > MAX_RECORD {
+    check_record_shape_010(
+        record_raw.as_bytes(),
+        expected_did,
+        now,
+        require_usable_signing,
+    )
+}
+
+pub(super) fn check_record_shape_010(
+    raw: &[u8],
+    expected_did: &str,
+    now: i64,
+    require_usable_signing: bool,
+) -> Result<()> {
+    if raw.len() > MAX_RECORD {
         return Err(Error::ValidationError("size.exceeded".into()));
     }
+    if raw.is_empty()
+        || raw.starts_with(&[0xef, 0xbb, 0xbf])
+        || !super::web_envelope010::bounded_depth(raw)
+    {
+        return Err(invalid());
+    }
+    let record_raw = std::str::from_utf8(raw).map_err(|_| invalid())?;
     let record = jcs::parse(record_raw).map_err(|_| invalid())?;
+    if !super::web_envelope010::valid_numbers(&record) {
+        return Err(invalid());
+    }
     let fields = object(&record)?;
     if !closed(
         fields,

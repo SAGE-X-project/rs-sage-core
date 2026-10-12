@@ -1,0 +1,1078 @@
+{
+  "basis": "06b50e177ccd22bce7d70fd80c2d7f822ae3fd3b",
+  "cases": [
+    {
+      "name": "web-active",
+      "record": {
+        "controller": "operator",
+        "id": "did:sage:web:agents.example.com:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "POlBCDoA8i7qP9-xWxx5r3D_no7WyX4hG456m8vU2gAqGx7Q0xeDlIqZYGx8PmNSbODEr-R0FxQOjnIVqH9ACw"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "flGFWRcrh2wHlBmqx84LiERKeD2jcpGb8Kn8Up6aFk8GhoMwUQ2kYYbYDKiT_44xCdFPcfSeHH14UJbQttGXBQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#c-p256",
+              "value": "oZOUaI4Y0hvgRV5qM6DbMRzUi24Wm_J8Gqz4QM39sbJBW84-5ZdryzFdCJIsqYn4BaHPOOVl-LIV4zZs0F0ALA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#d-secp",
+              "value": "Jzq_Y0Y7Ltwx5ZbwycqhpRwr4mrMv89B5VHNw9jTS0YXQh31x2Jv-iZyTCZ5KSI0LFN0daK2bQG4Wl7dl0gq-wE"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "active",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"assertionMethod\":[\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"authentication\":[\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"keyAgreement\":[\"did:sage:web:agents.example.com:billing-bot#b-kem\"],\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"publicKeyJwk\":{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey2020\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"assertionMethod\":[\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"authentication\":[\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"keyAgreement\":[\"did:sage:web:agents.example.com:billing-bot#b-kem\"],\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"publicKeyJwk\":{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "web-created",
+      "record": {
+        "controller": "operator",
+        "id": "did:sage:web:agents.example.com:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "POlBCDoA8i7qP9-xWxx5r3D_no7WyX4hG456m8vU2gAqGx7Q0xeDlIqZYGx8PmNSbODEr-R0FxQOjnIVqH9ACw"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "flGFWRcrh2wHlBmqx84LiERKeD2jcpGb8Kn8Up6aFk8GhoMwUQ2kYYbYDKiT_44xCdFPcfSeHH14UJbQttGXBQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#c-p256",
+              "value": "oZOUaI4Y0hvgRV5qM6DbMRzUi24Wm_J8Gqz4QM39sbJBW84-5ZdryzFdCJIsqYn4BaHPOOVl-LIV4zZs0F0ALA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#d-secp",
+              "value": "Jzq_Y0Y7Ltwx5ZbwycqhpRwr4mrMv89B5VHNw9jTS0YXQh31x2Jv-iZyTCZ5KSI0LFN0daK2bQG4Wl7dl0gq-wE"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "created",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "created",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "created",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "web-deactivated",
+      "record": {
+        "controller": "operator",
+        "id": "did:sage:web:agents.example.com:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "POlBCDoA8i7qP9-xWxx5r3D_no7WyX4hG456m8vU2gAqGx7Q0xeDlIqZYGx8PmNSbODEr-R0FxQOjnIVqH9ACw"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "flGFWRcrh2wHlBmqx84LiERKeD2jcpGb8Kn8Up6aFk8GhoMwUQ2kYYbYDKiT_44xCdFPcfSeHH14UJbQttGXBQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#c-p256",
+              "value": "oZOUaI4Y0hvgRV5qM6DbMRzUi24Wm_J8Gqz4QM39sbJBW84-5ZdryzFdCJIsqYn4BaHPOOVl-LIV4zZs0F0ALA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#d-secp",
+              "value": "Jzq_Y0Y7Ltwx5ZbwycqhpRwr4mrMv89B5VHNw9jTS0YXQh31x2Jv-iZyTCZ5KSI0LFN0daK2bQG4Wl7dl0gq-wE"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "deactivated",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[]}",
+          "metadata": {
+            "deactivated": true,
+            "versionId": "1",
+            "sage": {
+              "state": "deactivated",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[]}",
+          "metadata": {
+            "deactivated": true,
+            "versionId": "1",
+            "sage": {
+              "state": "deactivated",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "web-historical",
+      "record": {
+        "controller": "operator",
+        "id": "did:sage:web:agents.example.com:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "POlBCDoA8i7qP9-xWxx5r3D_no7WyX4hG456m8vU2gAqGx7Q0xeDlIqZYGx8PmNSbODEr-R0FxQOjnIVqH9ACw"
+            },
+            "state": "revoked"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "flGFWRcrh2wHlBmqx84LiERKeD2jcpGb8Kn8Up6aFk8GhoMwUQ2kYYbYDKiT_44xCdFPcfSeHH14UJbQttGXBQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#c-p256",
+              "value": "oZOUaI4Y0hvgRV5qM6DbMRzUi24Wm_J8Gqz4QM39sbJBW84-5ZdryzFdCJIsqYn4BaHPOOVl-LIV4zZs0F0ALA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#d-secp",
+              "value": "Jzq_Y0Y7Ltwx5ZbwycqhpRwr4mrMv89B5VHNw9jTS0YXQh31x2Jv-iZyTCZ5KSI0LFN0daK2bQG4Wl7dl0gq-wE"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "active",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"assertionMethod\":[\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"authentication\":[\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"keyAgreement\":[\"did:sage:web:agents.example.com:billing-bot#b-kem\"],\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey2020\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"assertionMethod\":[\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"authentication\":[\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"keyAgreement\":[\"did:sage:web:agents.example.com:billing-bot#b-kem\"],\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "web-expired",
+      "record": {
+        "controller": "operator",
+        "id": "did:sage:web:agents.example.com:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "expires": 100,
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "POlBCDoA8i7qP9-xWxx5r3D_no7WyX4hG456m8vU2gAqGx7Q0xeDlIqZYGx8PmNSbODEr-R0FxQOjnIVqH9ACw"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "expires": 100,
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "flGFWRcrh2wHlBmqx84LiERKeD2jcpGb8Kn8Up6aFk8GhoMwUQ2kYYbYDKiT_44xCdFPcfSeHH14UJbQttGXBQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#c-p256",
+              "value": "oZOUaI4Y0hvgRV5qM6DbMRzUi24Wm_J8Gqz4QM39sbJBW84-5ZdryzFdCJIsqYn4BaHPOOVl-LIV4zZs0F0ALA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#d-secp",
+              "value": "Jzq_Y0Y7Ltwx5ZbwycqhpRwr4mrMv89B5VHNw9jTS0YXQh31x2Jv-iZyTCZ5KSI0LFN0daK2bQG4Wl7dl0gq-wE"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "active",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"assertionMethod\":[\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"authentication\":[\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey2020\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"assertionMethod\":[\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"authentication\":[\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"service\":[{\"id\":\"did:sage:web:agents.example.com:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "web-empty-services",
+      "record": {
+        "controller": "operator",
+        "id": "did:sage:web:agents.example.com:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "POlBCDoA8i7qP9-xWxx5r3D_no7WyX4hG456m8vU2gAqGx7Q0xeDlIqZYGx8PmNSbODEr-R0FxQOjnIVqH9ACw"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#a-ed",
+              "value": "flGFWRcrh2wHlBmqx84LiERKeD2jcpGb8Kn8Up6aFk8GhoMwUQ2kYYbYDKiT_44xCdFPcfSeHH14UJbQttGXBQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#c-p256",
+              "value": "oZOUaI4Y0hvgRV5qM6DbMRzUi24Wm_J8Gqz4QM39sbJBW84-5ZdryzFdCJIsqYn4BaHPOOVl-LIV4zZs0F0ALA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:web:agents.example.com:billing-bot#d-secp",
+              "value": "Jzq_Y0Y7Ltwx5ZbwycqhpRwr4mrMv89B5VHNw9jTS0YXQh31x2Jv-iZyTCZ5KSI0LFN0daK2bQG4Wl7dl0gq-wE"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [],
+        "state": "active",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"assertionMethod\":[\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"authentication\":[\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"keyAgreement\":[\"did:sage:web:agents.example.com:billing-bot#b-kem\"],\"service\":[],\"verificationMethod\":[{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"publicKeyJwk\":{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey2020\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"assertionMethod\":[\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"authentication\":[\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"did:sage:web:agents.example.com:billing-bot#d-secp\"],\"id\":\"did:sage:web:agents.example.com:billing-bot\",\"keyAgreement\":[\"did:sage:web:agents.example.com:billing-bot#b-kem\"],\"service\":[],\"verificationMethod\":[{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#a-ed\",\"publicKeyJwk\":{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:web:agents.example.com:billing-bot\",\"id\":\"did:sage:web:agents.example.com:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "operator",
+              "observedAt": 100,
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "eip155-active",
+      "record": {
+        "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "id": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "VcOWZ0aPSU7aWCjuvajnHmBBvubM7OCo0XSVFJA5AfqBHg0SVjX7nrakKy0uhb_BPs3Zt5s4xiIQfHepOrN3AQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "m0cfS1gC0k3hqVAgDsDhUAMuT_bYxfki5L4smLGO0uco3NE8mN18O6DrlP2YiY3_duWrWvs4FtkOhDdSKzRzBA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256",
+              "value": "X0nu1QpMysUtC0n5gSI-0A9F3DFYrjNEEKeunGuBFhkjSvqGM2vnyykQsSaxbS_VWdiL3eY8yjNeV2KBGNJvPg"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp",
+              "value": "1SdmVjeAD4BVbuDfsJ7KCfrw4SqYLrOGarr_ST49Val-Od6JnXSkPQqkKQS4IUdLanN-3fARhGm-gPmEkkPpUgA"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "active",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"assertionMethod\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"authentication\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"keyAgreement\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\"],\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"publicKeyJwk\":{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey2020\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"assertionMethod\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"authentication\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"keyAgreement\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\"],\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"publicKeyJwk\":{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "eip155-created",
+      "record": {
+        "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "id": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "VcOWZ0aPSU7aWCjuvajnHmBBvubM7OCo0XSVFJA5AfqBHg0SVjX7nrakKy0uhb_BPs3Zt5s4xiIQfHepOrN3AQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "m0cfS1gC0k3hqVAgDsDhUAMuT_bYxfki5L4smLGO0uco3NE8mN18O6DrlP2YiY3_duWrWvs4FtkOhDdSKzRzBA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256",
+              "value": "X0nu1QpMysUtC0n5gSI-0A9F3DFYrjNEEKeunGuBFhkjSvqGM2vnyykQsSaxbS_VWdiL3eY8yjNeV2KBGNJvPg"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp",
+              "value": "1SdmVjeAD4BVbuDfsJ7KCfrw4SqYLrOGarr_ST49Val-Od6JnXSkPQqkKQS4IUdLanN-3fARhGm-gPmEkkPpUgA"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "created",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "created",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "created",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "eip155-deactivated",
+      "record": {
+        "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "id": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "VcOWZ0aPSU7aWCjuvajnHmBBvubM7OCo0XSVFJA5AfqBHg0SVjX7nrakKy0uhb_BPs3Zt5s4xiIQfHepOrN3AQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "m0cfS1gC0k3hqVAgDsDhUAMuT_bYxfki5L4smLGO0uco3NE8mN18O6DrlP2YiY3_duWrWvs4FtkOhDdSKzRzBA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256",
+              "value": "X0nu1QpMysUtC0n5gSI-0A9F3DFYrjNEEKeunGuBFhkjSvqGM2vnyykQsSaxbS_VWdiL3eY8yjNeV2KBGNJvPg"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp",
+              "value": "1SdmVjeAD4BVbuDfsJ7KCfrw4SqYLrOGarr_ST49Val-Od6JnXSkPQqkKQS4IUdLanN-3fARhGm-gPmEkkPpUgA"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "deactivated",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[]}",
+          "metadata": {
+            "deactivated": true,
+            "versionId": "1",
+            "sage": {
+              "state": "deactivated",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[]}",
+          "metadata": {
+            "deactivated": true,
+            "versionId": "1",
+            "sage": {
+              "state": "deactivated",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "eip155-historical",
+      "record": {
+        "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "id": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "VcOWZ0aPSU7aWCjuvajnHmBBvubM7OCo0XSVFJA5AfqBHg0SVjX7nrakKy0uhb_BPs3Zt5s4xiIQfHepOrN3AQ"
+            },
+            "state": "revoked"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "m0cfS1gC0k3hqVAgDsDhUAMuT_bYxfki5L4smLGO0uco3NE8mN18O6DrlP2YiY3_duWrWvs4FtkOhDdSKzRzBA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256",
+              "value": "X0nu1QpMysUtC0n5gSI-0A9F3DFYrjNEEKeunGuBFhkjSvqGM2vnyykQsSaxbS_VWdiL3eY8yjNeV2KBGNJvPg"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp",
+              "value": "1SdmVjeAD4BVbuDfsJ7KCfrw4SqYLrOGarr_ST49Val-Od6JnXSkPQqkKQS4IUdLanN-3fARhGm-gPmEkkPpUgA"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "active",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"assertionMethod\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"authentication\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"keyAgreement\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\"],\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey2020\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"assertionMethod\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"authentication\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"keyAgreement\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\"],\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "eip155-expired",
+      "record": {
+        "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "id": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "expires": 100,
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "VcOWZ0aPSU7aWCjuvajnHmBBvubM7OCo0XSVFJA5AfqBHg0SVjX7nrakKy0uhb_BPs3Zt5s4xiIQfHepOrN3AQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "expires": 100,
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "m0cfS1gC0k3hqVAgDsDhUAMuT_bYxfki5L4smLGO0uco3NE8mN18O6DrlP2YiY3_duWrWvs4FtkOhDdSKzRzBA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256",
+              "value": "X0nu1QpMysUtC0n5gSI-0A9F3DFYrjNEEKeunGuBFhkjSvqGM2vnyykQsSaxbS_VWdiL3eY8yjNeV2KBGNJvPg"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp",
+              "value": "1SdmVjeAD4BVbuDfsJ7KCfrw4SqYLrOGarr_ST49Val-Od6JnXSkPQqkKQS4IUdLanN-3fARhGm-gPmEkkPpUgA"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [
+          {
+            "name": "e-a2a",
+            "type": "A2AInterface",
+            "uri": "https://agents.example.com/a2a"
+          }
+        ],
+        "state": "active",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"assertionMethod\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"authentication\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey2020\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"assertionMethod\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"authentication\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"service\":[{\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#e-a2a\",\"serviceEndpoint\":\"https://agents.example.com/a2a\",\"type\":\"A2AInterface\"}],\"verificationMethod\":[{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    },
+    {
+      "name": "eip155-empty-services",
+      "record": {
+        "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "id": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot",
+        "keys": [
+          {
+            "alg": "ed25519",
+            "key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+            "name": "a-ed",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "VcOWZ0aPSU7aWCjuvajnHmBBvubM7OCo0XSVFJA5AfqBHg0SVjX7nrakKy0uhb_BPs3Zt5s4xiIQfHepOrN3AQ"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "x25519",
+            "key": "E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20",
+            "name": "b-kem",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed",
+              "value": "m0cfS1gC0k3hqVAgDsDhUAMuT_bYxfki5L4smLGO0uco3NE8mN18O6DrlP2YiY3_duWrWvs4FtkOhDdSKzRzBA"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "ecdsa-p256-sha256",
+            "key": "BFUPRxAD89-Xw99QaseX9nIfsaH7e49vg9IkSYplyI4kE2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY",
+            "name": "c-p256",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256",
+              "value": "X0nu1QpMysUtC0n5gSI-0A9F3DFYrjNEEKeunGuBFhkjSvqGM2vnyykQsSaxbS_VWdiL3eY8yjNeV2KBGNJvPg"
+            },
+            "state": "accepted"
+          },
+          {
+            "alg": "sage-secp256k1-keccak256",
+            "key": "BFMf5gaBNFA9JyMTMifIZ6yPpsg8U36aRMPFvb3LH-M3npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg",
+            "name": "d-secp",
+            "proof": {
+              "signer": "did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp",
+              "value": "1SdmVjeAD4BVbuDfsJ7KCfrw4SqYLrOGarr_ST49Val-Od6JnXSkPQqkKQS4IUdLanN-3fARhGm-gPmEkkPpUgA"
+            },
+            "state": "accepted"
+          }
+        ],
+        "services": [],
+        "state": "active",
+        "version": "1"
+      },
+      "expected": {
+        "core10": {
+          "document": "{\"assertionMethod\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"authentication\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"keyAgreement\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\"],\"service\":[],\"verificationMethod\":[{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"publicKeyJwk\":{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey2020\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey2020\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did+json"
+        },
+        "did11": {
+          "document": "{\"@context\":\"https://www.w3.org/ns/did/v1.1\",\"assertionMethod\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"authentication\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\"],\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"keyAgreement\":[\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\"],\"service\":[],\"verificationMethod\":[{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#a-ed\",\"publicKeyJwk\":{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#b-kem\",\"publicKeyJwk\":{\"crv\":\"X25519\",\"kty\":\"OKP\",\"x\":\"E75P6uryBMf9M1j8nAByGIHRdCeBKCJ-xnTzf3_pe20\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#c-p256\",\"publicKeyJwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"VQ9HEAPz35fD31Bqx5f2ch-xoft7j2-D0iRJimXIjiQ\",\"y\":\"E2CT1wEuUJpzcVy9CwCjzA_0tcAbP_oZarH7MnA2uOY\"},\"type\":\"JsonWebKey\"},{\"controller\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot\",\"id\":\"did:sage:eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:billing-bot#d-secp\",\"publicKeyJwk\":{\"crv\":\"secp256k1\",\"kty\":\"EC\",\"x\":\"Ux_mBoE0UD0nIxMyJ8hnrI-myDxTfppEw8W9vcsf4zc\",\"y\":\"npLCZeceSBuoKoRnWkescFogD81STpLZOw5zhvJqVFg\"},\"type\":\"JsonWebKey\"}]}",
+          "metadata": {
+            "deactivated": false,
+            "versionId": "1",
+            "sage": {
+              "state": "active",
+              "controller": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "observedAt": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "observedTime": 101,
+              "source": "fixture-view-only-source"
+            }
+          },
+          "contentType": "application/did"
+        }
+      }
+    }
+  ],
+  "scope": "public-fixture-only; no authorization"
+}
