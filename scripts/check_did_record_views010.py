@@ -45,7 +45,7 @@ def main(argv=None):
     evidence = args.evidence_dir
     if evidence is not None:
         evidence.mkdir(parents=True, exist_ok=False)
-    files = ["tests/fixtures/did-record-projections010.json", "scripts/check_did_record_views010.py", "tests/go-did-reference/main.go", "tests/go-did-reference/go.mod", "tests/go-did-reference/go.sum", "tests/go-did-reference/dependencies.json", "src/didsource010.rs", "src/registry010/record_observer010.rs"]
+    files = ["Cargo.toml", "tests/fixtures/did-record-projections010.json", "scripts/check_did_record_views010.py", "tests/go-did-reference/main.go", "tests/go-did-reference/go.mod", "tests/go-did-reference/go.sum", "tests/go-did-reference/dependencies.json", "src/didsource010.rs", "src/registry010/record_observer010.rs"]
     source_hashes = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in files}
     data = FIXTURE.read_bytes()
     fixture = strict_json(data)

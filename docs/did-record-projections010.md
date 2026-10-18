@@ -98,3 +98,11 @@ also retains selected Go modules, compiler and module verification evidence.
 Rust's native metadata and bare-document Accept behavior remain distinct from
 the Go standard resolver's envelope/HTTP interface. Equality here does not
 establish a Rust HTTP resolver, actual RPC authority or protected transport.
+
+The first updated CI run found four published advisories in the pre-existing
+exact rustls 0.23.45 pin. The native TLS dependency is updated to exact 0.23.46,
+the patched version listed by RustSec and the upstream release:
+<https://github.com/rustls/rustls/releases/tag/v%2F0.23.46>. Its declared Rust
+minimum is 1.71; this project retains Rust 1.88 and its existing TLS feature
+selection. The normal TLS/unit/runtime and security audit gates must pass on
+the updated dependency. No attack-capable reproduction is added.
