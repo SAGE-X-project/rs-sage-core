@@ -3,7 +3,7 @@
 use crate::{
     error::{Error, Result},
     jcs,
-    registry010::ObservedRecord,
+    registry010::{ObservedRecord, RecordObserver},
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::{json, Value};
@@ -43,6 +43,24 @@ pub struct DocumentView {
     pub metadata: Value,
     /// Exact selected projection media type.
     pub content_type: &'static str,
+}
+/// Two independently owned views from one checked observation, not a wire envelope.
+pub struct DocumentViews {
+    /// DID Core 1.0 projection with its observation metadata.
+    pub core10: DocumentView,
+    /// DID 1.1 projection with the same record version and observation.
+    pub did11: DocumentView,
+}
+/// Observe exactly once through an explicitly configured reader and produce both
+/// DIDP-03 views. Each invocation acquires a new owned observation. Failure
+/// returns no pair; this does not roll back an observer's durable journal.
+/// Source authority, freshness and history remain RecordObserver's contracts.
+/// This synchronous API adds no HTTP format or protected-operation authority.
+pub fn observe_views(observer: &mut RecordObserver, did: &str) -> Result<DocumentViews> {
+    let observed = observer.observe(did)?;
+    let core10 = project(&observed, Projection::Core10)?;
+    let did11 = project(&observed, Projection::Did11)?;
+    Ok(DocumentViews { core10, did11 })
 }
 fn invalid() -> Error {
     Error::ValidationError("record.invalid".into())
