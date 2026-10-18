@@ -1,6 +1,6 @@
 //! Native projections exercise public observation boundaries, never authorization.
 use sage_crypto_core::{
-    didsource010::{project, Projection},
+    didsource010::{observe_views, project, Projection},
     error::{Error, Result},
     registry010::{
         Clock, Config, Journal, RecordObserver, RecordOrigin, RecordReader, RecordSnapshot, Stamp,
@@ -529,5 +529,144 @@ fn all_signing_keys_expired_still_resolve_but_cannot_authorize() {
                 assert_eq!(doc.get("keyAgreement").is_some(), kem_live);
             }
         }
+    }
+}
+
+#[test]
+fn paired_views_read_once_and_match_independent_public_fixtures() {
+    let f = fixtures();
+    for case in f["cases"].as_array().unwrap() {
+        let r = &case["record"];
+        let did = r["id"].as_str().unwrap();
+        let web = did == WEB;
+        let dir = tempfile::tempdir().unwrap();
+        let reads = Arc::new(AtomicUsize::new(0));
+        let mut o = observer(
+            cfg(web),
+            vec![Ok(snap(r, web))],
+            normal(),
+            &dir.path().join("j"),
+            true,
+            reads.clone(),
+        )
+        .unwrap();
+        let views = observe_views(&mut o, did).unwrap();
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        for (v, name) in [(views.core10, "core10"), (views.did11, "did11")] {
+            let expected = &case["expected"][name];
+            assert_eq!(
+                String::from_utf8(v.document).unwrap(),
+                expected["document"].as_str().unwrap()
+            );
+            assert_eq!(v.metadata, expected["metadata"]);
+            assert_eq!(v.content_type, expected["contentType"].as_str().unwrap());
+        }
+    }
+}
+
+#[test]
+fn paired_views_follow_versions_and_own_their_storage() {
+    let first_record = record("eip155-active");
+    let mut second_record = record("eip155-deactivated");
+    second_record["version"] = json!("8");
+    let mut second_snapshot = snap(&second_record, false);
+    let hash = "b".repeat(64);
+    second_snapshot.origin = RecordOrigin::FinalizedBlock {
+        block_hash: hash.clone(),
+        record_block_hash: hash.clone(),
+        keys_block_hash: hash.clone(),
+        services_block_hash: hash.clone(),
+        finalized: true,
+    };
+    second_snapshot.acquired_ms = 101;
+    let dir = tempfile::tempdir().unwrap();
+    let reads = Arc::new(AtomicUsize::new(0));
+    let mut times = normal();
+    times.extend([(101, 102), (101, 102), (101, 102), (102, 103)]);
+    let mut o = observer(
+        cfg(false),
+        vec![Ok(snap(&first_record, false)), Ok(second_snapshot)],
+        times,
+        &dir.path().join("j"),
+        true,
+        reads.clone(),
+    )
+    .unwrap();
+    let mut first = observe_views(&mut o, EIP).unwrap();
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    let first_expected = first.did11.metadata.clone();
+    first.core10.document[0] = b'x';
+    first.core10.metadata["sage"]["controller"] = json!("changed");
+    assert_eq!(first.did11.document[0], b'{');
+    assert_eq!(first.did11.metadata, first_expected);
+    let second = observe_views(&mut o, EIP).unwrap();
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+    let f = fixtures();
+    let expected = &f["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["name"] == "eip155-deactivated")
+        .unwrap()["expected"];
+    for (v, name) in [(second.core10, "core10"), (second.did11, "did11")] {
+        assert_eq!(
+            String::from_utf8(v.document).unwrap(),
+            expected[name]["document"].as_str().unwrap()
+        );
+        let mut metadata = expected[name]["metadata"].clone();
+        metadata["versionId"] = json!("8");
+        metadata["sage"]["observedAt"] = json!(hash);
+        metadata["sage"]["observedTime"] = json!(102);
+        assert_eq!(v.metadata, metadata);
+        assert_eq!(v.content_type, expected[name]["contentType"].as_str().unwrap());
+    }
+    code(observe_views(&mut o, EIP), "record.unreachable");
+    assert_eq!(reads.load(Ordering::SeqCst), 3);
+}
+
+#[test]
+fn paired_views_keep_observer_refusal_boundaries() {
+    let dir = tempfile::tempdir().unwrap();
+    let reads = Arc::new(AtomicUsize::new(0));
+    let mut o = observer(
+        cfg(false),
+        vec![Err(Error::Other("fixture unavailable".into()))],
+        normal(),
+        &dir.path().join("j"),
+        true,
+        reads.clone(),
+    )
+    .unwrap();
+    assert!(observe_views(&mut o, "did:other:a").is_err());
+    assert_eq!(reads.load(Ordering::SeqCst), 0);
+    code(observe_views(&mut o, EIP), "record.unreachable");
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    for flag in ["unready", "unvalidated"] {
+        let dir = tempfile::tempdir().unwrap();
+        let reads = Arc::new(AtomicUsize::new(0));
+        let mut snapshot = snap(&record("eip155-active"), false);
+        if flag == "unready" {
+            snapshot.ready = false;
+        } else {
+            snapshot.validated = false;
+        }
+        let mut o = observer(
+            cfg(false),
+            vec![Ok(snapshot)],
+            normal(),
+            &dir.path().join("j"),
+            true,
+            reads.clone(),
+        )
+        .unwrap();
+        code(
+            observe_views(&mut o, EIP),
+            if flag == "unready" {
+                "record.unreachable"
+            } else {
+                "record.stale"
+            },
+        );
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
     }
 }
