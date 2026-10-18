@@ -325,14 +325,16 @@ impl AuthenticatedCompletion010 {
         data: &[u8],
         ttl: i64,
     ) -> Result<HTTPMessage010> {
-        if self.application { return Err(bad()); }
-        self.seal_http_request_metadata(e,data,None,ttl)
+        if self.application {
+            return Err(bad());
+        }
+        self.seal_http_request_metadata(e, data, None, ttl)
     }
     pub(in crate::hpke::completion010) fn seal_http_request_metadata(
         &mut self,
         e: &mut CompletionEndpoint010,
         data: &[u8],
-        metadata: Option<&BTreeMap<String,String>>,
+        metadata: Option<&BTreeMap<String, String>>,
         ttl: i64,
     ) -> Result<HTTPMessage010> {
         let start = self.begin_record(e)?;
@@ -353,8 +355,10 @@ impl AuthenticatedCompletion010 {
         e: &mut CompletionEndpoint010,
         m: &HTTPMessage010,
     ) -> Result<Vec<u8>> {
-        if self.application { return Err(bad()); }
-        self.open_http_application_request(e,m)
+        if self.application {
+            return Err(bad());
+        }
+        self.open_http_application_request(e, m)
     }
     pub(in crate::hpke::completion010) fn open_http_application_request(
         &mut self,
@@ -381,8 +385,10 @@ impl AuthenticatedCompletion010 {
         ttl: i64,
         status: u16,
     ) -> Result<HTTPMessage010> {
-        if self.application { return Err(bad()); }
-        self.seal_http_response_metadata(e,message_id,data,None,error,ttl,status)
+        if self.application {
+            return Err(bad());
+        }
+        self.seal_http_response_metadata(e, message_id, data, None, error, ttl, status)
     }
     #[allow(clippy::too_many_arguments)]
     pub(in crate::hpke::completion010) fn seal_http_response_metadata(
@@ -390,7 +396,7 @@ impl AuthenticatedCompletion010 {
         e: &mut CompletionEndpoint010,
         message_id: &str,
         data: &[u8],
-        metadata: Option<&BTreeMap<String,String>>,
+        metadata: Option<&BTreeMap<String, String>>,
         error: Option<&str>,
         ttl: i64,
         status: u16,
@@ -415,8 +421,10 @@ impl AuthenticatedCompletion010 {
         e: &mut CompletionEndpoint010,
         m: &HTTPMessage010,
     ) -> Result<SessionResponse010> {
-        if self.application { return Err(bad()); }
-        self.open_http_application_response(e,m)
+        if self.application {
+            return Err(bad());
+        }
+        self.open_http_application_response(e, m)
     }
     pub(in crate::hpke::completion010) fn open_http_application_response(
         &mut self,
