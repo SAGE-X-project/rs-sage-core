@@ -96,8 +96,9 @@ func main() {
 				panic(e)
 			}
 			metadata := advanced.Metadata(r)
-			// Compare typed metadata, not HTTP resolution envelope encoding.
-			views[name] = map[string]any{"document": string(doc), "contentType": p.MediaType(), "metadata": map[string]any{"deactivated": metadata.Deactivated, "versionId": metadata.VersionID, "sage": metadata.Extra["sage"]}}
+			// Marshal the actual metadata value, including explicit false presence.
+			// Rebuilding a map here would hide a missing member in MarshalJSON.
+			views[name] = map[string]any{"document": string(doc), "contentType": p.MediaType(), "metadata": metadata}
 		}
 		results[c.Name] = views
 	}
