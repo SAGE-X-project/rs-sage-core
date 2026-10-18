@@ -1,0 +1,74 @@
+name: HTTP Application Metadata
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: http-application-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: Owned HTTP application metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+          components: rustfmt, llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Retain remote formatting proposals separately
+        run: |
+          mkdir -p "$RUNNER_TEMP/http-application-format"
+          cp -R src "$RUNNER_TEMP/http-application-format/src"
+          rustfmt --edition 2021 "$RUNNER_TEMP/http-application-format/src/hpke/completion010.rs"
+      - name: Upload formatting proposals
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: http-application-formatting
+          path: ${{ runner.temp }}/http-application-format/src/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Install coverage tool
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.6.21
+      - name: Prepare library dependencies
+        run: cargo generate-lockfile
+      - name: Test actual committed sources and retain evidence
+        run: |
+          mkdir -p "$RUNNER_TEMP/http-application"
+          rustc --version > "$RUNNER_TEMP/http-application/compiler.txt"
+          cargo test --locked --lib http_application -- --nocapture > "$RUNNER_TEMP/http-application/tests.txt"
+          cargo llvm-cov --locked --lib --json --output-path "$RUNNER_TEMP/http-application/coverage.json"
+          python3 - <<'PYCOVERAGE'
+          import json, os
+          from pathlib import Path
+          report = json.loads(Path(os.environ['RUNNER_TEMP'], 'http-application/coverage.json').read_text())
+          matches = [f for f in report['data'][0]['files'] if f['filename'].replace('\\', '/').endswith('/src/hpke/completion010/owner010/application010.rs')]
+          assert len(matches) == 1
+          lines = matches[0]['summary']['lines']
+          assert lines['count'] and lines['covered'] * 100 >= lines['count'] * 90, lines
+          print(lines)
+          PYCOVERAGE
+          git rev-parse HEAD > "$RUNNER_TEMP/http-application/revision.txt"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/http-application/tree.txt"
+          sha256sum src/hpke/completion010.rs src/hpke/completion010/owner010.rs src/hpke/completion010/record010.rs src/hpke/completion010/record010/http010.rs src/hpke/completion010/owner010/application010.rs src/hpke/completion010/tests.rs src/hpke/completion010/tests/http_application010.rs tests/fixtures/http-application-root010.der tests/fixtures/http-application-leaf010.der docs/http-application-metadata010.md .github/workflows/http-application.yml > "$RUNNER_TEMP/http-application/source.sha256"
+          git diff --exit-code
+      - name: Retain actual HTTP application evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: http-application-metadata
+          path: ${{ runner.temp }}/http-application/
+          if-no-files-found: error
+          retention-days: 14
