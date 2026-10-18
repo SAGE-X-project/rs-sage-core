@@ -28,6 +28,7 @@ pub use custody010::{Ed25519Custody010, X25519Custody010};
 use custody010::{EndpointKem, EndpointSigner};
 pub use http_handshake010::{encode_http_010, parse_http_010};
 pub use owner010::NonHTTPOwner010;
+pub use owner010::application010::{HTTPApplicationOwner010, HTTPApplicationRequest010, HTTPApplicationResponse010};
 pub(crate) use owner010::OwnerLife;
 use record010::http010::{HTTPContext010, HTTPProof010};
 pub use record010::{http010::HTTPMessage010, SessionResponse010};
@@ -716,6 +717,7 @@ impl PendingCompletion010 {
 /// Private seed plus immutable public authenticated tuple. Not a dispatch API.
 /// Responder state stays provisional until open_request atomically confirms it.
 pub struct AuthenticatedCompletion010 {
+    application: bool,
     record_used: bool,
     http_target: String,
     http_authority: String,
@@ -754,6 +756,7 @@ fn owned(
     tuple.insert("sid".into(), result.sid);
     let records = RecordSession010::new(&result.seed, &result.th, initiator)?;
     Ok(AuthenticatedCompletion010 {
+        application: false,
         record_used: false,
         http_target: String::new(),
         http_authority: String::new(),

@@ -325,11 +325,21 @@ impl AuthenticatedCompletion010 {
         data: &[u8],
         ttl: i64,
     ) -> Result<HTTPMessage010> {
+        if self.application { return Err(bad()); }
+        self.seal_http_request_metadata(e,data,None,ttl)
+    }
+    pub(in crate::hpke::completion010) fn seal_http_request_metadata(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        data: &[u8],
+        metadata: Option<&BTreeMap<String,String>>,
+        ttl: i64,
+    ) -> Result<HTTPMessage010> {
         let start = self.begin_record(e)?;
         if self.http_target.is_empty() {
             return Err(bad());
         }
-        let b = self.seal_request_inner(e, data, ttl)?;
+        let b = self.seal_request_metadata(e, data, metadata, ttl)?;
         let m = self.sign_http(e, b, 0, None)?;
         self.http_end(e, start, ttl)?;
         let w: Raw = serde_json::from_slice(&m.body).map_err(|_| bad())?;
@@ -339,6 +349,14 @@ impl AuthenticatedCompletion010 {
     }
     /// Verify both signatures before one replay/sequence acceptance.
     pub fn open_http_request(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        m: &HTTPMessage010,
+    ) -> Result<Vec<u8>> {
+        if self.application { return Err(bad()); }
+        self.open_http_application_request(e,m)
+    }
+    pub(in crate::hpke::completion010) fn open_http_application_request(
         &mut self,
         e: &mut CompletionEndpoint010,
         m: &HTTPMessage010,
@@ -363,6 +381,20 @@ impl AuthenticatedCompletion010 {
         ttl: i64,
         status: u16,
     ) -> Result<HTTPMessage010> {
+        if self.application { return Err(bad()); }
+        self.seal_http_response_metadata(e,message_id,data,None,error,ttl,status)
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::hpke::completion010) fn seal_http_response_metadata(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        message_id: &str,
+        data: &[u8],
+        metadata: Option<&BTreeMap<String,String>>,
+        error: Option<&str>,
+        ttl: i64,
+        status: u16,
+    ) -> Result<HTTPMessage010> {
         let start = self.begin_record(e)?;
         if self.http_target.is_empty() || !(200..=599).contains(&status) || status == 204 {
             return Err(bad());
@@ -372,13 +404,21 @@ impl AuthenticatedCompletion010 {
             .get(message_id)
             .and_then(|r| r.http.clone())
             .ok_or_else(bad)?;
-        let b = self.seal_response_inner(e, message_id, data, error, ttl)?;
+        let b = self.seal_response_metadata(e, message_id, data, metadata, error, ttl)?;
         let m = self.sign_http(e, b, status, Some(&q))?;
         self.http_end(e, start, ttl)?;
         Ok(m)
     }
     /// Accept one terminal response after HTTP, envelope, AEAD and replay checks.
     pub fn open_http_response(
+        &mut self,
+        e: &mut CompletionEndpoint010,
+        m: &HTTPMessage010,
+    ) -> Result<SessionResponse010> {
+        if self.application { return Err(bad()); }
+        self.open_http_application_response(e,m)
+    }
+    pub(in crate::hpke::completion010) fn open_http_application_response(
         &mut self,
         e: &mut CompletionEndpoint010,
         m: &HTTPMessage010,

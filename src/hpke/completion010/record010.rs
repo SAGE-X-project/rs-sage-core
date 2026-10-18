@@ -1,4 +1,5 @@
 use super::*;
+use super::owner010::application010::{copy_metadata, read_metadata};
 pub(super) mod http010;
 use http010::{HTTPContext010, HTTPProof010};
 
@@ -15,12 +16,22 @@ fn session_request(bytes: &[u8], now: i64) -> Result<(Raw, Vec<u8>)> {
     session_record(bytes, now, false)
 }
 fn session_record(bytes: &[u8], now: i64, response: bool) -> Result<(Raw, Vec<u8>)> {
+    session_record_metadata(bytes,now,response,false)
+}
+fn session_record_metadata(bytes: &[u8], now: i64, response: bool, application: bool) -> Result<(Raw,Vec<u8>)> {
     if bytes.len() > 32768 {
         return Err(bad());
     }
     crate::jcs::canonical(bytes).map_err(|_| bad())?;
     let mut names = WIRE.to_vec();
     names.push("session_id");
+    if application {
+        let probe: Raw = serde_json::from_slice(bytes).map_err(|_| bad())?;
+        if let Some(metadata) = probe.get("metadata") {
+            read_metadata(Some(metadata.as_ref()))?;
+            names.push("metadata");
+        }
+    }
     let field = if response { "data" } else { "payload" };
     if response {
         names.extend(["message_id", "request_hash", "success"]);
@@ -136,6 +147,11 @@ impl AuthenticatedCompletion010 {
         plaintext: &[u8],
         ttl: i64,
     ) -> Result<Vec<u8>> {
+        self.seal_request_metadata(e, plaintext, None, ttl)
+    }
+    fn seal_request_metadata(&mut self, e: &mut CompletionEndpoint010, plaintext: &[u8], metadata: Option<&BTreeMap<String,String>>, ttl: i64) -> Result<Vec<u8>> {
+        let metadata = copy_metadata(metadata)?;
+        if metadata.is_some() && !self.application { return Err(bad()); }
         let start = self.begin_record(e)?;
         if (!self.initiator && !self.confirmed)
             || !(1..=300).contains(&ttl)
@@ -166,6 +182,7 @@ impl AuthenticatedCompletion010 {
         w["encoding"] = json!("session");
         w["session_id"] = json!(self.tuple["sid"]);
         w.as_object_mut().ok_or_else(bad)?.remove("payload");
+        if let Some(metadata) = metadata { w["metadata"] = json!(metadata); }
         let aad = canonical(&w);
         if aad.len() > 4033 {
             return Err(bad());
@@ -237,7 +254,7 @@ impl AuthenticatedCompletion010 {
     ) -> Result<Vec<u8>> {
         let sampled = self.begin_record(e)?;
         let start = proof.map_or(sampled, |p| p.start);
-        let (w, wire) = session_request(bytes, start.unix)?;
+        let (w, wire) = if self.application { session_record_metadata(bytes,start.unix,false,true)? } else { session_request(bytes,start.unix)? };
         if let Some(p) = proof {
             self.verify_http(p, &w)?;
         }
@@ -407,6 +424,11 @@ impl AuthenticatedCompletion010 {
         error: Option<&str>,
         ttl: i64,
     ) -> Result<Vec<u8>> {
+        self.seal_response_metadata(e, message_id, data, None, error, ttl)
+    }
+    fn seal_response_metadata(&mut self, e: &mut CompletionEndpoint010, message_id: &str, data: &[u8], metadata: Option<&BTreeMap<String,String>>, error: Option<&str>, ttl: i64) -> Result<Vec<u8>> {
+        let metadata = copy_metadata(metadata)?;
+        if metadata.is_some() && !self.application { return Err(bad()); }
         let start = self.begin_record(e)?;
         let (request, hash) = retained(self.received.get(message_id))?;
         if (!self.initiator && !self.confirmed)
@@ -447,6 +469,7 @@ impl AuthenticatedCompletion010 {
             w["error"] = json!(code)
         }
         w.as_object_mut().ok_or_else(bad)?.remove("data");
+        if let Some(metadata) = metadata { w["metadata"] = json!(metadata); }
         let aad = canonical(&w);
         if aad.len() > 4033 {
             return Err(bad());
@@ -516,7 +539,7 @@ impl AuthenticatedCompletion010 {
         if !self.initiator && !self.confirmed {
             return Err(bad());
         }
-        let (w, record) = session_record(bytes, start.unix, true)?;
+        let (w, record) = session_record_metadata(bytes, start.unix, true, self.application)?;
         let message_id = string(&w, "message_id");
         let (request, hash) = retained(self.sent.get(&message_id))?;
         if string(&w, "request_hash") != hash

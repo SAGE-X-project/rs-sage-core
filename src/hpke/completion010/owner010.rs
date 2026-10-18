@@ -1,5 +1,6 @@
 //! Exclusive ownership of unused non-HTTP sessions for trusted protocol adapters.
 use super::*;
+pub(super) mod application010;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
