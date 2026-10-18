@@ -29,7 +29,6 @@ impl Source for AuthoritySource {
                         },
                     );
                     snapshot.version = "3".into();
-                    
                 }
                 // Another accepted key keeps selected-key revocation consistent
                 // with an active record and exercises exact-name no-fallback.
@@ -37,7 +36,11 @@ impl Source for AuthoritySource {
                 snapshot.keys.push(Key {
                     name: "signing-2".into(),
                     alg: "ed25519".into(),
-                    material: hex::encode(SigningKey::from_bytes(&[seed; 32]).verifying_key().to_bytes()),
+                    material: hex::encode(
+                        SigningKey::from_bytes(&[seed; 32])
+                            .verifying_key()
+                            .to_bytes(),
+                    ),
                     state: "accepted".into(),
                     expires: None,
                 });
@@ -225,26 +228,34 @@ fn handshake_key_authority_positive() {
         assert!(client.open_http_response(&mut fixture.a, &reply).is_err());
         assert!(server_reads(&fixture.reads) > 0);
         let kind = if rotated { "matched-kem-2" } else { "normal" };
-        witness(&fixture, kind, &request, json!({
-            "handshake_source_reads": handshake_reads,
-            "handshake_replay_publications": handshake_replay,
-            "session_returned": true,
-            "completion_b64": B64.encode(&response),
-            "tuple": client.tuple(),
-            "application_request_b64": B64.encode(&message.body),
-            "application_response_b64": B64.encode(&reply.body),
-            "application_request_opened": 1,
-            "application_response_opened": 1,
-            "request_replay_refused": true,
-            "response_reuse_refused": true,
-        }));
+        witness(
+            &fixture,
+            kind,
+            &request,
+            json!({
+                "handshake_source_reads": handshake_reads,
+                "handshake_replay_publications": handshake_replay,
+                "session_returned": true,
+                "completion_b64": B64.encode(&response),
+                "tuple": client.tuple(),
+                "application_request_b64": B64.encode(&message.body),
+                "application_response_b64": B64.encode(&reply.body),
+                "application_request_opened": 1,
+                "application_response_opened": 1,
+                "request_replay_refused": true,
+                "response_reuse_refused": true,
+            }),
+        );
     }
 }
 
 #[test]
 fn handshake_key_authority_closed_fields() {
     let extras = [
-        ("didDocument", json!({"id": ALICE, "verificationMethod": [], "keyAgreement": []})),
+        (
+            "didDocument",
+            json!({"id": ALICE, "verificationMethod": [], "keyAgreement": []}),
+        ),
         ("alsoKnownAs", json!(["did:example:display"])),
         ("equivalentId", json!([BOB])),
         ("canonicalId", json!("did:example:display")),
@@ -253,9 +264,9 @@ fn handshake_key_authority_closed_fields() {
         for (name, value) in &extras {
             let mut fixture = authority_pair(false, false);
             let (mut pending, request) = fixture
-            .a
-            .start(BOB, &format!("{BOB}#signing-1"), 300)
-            .unwrap();
+                .a
+                .start(BOB, &format!("{BOB}#signing-1"), 300)
+                .unwrap();
             let mut outer: Value = serde_json::from_slice(&request).unwrap();
             if site == "outer" {
                 outer[*name] = value.clone();
@@ -272,12 +283,21 @@ fn handshake_key_authority_closed_fields() {
                 &SigningKey::from_bytes(&[1; 32]),
             );
             let signed: Raw = serde_json::from_slice(&changed).unwrap();
-            let selected = fixture.a.registry.select(ALICE, &format!("{ALICE}#signing-1"), false).unwrap();
+            let selected = fixture
+                .a
+                .registry
+                .select(ALICE, &format!("{ALICE}#signing-1"), false)
+                .unwrap();
             verify_wire(&signed, false, selected.signing()).unwrap();
             assert!(fixture.b.respond(&changed, 300).is_err());
             assert!(fixture.replay.borrow().is_empty());
             assert_eq!(server_reads(&fixture.reads), 0);
-            witness(&fixture, &format!("{site}/{name}"), &changed, json!({"session_returned": false}));
+            witness(
+                &fixture,
+                &format!("{site}/{name}"),
+                &changed,
+                json!({"session_returned": false}),
+            );
             pending.close();
         }
     }
