@@ -173,7 +173,7 @@ fn witness(fixture: &AuthorityFixture, kind: &str, request: &[u8], extra: Value)
         assert!(output.get(key).is_none());
         output[key] = value.clone();
     }
-    println!("handshake-key-authority-witness {}", output);
+    println!("handshake-key-authority-witness {output}");
 }
 
 #[test]
