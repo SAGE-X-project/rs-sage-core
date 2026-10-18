@@ -618,7 +618,10 @@ fn paired_views_follow_versions_and_own_their_storage() {
         metadata["sage"]["observedAt"] = json!(hash);
         metadata["sage"]["observedTime"] = json!(102);
         assert_eq!(v.metadata, metadata);
-        assert_eq!(v.content_type, expected[name]["contentType"].as_str().unwrap());
+        assert_eq!(
+            v.content_type,
+            expected[name]["contentType"].as_str().unwrap()
+        );
     }
     code(observe_views(&mut o, EIP), "record.unreachable");
     assert_eq!(reads.load(Ordering::SeqCst), 3);
