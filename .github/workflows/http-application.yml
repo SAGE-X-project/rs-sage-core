@@ -44,6 +44,16 @@ jobs:
           tool: cargo-llvm-cov@0.6.21
       - name: Prepare library dependencies
         run: cargo generate-lockfile
+      - name: Observe fixed handshake key authority units
+        run: |
+          mkdir -p "$RUNNER_TEMP/handshake-key-authority"
+          rustc --version > "$RUNNER_TEMP/handshake-key-authority/compiler.txt"
+          git rev-parse HEAD > "$RUNNER_TEMP/handshake-key-authority/revision.txt"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/handshake-key-authority/tree.txt"
+          git ls-files -z src/hpke src/registry010 src/did Cargo.toml docs/handshake-key-authority010.md .github/workflows/http-application.yml | xargs -0 sha256sum > "$RUNNER_TEMP/handshake-key-authority/source.sha256"
+          cp Cargo.lock "$RUNNER_TEMP/handshake-key-authority/Cargo.lock"
+          cargo test --locked --lib handshake_key_authority_ -- --nocapture --test-threads=1 > "$RUNNER_TEMP/handshake-key-authority/tests.txt"
+
       - name: Test actual committed sources and retain evidence
         run: |
           mkdir -p "$RUNNER_TEMP/http-application"
@@ -64,6 +74,16 @@ jobs:
           git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/http-application/tree.txt"
           sha256sum src/hpke/completion010.rs src/hpke/completion010/owner010.rs src/hpke/completion010/record010.rs src/hpke/completion010/record010/http010.rs src/hpke/completion010/owner010/application010.rs src/hpke/completion010/tests.rs src/hpke/completion010/tests/http_application010.rs tests/fixtures/http-application-root010.der tests/fixtures/http-application-leaf010.der docs/http-application-metadata010.md .github/workflows/http-application.yml > "$RUNNER_TEMP/http-application/source.sha256"
           git diff --exit-code
+      - name: Retain handshake key authority full-suite coverage
+        run: cp "$RUNNER_TEMP/http-application/coverage.json" "$RUNNER_TEMP/handshake-key-authority/full-coverage.json"
+      - name: Retain fixed handshake key authority evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: handshake-key-authority
+          path: ${{ runner.temp }}/handshake-key-authority/
+          if-no-files-found: error
+          retention-days: 14
       - name: Retain actual HTTP application evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

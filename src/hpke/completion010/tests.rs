@@ -1655,3 +1655,6 @@ fn http_informational_identity_payloads() {
 }
 
 mod http_application010;
+
+#[path = "key_authority_tests.rs"]
+mod key_authority;
