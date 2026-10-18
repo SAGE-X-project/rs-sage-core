@@ -260,7 +260,7 @@ fn http_application_legacy_response_refuses_metadata() {
         let before = c.0.borrow().records;
         assert!(left.open_http_response(&mut a, &r).is_err());
         assert_eq!(left.state(), "ESTABLISHED");
-        assert!(!left.sent.get(request.id()).unwrap().terminal);
+        assert!(left.pending_response_for_test010(request.id()));
         assert_eq!(c.0.borrow().records, before);
         let q = left
             .seal_http_request(&mut a, b"inert positive", 300)

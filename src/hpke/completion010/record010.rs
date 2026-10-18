@@ -592,3 +592,10 @@ impl AuthenticatedCompletion010 {
         })
     }
 }
+
+#[cfg(test)]
+impl AuthenticatedCompletion010 {
+    pub(in crate::hpke::completion010) fn pending_response_for_test010(&self, id: &str) -> bool {
+        self.sent.get(id).is_some_and(|request| !request.terminal)
+    }
+}
