@@ -84,7 +84,7 @@ pub(super) fn reservation_entry(v: &VerifiedIntent) -> Result<Entry> {
 mod tests {
     use super::super::fixtures_test::Fixture;
     use super::*;
-    use ed25519_dalek::{Signer, SigningKey, Verifier as _};
+    use ed25519_dalek::{Signer, SigningKey};
     use k256::ecdsa::signature::{Signer as _, Verifier as _};
     use serde_json::json;
     use std::fs;
