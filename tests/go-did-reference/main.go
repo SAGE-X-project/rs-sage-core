@@ -16,6 +16,22 @@ import (
 	"strings"
 )
 
+type recordSource func(context.Context, did.DID) (advanced.Record, error)
+
+func (f recordSource) Observe(ctx context.Context, d did.DID) (advanced.Record, error) {
+	return f(ctx, d)
+}
+
+type countedSource struct {
+	source advanced.Source
+	calls  int
+}
+
+func (s *countedSource) Observe(ctx context.Context, d did.DID) (advanced.Record, error) {
+	s.calls++
+	return s.source.Observe(ctx, d)
+}
+
 type reader struct {
 	raw    []byte
 	config registry010.Config
@@ -64,20 +80,19 @@ func main() {
 		d, err := did.Parse(record.ID)
 		must(err)
 		var r advanced.Record
+		var configured advanced.Source
+		var journal *registry010.Journal
 		if strings.Contains(record.ID, ":eip155:") {
 			config := registry010.Config{Source: "fixture-view-only-source", Registry: "eip155:11155111:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Network: "fixture-network", Blockchain: true}
-			journal, err := registry010.OpenJournal(fmt.Sprintf("%s/%d", dir, i), true)
+			journal, err = registry010.OpenJournal(fmt.Sprintf("%s/%d", dir, i), true)
 			must(err)
 			src, err := didsource010.NewEIP155Source(config, reader{c.Record, config}, clock{}, journal)
 			must(err)
-			r, err = src.Observe(context.Background(), d)
-			must(err)
-			must(journal.Close())
+			configured = src
 		} else {
 			// Web checks signed envelopes and typed projections, not TLS/controller/history binding.
 			envelope, err := json.Marshal(map[string]any{"record": c.Record, "issued": 100, "expires": 105})
 			must(err)
-			must(registry010.CheckWebRegistryProofs010(envelope, record.ID, 101))
 			issued := int64(100)
 			r = advanced.Record{DID: d, Controller: record.Controller, State: advanced.State(record.State), Version: record.Version, Observation: advanced.Observation{Issued: &issued, Source: "fixture-view-only-source", Time: 101}}
 			for _, k := range record.Keys {
@@ -88,16 +103,35 @@ func main() {
 			for _, s := range record.Services {
 				r.Services = append(r.Services, advanced.Service{Name: s.Name, Type: s.Type, URI: s.URI})
 			}
+			configured = recordSource(func(ctx context.Context, target did.DID) (advanced.Record, error) {
+				if err := ctx.Err(); err != nil {
+					return advanced.Record{}, err
+				}
+				if target != r.DID {
+					return advanced.Record{}, fmt.Errorf("fixture identifier mismatch")
+				}
+				if err := registry010.CheckWebRegistryProofs010(envelope, target.String(), 101); err != nil {
+					return advanced.Record{}, err
+				}
+				return r, nil
+			})
+		}
+		tracked := &countedSource{source: configured}
+		pair, problem := advanced.ObserveViews(context.Background(), tracked, d, producer.New())
+		if journal != nil {
+			must(journal.Close())
+		}
+		// Do not pass a nil *Error as a non-nil error interface.
+		if problem != nil {
+			panic(problem)
+		}
+		if tracked.calls != 1 {
+			panic("paired API did not observe exactly once")
 		}
 		views := map[string]any{}
-		for name, p := range map[string]advanced.Projection{"core10": advanced.Core10, "did11": advanced.DID11} {
-			doc, e := advanced.Produce(r, p, producer.New())
-			if e != nil {
-				panic(e)
-			}
-			metadata := advanced.Metadata(r)
-			// Compare typed metadata, not HTTP resolution envelope encoding.
-			views[name] = map[string]any{"document": string(doc), "contentType": p.MediaType(), "metadata": map[string]any{"deactivated": metadata.Deactivated, "versionId": metadata.VersionID, "sage": metadata.Extra["sage"]}}
+		for name, v := range map[string]advanced.ProjectionView{"core10": pair.Core10, "did11": pair.DID11} {
+			// Encode actual owned metadata, without reconstructing its fields.
+			views[name] = map[string]any{"document": string(v.Data), "contentType": v.ContentType, "metadata": v.Metadata}
 		}
 		results[c.Name] = views
 	}

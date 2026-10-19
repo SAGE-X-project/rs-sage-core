@@ -3,9 +3,9 @@ module sage-did-view-reference
 go 1.26.8
 
 require (
-	github.com/sage-x-project/did-go v0.0.0-20261012015322-ed54c505eafe
-	github.com/sage-x-project/did-go/advanced/sage v0.0.0-20261012020818-2ef282b40ccf
-	github.com/sage-x-project/sage v1.5.3-0.20261012104536-4c7bad17ce17
+	github.com/sage-x-project/did-go v0.0.0-20261018080828-3b7a79c1c326
+	github.com/sage-x-project/did-go/advanced/sage v0.0.0-20261018161639-7e49429885fc
+	github.com/sage-x-project/sage v1.5.3-0.20261018151911-5035088faa8e
 )
 
 require (

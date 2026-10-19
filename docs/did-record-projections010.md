@@ -58,7 +58,7 @@ expiry and empty services. Both produce 24 views checked against independently
 assembled normative expected documents and typed metadata. Rust's canonical
 bytes are checked by the units; cross-language comparison normalizes JSON
 object ordering, preserving all members and array order. The Go reference is
-pinned to core `4c7bad17ce176088f7bbc22c94814a0631cd8776`; it is a test-only
+pinned to core `5035088faa8ea1bbe2f9b7e0f4518b6b11461913`; it is a test-only
 module, never a production Rust dependency.
 
 Eip155 reference execution exercises the complete Go Source. Web reference
@@ -81,3 +81,28 @@ files reached 90.12% and 96.36% line coverage respectively. Read-only independen
 LLM review found reader-error masking and a weak JSON comparison; both were
 fixed and re-reviewed without remaining findings. This review is not an
 organizationally independent external audit.
+
+## Repaired public Go consumer comparison
+
+The reference now selects the repaired public core and both DID modules listed
+with exact checksums in `tests/go-did-reference/dependencies.json`. No Go module
+replacement or workspace is used. The earlier reference at core `4c7bad1` remains
+historical evidence; the unchanged twelve-record oracle is reused for a new run.
+The Go process emits the actual `Metadata` value through its JSON marshaler.
+Reconstructing a metadata map would conceal missing explicit false members.
+
+The comparison can retain raw oracle-free input, unmodified process stdout/stderr,
+binary digests, source digests before/after and the generated Cargo lockfile in a
+new evidence directory. Existing paths and symlinks are never overwritten. CI
+also retains selected Go modules, compiler and module verification evidence.
+Rust's native metadata and bare-document Accept behavior remain distinct from
+the Go standard resolver's envelope/HTTP interface. Equality here does not
+establish a Rust HTTP resolver, actual RPC authority or protected transport.
+
+The first updated CI run found four published advisories in the pre-existing
+exact rustls 0.23.45 pin. The native TLS dependency is updated to exact 0.23.46,
+the patched version listed by RustSec and the upstream release:
+<https://github.com/rustls/rustls/releases/tag/v%2F0.23.46>. Its declared Rust
+minimum is 1.71; this project retains Rust 1.88 and its existing TLS feature
+selection. The normal TLS/unit/runtime and security audit gates must pass on
+the updated dependency. No attack-capable reproduction is added.
