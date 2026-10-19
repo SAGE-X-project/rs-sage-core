@@ -65,6 +65,16 @@ jobs:
           PYMODULES
           go mod verify > "$RUNNER_TEMP/did-record-evidence/modules-verified.txt"
           git diff --exit-code -- go.mod go.sum
+      - name: Record single observation runtime evidence
+        run: |
+          cargo test --locked --test did_record_projection010 paired_views_ -- --nocapture > "$RUNNER_TEMP/did-record-evidence/paired-rust-tests.txt"
+          git rev-parse HEAD > "$RUNNER_TEMP/did-record-evidence/paired-revision.txt"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/did-record-evidence/paired-tree.txt"
+          sha256sum src/didsource010.rs tests/did_record_projection010.rs examples/did_record_view010.rs tests/go-did-reference/main.go tests/go-did-reference/go.mod tests/go-did-reference/go.sum tests/go-did-reference/dependencies.json scripts/check_did_record_views010.py docs/paired-did-views010.md .github/workflows/did-record-views.yml > "$RUNNER_TEMP/did-record-evidence/paired-source.sha256"
+      - name: Verify informational identity payload authority boundaries
+        run: |
+          cargo test --locked --lib http_informational_identity_payloads -- --nocapture > "$RUNNER_TEMP/did-record-evidence/identity-payload-tests.txt"
+          sha256sum src/hpke/completion010/tests.rs docs/identity-payload-authority010.md .github/workflows/did-record-views.yml > "$RUNNER_TEMP/did-record-evidence/identity-payload-source.sha256"
       - name: Compare actual views and check evidence retention
         shell: bash
         run: |
