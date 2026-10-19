@@ -2,6 +2,8 @@
 //!
 //! This module provides a thread-safe nonce store for preventing replay attacks.
 //! Nonces are stored with TTL-based expiration with optional rate limiting.
+// The legacy HPKE replay store; deprecated items are used on purpose.
+#![allow(deprecated)]
 
 use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
@@ -49,6 +51,7 @@ impl Default for RateLimitConfig {
 /// periodically via cleanup_expired().
 #[derive(Clone)]
 #[allow(dead_code)] // rate limiting is configured but not yet enforced (sage-spec 04-hpke.md O-6)
+#[deprecated(since = "0.4.0", note = "use ReplayStore010 or ReplayJournal010")]
 pub struct NonceStore {
     /// Time-to-live for nonce entries
     ttl: Duration,

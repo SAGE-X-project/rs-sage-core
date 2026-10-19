@@ -49,7 +49,7 @@ impl GuardLedger {
         a: &mut dyn Authority,
         p: &mut dyn IntentPolicy,
     ) -> Result<Reservation> {
-        let verified = verify_intent(raw, &self.recipient, a, p)?;
+        let verified = verify_received_intent(raw, &self.recipient, a, p)?;
         let entry = reservation_entry(&verified)?;
         let (stored, created) = self.store.reserve(entry).map_err(|_| Invalid)?;
         let (e, _) = intent_envelope(&verified.canonical)?;

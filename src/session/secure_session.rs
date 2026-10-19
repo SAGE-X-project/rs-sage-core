@@ -10,6 +10,8 @@
 //! and `sage-session-rekey-v1 || direction || be64(generation)` for the
 //! rotated AEAD key of generation `seq / rekey_interval`. Receivers keep a
 //! 1024-slot replay window over the sequence numbers they accepted.
+// The legacy session implementation; deprecated items are used on purpose.
+#![allow(deprecated)]
 
 use crate::error::{Error, Result};
 use crate::session::types::*;
@@ -124,6 +126,10 @@ struct Keys {
 }
 
 /// A secure session bound to a seed and a session id.
+#[deprecated(
+    since = "0.4.0",
+    note = "use RecordSession010 through CompletionEndpoint010"
+)]
 pub struct SecureSession {
     id: String,
     keys: Keys,

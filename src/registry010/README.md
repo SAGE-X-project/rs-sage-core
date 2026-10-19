@@ -36,6 +36,116 @@ KEM signers need authenticated mutation history before their earlier authority
 can be trusted. This check does not authenticate the HTTPS origin, controller,
 or mutation history and cannot authorize an operation alone.
 
+`web_registry_request_url_010` constructs the exact web DID read target only
+when its HTTPS origin appears in a locally configured allowlist.
+`check_web_registry_response_policy_010` rejects non-200 status, wrong media,
+and responses lacking an origin `no-store` directive. The local policy adapter
+exercises these decisions without networking. A production HTTP adapter must
+still authenticate TLS, enforce a network destination allowlist after DNS
+resolution, avoid intermediated caches and redirects, reject ambiguous framing,
+and bound the body before these helpers can contribute to an observation.
+
+`check_web_registry_tls_origin_010` makes a fresh TLS connection to one exact
+IP endpoint that appears in a local destination allowlist. It validates the web
+DID domain through certificate name and chain verification against an explicit
+root. The connection is closed without an HTTP request, so this is a TLS
+subcondition only; a future record fetch must bind its response to its own
+authenticated connection and still enforce cache, framing, body and authority.
+
+`fetch_web_registry_record_010` now performs a fresh GET on its own authenticated
+TLS connection and verifies a bounded JSON record and its key proofs. It accepts
+only one unambiguous HTTP/1.1 `Content-Length` response, with a 16 KiB header
+section and at most 64 field lines. Chunked or other framing is rejected in
+this bounded adapter. It does not authenticate controller writes, tombstones or
+mutation history, and its result must not be treated as complete REG-08 authority.
+
+`check_web_registry_creation_shape_010` and
+`check_web_registry_transition_shape_010` validate a version-1 creation and
+one claimed historical change. They check proofs at each supplied observation
+time, retained immutable keys, exact version increments, terminal
+deactivation, and whether a newly endorsed KEM key had a usable signing
+endorser at addition. The caller must supply a complete authenticated history
+and trusted observation times. These pure checks neither authenticate
+controller/operator actions nor commit an atomic write, so they are not a
+Registry administration implementation.
+
+`check_web_registry_history_continuity_010` applies those checks to a
+caller-supplied sequence beginning with creation and compares its last record
+with a current, proof-valid envelope. It rejects missing versions, time
+regression, an invalid mutation, or a current record that differs from the
+last supplied version. Sequence continuity does not prove that the source
+supplied every real mutation; the Registry deployment must authenticate and
+retain the log and bind each historical time to the committed write.
+
+`check_web_registry_creation_admission_010` and
+`check_web_registry_mutation_admission_010` enforce controller identity, exact
+expected version and operation-scoped delegation through a deployment-supplied
+administration authority. That authority must derive the actor from verified
+credentials and supply controller-authorized management state. These functions
+only check a proposed write; the deployment must repeat the decision while
+atomically reserving or comparing and writing the record and durable history.
+They do not define an administrative API, authenticate transport credentials,
+or grant a reusable authorization token.
+An expired but still accepted signing key may leave an `active` prior record
+unusable for ordinary reads. Write admission can use that prior record only to
+add a newly proven, usable signer or move to a valid terminal state. It still
+verifies every prior key proof and rejects an `active` record with no accepted
+signing key at all. Ordinary read and historical transition checks stay strict.
+
+`apply_web_registry_write_010` moves admission into a store-provided
+transaction. The store supplies a current, freshly enveloped record, complete
+asserted history, source identity, and credential-backed authority in one
+serialized snapshot. The core checks history against the current record and
+returns a complete replacement containing the candidate, new history entry
+and terminal tombstone. A decision error leaves state unchanged. An uncertain
+I/O outcome must quarantine the writer until the journal is inspected.
+
+`WebRegistryWriteJournal010` is a local single-DID reference store. It holds
+an exclusive writer lock, appends one complete state row and syncs it before
+exposing the change, and rejects incomplete state on restart. A prior response
+is re-enveloped at the trusted mutation time so later legitimate writes are
+not blocked by its five-second HTTP response lifetime. The path, source
+identity, credentials and disk integrity are deployment inputs;
+this journal does not authenticate them or establish REG-08 deployment
+conformance.
+
+`WebRegistryAdminMTLSSession010::accept` is an optional deployment reference
+for controller-only administrative writes. It performs a fresh server-side TLS
+handshake with required client certificate verification, then maps the verified
+leaf certificate's SHA-256 to a configured controller identifier. The returned
+session reads the administrative request from that same connection and supplies
+the journal's `WebRegistryAdminAuthority010`. The deployment remains responsible
+for bounded request framing, trusted clock, exact candidate bytes, certificate
+pin provisioning and rotation, and the public Registry source. The reference
+adapter grants no delegated operator authority or complete REG-08 conformance.
+
+`observe_web_registry_journal_010` compares a fresh, TLS-authenticated public
+record with the same DID and exact HTTPS origin configured for a local
+administrator journal. It rejects a different record. This checks one
+publication snapshot; it does not bind a deployed public server's storage to
+the administrator journal, authorize a later operation, or establish complete
+REG-08 conformance.
+
+`apply_web_registry_operator_command_010` adds controller-only grant and
+revoke transactions to the same durable journal. Exact operator and scope
+pairs, authenticated actor history, the public record version and terminal
+tombstone are committed together. Lifecycle writes use the committed grant
+set rather than a separately asserted positive delegation result, and retire
+scopes invalid in the next state. Writes reconstruct grants from the complete
+history; restart checks each grant transition. The `operator-1` journal header
+rejects older files lacking the actor and grant history needed for safe
+migration. The standalone `check_web_registry_mutation_admission_010` remains
+a bounded predicate using deployment-supplied delegation and does not itself
+establish the atomic grant contract. A deployed service must still bind the
+administrative command encoding, verified credentials, storage ownership and
+an authenticated read-only Inspector view before claiming conformance.
+
+`WebRegistryWriteJournal010::public_envelope` creates a new five-second
+response from the same committed journal that accepted an administrator write.
+The deployment must bind its HTTPS handler to these exact returned bytes and
+the configured origin. The local reference API does not prove deployed
+storage ownership, clock integrity, or production server behavior.
+
 `pop_challenge010` constructs the exact five-field REG-04 challenge bytes from
 already validated record components. It keeps the new `sage-pop-0.10.0`
 domain separate from the legacy DID `SAGE-PoP` path. The bundled 0.10.0
@@ -51,8 +161,12 @@ the operation. A stale result requires another read before a deferred decision.
 The final clock sample is this module's observation linearization point; callers
 must arrange any later authorization gate and side effect accordingly.
 
-Selection requires the exact usable Ed25519 signing URL. A handshake additionally
-selects the first usable X25519 key in ASCII name order. Pinned keys retain their
+The Gate parses each DID and signing key URL with the strict 0.10.0 grammar
+before consulting the Source. The DID must name the configured registry, and
+the key URL must name that exact DID; legacy aliases and malformed fragments
+are rejected. Selection then requires the exact usable Ed25519 signing URL.
+A handshake additionally selects the first usable X25519 key in ASCII name
+order. Pinned keys retain their
 original identity, bytes and expiry; unrelated record changes do not replace them.
 Pins are metadata, not reusable grants. A session owner must call the check for
 each operation and close the session on failure. Session ownership, authenticated

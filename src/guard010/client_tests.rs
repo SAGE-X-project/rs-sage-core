@@ -80,6 +80,66 @@ fn suite() -> Value {
     serde_json::from_str(include_str!("testdata/guard-client.json")).unwrap()
 }
 #[test]
+fn captured_client_binds_original_before_journal() {
+    let mut v = suite();
+    let request_id = "00000000-0000-4000-8000-000000000002";
+    let original = vec![b"trusted root input".to_vec()];
+    let capture = RootCapture::new(&original, request_id).unwrap();
+    let digest = original_commitment(&original).unwrap();
+    assert_eq!(
+        digest,
+        "4dfd470e686f50c56d34a34147d753c21c7de8e012111afcd6c98f84817c8014"
+    );
+    v["input"]["original_digest"] = json!(digest);
+    let mut envelope: Value =
+        serde_json::from_slice(&hex::decode(text(&v["input"], "envelope_hex")).unwrap()).unwrap();
+    envelope["intent"]["original_digest"] = json!(digest);
+    let seed: [u8; 32] = Sha256::digest(b"public Guard fixture issuer").into();
+    let key = SigningKey::from_bytes(&seed);
+    let mut signed = b"sage-execution-intent|0.10.0\0".to_vec();
+    signed.extend(encode(&envelope["intent"]).unwrap());
+    use base64::Engine;
+    envelope["proof"] = json!(
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.sign(&signed).to_bytes())
+    );
+    let raw = encode(&envelope).unwrap();
+    let services = Services(Arc::new(Mutex::new(json!({
+        "input": v["input"], "public": v["public_key_hex"],
+        "clock_ok": true, "result_active": true,
+        "utc": 1700000000000_i64, "mono": 0
+    }))));
+    let directory = tempfile::tempdir().unwrap();
+    for (name, candidate, allowed) in [
+        (
+            "changed-input",
+            Some(RootCapture::new(&[b"changed root input".to_vec()], request_id).unwrap()),
+            false,
+        ),
+        (
+            "other-request",
+            Some(RootCapture::new(&original, "00000000-0000-4000-8000-000000000099").unwrap()),
+            false,
+        ),
+        ("matching", Some(capture), true),
+    ] {
+        let path = directory.path().join(name);
+        let result = Client::open_captured(
+            &path,
+            true,
+            &raw,
+            services.config(),
+            candidate.as_ref().unwrap(),
+        );
+        assert_eq!(result.is_ok(), allowed, "{name}");
+        if !allowed {
+            assert!(!path.exists(), "rejected capture created journal");
+        }
+        if let Ok(client) = result {
+            client.close().unwrap();
+        }
+    }
+}
+#[test]
 fn client_requires_trusted_peer_binding() {
     let v = suite();
     let raw = hex::decode(text(&v["input"], "envelope_hex")).unwrap();

@@ -7,6 +7,8 @@
 //! - Info builder implementations
 //!
 //! Note: Full HPKE client/server flow is tested in handshake integration tests
+// Integration tests of the legacy HPKE helpers.
+#![allow(deprecated)]
 
 use sage_crypto_core::hpke::common::{
     combine_secrets, derive_traffic_keys, is_all_zero_32, make_ack_tag, sha256_hash,

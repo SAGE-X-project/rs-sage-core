@@ -47,6 +47,20 @@ key checks close results on unavailable, revoked, expired or changed pinned keys
 unrelated key additions keep the original selections. Checks alone are not
 traffic and cannot reset idle lifetime; unused results close by ten minutes.
 
+`CompletionEndpoint010::new_protected` keeps the Ed25519 signing key in
+`Ed25519Custody010` and the optional X25519 KEM key in `X25519Custody010` (None for
+an endpoint that only initiates); the endpoint holds no private key bytes. Each
+custody signature must verify strictly under the public key read at construction,
+and a failed record signature retires the session because its sequence was already
+consumed. A responder computes the RFC 9180 base-mode exporter for DHKEM(X25519,
+HKDF-SHA256), HKDF-SHA256 and ChaCha20Poly1305 and asks custody only for the X25519
+shared value; the custody public key must equal the current registered KEM key on
+every response. Custody errors, panics, all-zero results and mismatched signatures
+emit nothing. The custody exporter reproduces the applicable independent responder
+derivation vectors. The shared value lets its holder derive that handshake's
+secrets, so this protects long-term keys, not a compromised host's sessions. This
+matches the Go `NewProtectedCompletionEndpoint010`.
+
 Close pending state and returned results on abandonment/restart, and retire the
 endpoint's local credential copies separately. Go values containing ownership or
 mutexes must not be copied; explicit Close is required. Rust private temporary

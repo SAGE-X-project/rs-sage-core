@@ -59,7 +59,7 @@ struct HopBinding {
     incoming: Vec<u8>,
     services: HopServices,
 }
-fn check_hop(
+pub(super) fn check_hop(
     incoming: &[u8],
     outgoing: &[u8],
     s: &ClientServices,
@@ -68,7 +68,7 @@ fn check_hop(
     let (parent_envelope, parent_canonical) = intent_envelope(incoming)?;
     let parent = &parent_envelope["intent"];
     ensure(incoming == parent_canonical && text(parent, "recipient") == s.expected_issuer)?;
-    verify_intent(
+    verify_received_intent(
         incoming,
         &s.expected_issuer,
         h.authority.as_mut(),
@@ -150,8 +150,8 @@ impl Event {
         }
     }
 }
-const HEADER: &[u8] = b"sage-guard-client|0.10.0\n";
-const MAX_SIZE: u64 = 8 << 20;
+pub(super) const HEADER: &[u8] = b"sage-guard-client|0.10.0\n";
+pub(super) const MAX_SIZE: u64 = 8 << 20;
 /// One durable protected operation. Host code must keep one stable journal per
 /// issuer/call and never initialize a second journal for the same operation.
 /// Reopen cannot recreate missing state. Failed writes retain the exclusive lock;
@@ -461,6 +461,19 @@ impl Client {
     pub fn open(path: &Path, create: bool, raw: &[u8], services: ClientServices) -> Result<Self> {
         Self::open_inner(path, create, raw, services, false)
     }
+    /// Bind a root intent to the trusted pre-expansion capture before creating
+    /// or reopening its journal. The host separately protects the capture,
+    /// stable journal path, and every effect and result route.
+    pub fn open_captured(
+        path: &Path,
+        create: bool,
+        raw: &[u8],
+        services: ClientServices,
+        capture: &RootCapture,
+    ) -> Result<Self> {
+        capture.matches(raw)?;
+        Self::open(path, create, raw, services)
+    }
     fn open_inner(
         path: &Path,
         create: bool,
@@ -615,6 +628,15 @@ impl Client {
                 Err(Invalid)
             }
         }
+    }
+    /// Copy the unchanged signed envelope from a healthy open journal, without
+    /// signing, verification refresh, handoff or event append. This grants no
+    /// invocation authority; an owner must reverify peers, capture and policy
+    /// when reopening the same stable protected journal.
+    pub fn journaled_intent(&self) -> Result<Vec<u8>> {
+        let state = self.state.lock().map_err(|_| Invalid)?;
+        ensure(state.file.is_some() && !state.failed)?;
+        Ok(state.intent.clone())
     }
     /// Release a healthy exclusive lock; failed state needs protected administration.
     pub fn close(&self) -> Result<()> {

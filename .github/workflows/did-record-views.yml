@@ -1,0 +1,110 @@
+name: DID Record Views
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: did-record-views-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  views:
+    name: Native DID views and Go reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.8"
+          cache-dependency-path: tests/go-did-reference/go.sum
+      - name: Install coverage tool
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.6.21
+      - name: Prepare the library lockfile
+        run: cargo generate-lockfile
+      - name: Run units and collect coverage
+        run: cargo llvm-cov --locked --lib --test did_record_projection010 --json --output-path did-record-coverage.json
+      - name: Enforce coverage of each new production file
+        run: python3 scripts/check_did_record_coverage010.py did-record-coverage.json
+      - name: Verify public Go reference dependencies
+        working-directory: tests/go-did-reference
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/did-record-evidence"
+          go version > "$RUNNER_TEMP/did-record-evidence/go-version.txt"
+          go mod download
+          go list -m -json github.com/sage-x-project/sage github.com/sage-x-project/did-go github.com/sage-x-project/did-go/advanced/sage > "$RUNNER_TEMP/did-record-evidence/modules.json"
+          python3 - <<'PYMODULES'
+          import json, os
+          from pathlib import Path
+          data = Path(os.environ['RUNNER_TEMP'], 'did-record-evidence/modules.json').read_text()
+          decoder = json.JSONDecoder()
+          selected = {}
+          while data.strip():
+              module, end = decoder.raw_decode(data.lstrip())
+              data = data.lstrip()[end:]
+              assert module['Path'] not in selected and not module.get('Replace')
+              selected[module['Path']] = {key: module[key] for key in ('Version', 'Sum', 'GoModSum')}
+          assert selected == json.loads(Path('dependencies.json').read_text())
+          PYMODULES
+          go mod verify > "$RUNNER_TEMP/did-record-evidence/modules-verified.txt"
+          git diff --exit-code -- go.mod go.sum
+      - name: Record single observation runtime evidence
+        run: |
+          cargo test --locked --test did_record_projection010 paired_views_ -- --nocapture > "$RUNNER_TEMP/did-record-evidence/paired-rust-tests.txt"
+          git rev-parse HEAD > "$RUNNER_TEMP/did-record-evidence/paired-revision.txt"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/did-record-evidence/paired-tree.txt"
+          sha256sum src/didsource010.rs tests/did_record_projection010.rs examples/did_record_view010.rs tests/go-did-reference/main.go tests/go-did-reference/go.mod tests/go-did-reference/go.sum tests/go-did-reference/dependencies.json scripts/check_did_record_views010.py docs/paired-did-views010.md .github/workflows/did-record-views.yml > "$RUNNER_TEMP/did-record-evidence/paired-source.sha256"
+      - name: Verify informational identity payload authority boundaries
+        run: |
+          cargo test --locked --lib http_informational_identity_payloads -- --nocapture > "$RUNNER_TEMP/did-record-evidence/identity-payload-tests.txt"
+          sha256sum src/hpke/completion010/tests.rs docs/identity-payload-authority010.md .github/workflows/did-record-views.yml > "$RUNNER_TEMP/did-record-evidence/identity-payload-source.sha256"
+      - name: Compare actual views and check evidence retention
+        shell: bash
+        run: |
+          python3 - <<'PYVIEWS'
+          import json, os, runpy, sys, trace, unittest
+          from pathlib import Path
+          script = Path('scripts/check_did_record_views010.py').resolve()
+          evidence = Path(os.environ['RUNNER_TEMP'], 'did-record-evidence')
+          tracer = trace.Trace(count=True, trace=False, ignoredirs=[sys.base_prefix])
+          sys.argv = [str(script), '--evidence-dir', str(evidence / 'views')]
+          tracer.runfunc(runpy.run_path, str(script), run_name='__main__')
+          suite = unittest.defaultTestLoader.discover('tests', pattern='test_did_view_comparison010.py')
+          result = tracer.runfunc(unittest.TextTestRunner().run, suite)
+          assert result.wasSuccessful() and result.testsRun == 4 and not result.skipped
+          executable = set(trace._find_executable_linenos(str(script)))
+          executed = {line for (filename, line), count in tracer.results().counts.items() if filename == str(script) and count}
+          covered = len(executable & executed)
+          report = {'script': str(script.relative_to(Path.cwd())), 'covered': covered, 'executable': len(executable), 'unit_tests': result.testsRun}
+          (evidence / 'python-coverage.json').write_text(json.dumps(report, indent=2) + '\n')
+          assert executable and covered * 100 >= len(executable) * 90, report
+          PYVIEWS
+          cp did-record-coverage.json "$RUNNER_TEMP/did-record-evidence/rust-coverage.json"
+          cd tests/go-did-reference
+          go mod verify > "$RUNNER_TEMP/did-record-evidence/modules-verified-after.txt"
+          git diff --exit-code -- go.mod go.sum
+      - name: Retain native comparison evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: adopted-did-record-views
+          path: ${{ runner.temp }}/did-record-evidence/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,4 +1,6 @@
 //! HPKE handshake responder (sage-spec `04-hpke.md`).
+// The legacy HPKE handshake server; deprecated items are used on purpose.
+#![allow(deprecated)]
 
 use crate::crypto::{KeyPair, Signer as _};
 use crate::error::{Error, Result};
@@ -12,6 +14,10 @@ use zeroize::Zeroizing;
 
 /// Responder configuration.
 #[derive(Debug, Clone)]
+#[deprecated(
+    since = "0.4.0",
+    note = "use hpke::completion010::CompletionEndpoint010"
+)]
 pub struct HpkeServerConfig {
     /// Accepted clock skew of the init `ts` (default 2 minutes)
     pub max_time_skew_secs: i64,
@@ -32,6 +38,10 @@ impl Default for HpkeServerConfig {
 }
 
 /// Result of a handled init message.
+#[deprecated(
+    since = "0.4.0",
+    note = "use hpke::completion010::CompletionEndpoint010"
+)]
 pub struct HpkeServerSession {
     /// The signed envelope to return to the initiator
     pub envelope: ServerSigEnvelope,
@@ -44,6 +54,10 @@ pub struct HpkeServerSession {
 }
 
 /// The responder.
+#[deprecated(
+    since = "0.4.0",
+    note = "use hpke::completion010::CompletionEndpoint010"
+)]
 pub struct HpkeServer {
     did: String,
     signing_keypair: KeyPair,

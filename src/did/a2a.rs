@@ -177,6 +177,8 @@ impl A2AAgentCard {
     }
 
     /// JCS bytes of the card without `proof` (what is signed).
+    // A2A card proofs have no 0.10.0 replacement and keep the legacy JCS entry point.
+    #[allow(deprecated)]
     pub fn canonical_bytes(&self) -> Result<Vec<u8>> {
         let mut v: Value =
             serde_json::to_value(self).map_err(|e| Error::Serialization(e.to_string()))?;

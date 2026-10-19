@@ -14,7 +14,7 @@ fn size_exceeded() -> Error {
     Error::ValidationError("size.exceeded".into())
 }
 
-fn bounded_depth(raw: &[u8]) -> bool {
+pub(super) fn bounded_depth(raw: &[u8]) -> bool {
     let mut depth = 0usize;
     let mut string = false;
     let mut escape = false;
@@ -44,7 +44,7 @@ fn bounded_depth(raw: &[u8]) -> bool {
     depth == 0 && !string && !escape
 }
 
-fn valid_numbers(value: &Value) -> bool {
+pub(super) fn valid_numbers(value: &Value) -> bool {
     match value {
         Value::Number(literal) => literal.parse::<f64>().is_ok_and(|number| {
             number.is_finite() && !(number == 0.0 && number.is_sign_negative())

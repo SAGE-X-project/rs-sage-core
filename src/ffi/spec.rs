@@ -5,6 +5,8 @@
 //! Output buffers follow the library convention: the caller passes a buffer
 //! and its capacity in the in/out length; on a too-small buffer the required
 //! length is written and `InvalidInput` returned.
+// Stable C surface keeps the legacy functions; deprecated items are used on purpose.
+#![allow(deprecated)]
 
 use super::*;
 use crate::session::{SecureSession, Session, SessionConfig};

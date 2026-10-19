@@ -1,5 +1,6 @@
 use super::*;
 use crate::registry010::{Config, Journal, Snapshot, Source};
+use ed25519_dalek::Signer;
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 const ALICE: &str = "did:sage:web:agent.example:alice";
 const BOB: &str = "did:sage:web:agent.example:bob";
@@ -320,7 +321,7 @@ fn changed(request: &[u8], response: &[u8], kind: &str) -> Vec<u8> {
     }
     w["data"] = json!(B64.encode(body));
     w.as_object_mut().unwrap().remove("signature");
-    signed(w, b"sage-wire-response|0.10.0\n", &key)
+    signed_with(w, b"sage-wire-response|0.10.0\n", &key)
 }
 #[test]
 fn completion_scenarios() {
@@ -528,11 +529,7 @@ fn authenticated_record_scenarios() {
         }
         if mutated {
             m.as_object_mut().unwrap().remove("signature");
-            w = signed(
-                m,
-                b"sage-wire-request|0.10.0\n",
-                a.signing.as_ref().unwrap(),
-            )
+            w = signed_with(m, b"sage-wire-request|0.10.0\n", a.local_signing_key())
         }
         let mut accept = false;
         let mut closed = false;
@@ -696,11 +693,7 @@ fn response_mutation(
         _ => return raw.to_vec(),
     }
     w.as_object_mut().unwrap().remove("signature");
-    signed(
-        w,
-        b"sage-wire-response|0.10.0\n",
-        e.signing.as_ref().unwrap(),
-    )
+    signed_with(w, b"sage-wire-response|0.10.0\n", e.local_signing_key())
 }
 #[test]
 fn session_response_scenarios() {
@@ -1596,3 +1589,72 @@ fn non_http_lifecycle_monitor_and_endpoint_share_time_watermark() {
         }
     }
 }
+#[path = "custody_tests.rs"]
+mod custody;
+
+#[test]
+fn http_informational_identity_payloads() {
+    // These are application bytes, never a DID parser or an authority input.
+    let payloads = [
+        (
+            "document",
+            r#"{"didDocument":{"id":"did:sage:web:agent.example:alice","verificationMethod":[],"service":[]}}"#,
+        ),
+        (
+            "aliases",
+            r#"{"alsoKnownAs":["did:example:display"],"equivalentId":["did:sage:web:agent.example:bob"],"canonicalId":"did:example:display"}"#,
+        ),
+        (
+            "combined",
+            r#"{"didDocument":{"id":"did:sage:web:agent.example:bob","verificationMethod":[]},"canonicalId":"did:example:display","note":"display-only"}"#,
+        ),
+    ];
+    for (name, payload) in payloads {
+        for mode in ["revoke-init", "revoke-resp", "source-error"] {
+            let (mut a, mut b, controls, _tmp) = pair();
+            let (mut pending, hello) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+            let (mut server, response) = b.respond(&hello, 300).unwrap();
+            let mut client = pending.complete(&mut a, &response).unwrap();
+            client.bind_http("https://agent.example/messages").unwrap();
+            server.bind_http("https://agent.example/messages").unwrap();
+            let first = client
+                .seal_http_request(&mut a, payload.as_bytes(), 300)
+                .unwrap();
+            let request: Value = serde_json::from_slice(&first.body).unwrap();
+            assert_eq!(request["did"], ALICE);
+            assert_eq!(request["recipient"], BOB);
+            assert_eq!(request["kid"], format!("{ALICE}#signing-1"));
+            assert_eq!(
+                server.open_http_request(&mut b, &first).unwrap(),
+                payload.as_bytes()
+            );
+            let id = request["id"].as_str().unwrap();
+            let reply = server
+                .seal_http_response(&mut b, id, payload.as_bytes(), None, 300, 200)
+                .unwrap();
+            let result = client.open_http_response(&mut a, &reply).unwrap();
+            assert!(result.success);
+            assert_eq!(result.message_id, id);
+            assert_eq!(result.data, payload.as_bytes());
+            assert!(server.open_http_request(&mut b, &first).is_err());
+            assert!(client.open_http_response(&mut a, &reply).is_err());
+            let second = client
+                .seal_http_request(&mut a, payload.as_bytes(), 300)
+                .unwrap();
+            let accepted = controls.0.borrow().records;
+            controls.0.borrow_mut().mode = mode.into();
+            assert!(
+                server.open_http_request(&mut b, &second).is_err(),
+                "{name}/{mode}"
+            );
+            assert_eq!(server.state(), "CLOSED");
+            assert_eq!(controls.0.borrow().records, accepted);
+            println!("identity-payload-control {name}/{mode}: positive request/response and replay controls; early authority refusal without record acceptance");
+        }
+    }
+}
+
+mod http_application010;
+
+#[path = "key_authority_tests.rs"]
+mod key_authority;

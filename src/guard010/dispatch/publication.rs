@@ -207,7 +207,7 @@ pub(super) fn reply(
     Ok(raw)
 }
 fn reject(s: &mut State, raw: &[u8], signer: &mut dyn ResultSigner) -> Result<DispatchReceipt> {
-    let v = verify_intent(raw, &s.recipient, s.authority.as_mut(), s.policy.as_mut())?;
+    let v = verify_received_intent(raw, &s.recipient, s.authority.as_mut(), s.policy.as_mut())?;
     let mut e = super::super::ledger::reservation_entry(&v)?;
     let old = s
         .store
