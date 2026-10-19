@@ -206,10 +206,7 @@ impl PrivateKey {
                 let signing_key = k256::ecdsa::SigningKey::from_slice(key_bytes)
                     .expect("validated on construction");
                 PublicKey::Secp256k1(uncompressed_65(
-                    signing_key
-                        .verifying_key()
-                        .to_sec1_point(false)
-                        .as_bytes(),
+                    signing_key.verifying_key().to_sec1_point(false).as_bytes(),
                 ))
             }
             PrivateKey::P256(key_bytes) => {
