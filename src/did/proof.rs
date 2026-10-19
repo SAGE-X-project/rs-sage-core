@@ -29,16 +29,14 @@ pub fn generate_key_pop(did: &str, key_pair: &KeyPair) -> Result<Vec<u8>> {
         KeyType::Secp256k1 => {
             let sk = k256::ecdsa::SigningKey::from_slice(&key_pair.private_key_bytes())
                 .map_err(|e| Error::CryptoError(format!("invalid secp256k1 key: {e}")))?;
-            let (sig, recid) = sk
-                .sign_prehash_recoverable(&digest)
-                .map_err(|e| Error::CryptoError(format!("signing failed: {e}")))?;
-            let (sig, recid) = match sig.normalize_s() {
-                Some(low) => (
-                    low,
-                    k256::ecdsa::RecoveryId::from_byte(recid.to_byte() ^ 1).unwrap(),
-                ),
-                None => (sig, recid),
+            let (sig, recid) = sk.sign_prehash_recoverable(&digest);
+            let low = sig.normalize_s();
+            let recid = if low != sig {
+                k256::ecdsa::RecoveryId::from_byte(recid.to_byte() ^ 1).unwrap()
+            } else {
+                recid
             };
+            let sig = low;
             let mut out = sig.to_bytes().to_vec();
             out.push(recid.to_byte());
             Ok(out)
@@ -75,7 +73,7 @@ pub fn verify_key_pop(did: &str, key_type: KeyType, key_data: &[u8], proof: &[u8
                 .map_err(|_| Error::Verification("invalid secp256k1 key".into()))?;
             let sig = k256::ecdsa::Signature::from_slice(&proof[..64])
                 .map_err(|_| Error::Verification("invalid secp256k1 proof".into()))?;
-            let sig = sig.normalize_s().unwrap_or(sig);
+            let sig = sig.normalize_s();
             vk.verify_prehash(&digest, &sig)
                 .map_err(|_| Error::Verification("proof of possession failed".into()))
         }
