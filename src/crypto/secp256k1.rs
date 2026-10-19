@@ -2,12 +2,11 @@
 
 use crate::error::{Error, Result};
 use k256::ecdsa::{Signature as EcdsaSignature, SigningKey, VerifyingKey};
-// These curve APIs require rand_core 0.6. Use their compatible OS RNG.
-use k256::elliptic_curve::rand_core::OsRng;
+use k256::elliptic_curve::Generate;
 
 /// Generate a new Secp256k1 signing key
 pub fn generate_signing_key() -> SigningKey {
-    SigningKey::random(&mut OsRng)
+    SigningKey::generate()
 }
 
 /// Create signing key from bytes
@@ -42,7 +41,7 @@ pub fn signature_from_bytes(bytes: &[u8]) -> Result<EcdsaSignature> {
         _ => EcdsaSignature::from_der(bytes)
             .map_err(|e| Error::InvalidKeyFormat(format!("Invalid ECDSA signature: {e}")))?,
     };
-    Ok(sig.normalize_s().unwrap_or(sig))
+    Ok(sig.normalize_s())
 }
 
 #[cfg(test)]
@@ -58,7 +57,7 @@ mod tests {
         assert_eq!(signing_key.to_bytes().len(), 32);
         // compressed SEC1 point
         assert_eq!(verifying_key.to_sec1_bytes().len(), 33);
-        assert_eq!(verifying_key.to_encoded_point(false).as_bytes().len(), 65);
+        assert_eq!(verifying_key.to_sec1_point(false).as_bytes().len(), 65);
     }
 
     #[test]

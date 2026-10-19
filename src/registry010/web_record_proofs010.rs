@@ -93,7 +93,7 @@ fn verify(alg: &str, material: &[u8], challenge: &[u8], signature: &[u8]) -> boo
             let Ok(proof) = k256::ecdsa::Signature::from_slice(&signature[..64]) else {
                 return false;
             };
-            if proof.normalize_s().is_some() {
+            if proof.normalize_s() != proof {
                 return false;
             }
             let Some(recovery) = k256::ecdsa::RecoveryId::from_byte(signature[64]) else {
@@ -105,7 +105,7 @@ fn verify(alg: &str, material: &[u8], challenge: &[u8], signature: &[u8]) -> boo
             else {
                 return false;
             };
-            recovered.to_encoded_point(false).as_bytes() == material
+            recovered.to_sec1_point(false).as_bytes() == material
                 && key.verify_prehash(&digest, &proof).is_ok()
         }
         _ => false,
@@ -257,20 +257,20 @@ mod tests {
         );
 
         let secp_private = k256::ecdsa::SigningKey::from_slice(&[3u8; 32]).unwrap();
-        let secp_public = secp_private.verifying_key().to_encoded_point(false);
+        let secp_public = secp_private.verifying_key().to_sec1_point(false);
         let digest = crate::crypto::keys::keccak256(&challenge(
             "d-secp",
             "sage-secp256k1-keccak256",
             secp_public.as_bytes(),
         ));
-        let (secp_sig, recovery) = secp_private.sign_prehash_recoverable(&digest).unwrap();
-        let (secp_sig, recovery) = match secp_sig.normalize_s() {
-            Some(low) => (
-                low,
-                k256::ecdsa::RecoveryId::from_byte(recovery.to_byte() ^ 1).unwrap(),
-            ),
-            None => (secp_sig, recovery),
+        let (secp_sig, recovery) = secp_private.sign_prehash_recoverable(&digest);
+        let low = secp_sig.normalize_s();
+        let recovery = if low != secp_sig {
+            k256::ecdsa::RecoveryId::from_byte(recovery.to_byte() ^ 1).unwrap()
+        } else {
+            recovery
         };
+        let secp_sig = low;
         let mut secp_bytes = secp_sig.to_bytes().to_vec();
         secp_bytes.push(recovery.to_byte());
         let secp = entry(
