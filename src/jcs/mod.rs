@@ -25,7 +25,21 @@ pub enum Value {
 }
 
 /// Canonicalise a JSON document.
+///
+/// This historical entry point has no size, member or depth limits and
+/// normalises `-0`. It is not a SAGE 0.10.0 validation entry point; use
+/// [`crate::guard010::canonicalize`] for 0.10.0 JSON.
+#[deprecated(
+    since = "0.4.0",
+    note = "use guard010::canonicalize, or guard010::canonical_manifest for manifests"
+)]
 pub fn canonicalize(input: &[u8]) -> Result<Vec<u8>> {
+    canonical(input)
+}
+
+/// The shared implementation behind [`canonicalize`]. SAGE 0.10.0 modules call
+/// it directly so that they do not depend on the historical public entry point.
+pub(crate) fn canonical(input: &[u8]) -> Result<Vec<u8>> {
     let text = std::str::from_utf8(input)
         .map_err(|e| Error::ValidationError(format!("jcs: invalid UTF-8: {e}")))?;
     let value = parse(text)?;
@@ -382,6 +396,7 @@ pub fn number_to_string(literal: &str) -> Result<String> {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // tests of the legacy entry point
 mod tests {
     use super::*;
 

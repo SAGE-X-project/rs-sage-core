@@ -25,10 +25,10 @@ fn host(path: &std::path::Path, sink: Arc<Sink>, capacity: usize) -> (Host, Arc<
     )
     .unwrap();
     let host = Host::start(
-        gate.clone(),
+        Some(gate.clone()),
         clients,
         owners,
-        workers,
+        Some(workers),
         capacity,
         Box::new(clock.clone()),
     )
@@ -555,3 +555,7 @@ fn failed_handshake_keeps_connection_slot_until_endpoint_cleanup_finishes() {
     assert!(host.stop(Duration::from_secs(5)).unwrap());
     gate.close().unwrap();
 }
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "mcp_public_tests.rs"]
+mod mcp_public_tests;

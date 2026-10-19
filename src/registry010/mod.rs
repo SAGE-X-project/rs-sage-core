@@ -1,20 +1,56 @@
 //! Operation-scoped checks over a trusted validating source and durable store.
 //! This is not a network resolver, proof verifier, or authenticated session manager.
+mod record_observer010;
+pub use record_observer010::{
+    ObservedRecord, RecordObserver, RecordOrigin, RecordReader, RecordSnapshot,
+};
 mod journal;
 mod proof;
+#[cfg(not(target_arch = "wasm32"))]
+mod web_admin_mtls010;
 mod web_envelope010;
+#[cfg(not(target_arch = "wasm32"))]
+mod web_http_record010;
 mod web_media010;
+mod web_origin_policy010;
+#[cfg(not(target_arch = "wasm32"))]
+mod web_public_binding010;
 mod web_record_proofs010;
 mod web_record_shape010;
+#[cfg(not(target_arch = "wasm32"))]
+mod web_tls_origin010;
+mod web_transition010;
+mod web_write_journal010;
+use crate::did::{parse_did_010, parse_did_url_010};
 use crate::error::{Error, Result};
 pub use journal::{Journal, Watermark};
 pub use proof::pop_challenge010;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+#[cfg(not(target_arch = "wasm32"))]
+pub use web_admin_mtls010::WebRegistryAdminMTLSSession010;
 pub use web_envelope010::check_web_registry_envelope_010;
+#[cfg(not(target_arch = "wasm32"))]
+pub use web_http_record010::fetch_web_registry_record_010;
 pub use web_media010::{check_web_registry_media_010, HeaderField010};
+pub use web_origin_policy010::{
+    check_web_registry_response_policy_010, web_registry_request_url_010,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use web_public_binding010::observe_web_registry_journal_010;
 pub use web_record_proofs010::check_web_registry_proofs_010;
 pub use web_record_shape010::check_web_registry_record_shape_010;
+#[cfg(not(target_arch = "wasm32"))]
+pub use web_tls_origin010::check_web_registry_tls_origin_010;
+pub use web_transition010::{
+    apply_web_registry_operator_command_010, apply_web_registry_write_010,
+    check_web_registry_creation_admission_010, check_web_registry_creation_shape_010,
+    check_web_registry_history_continuity_010, check_web_registry_mutation_admission_010,
+    check_web_registry_transition_shape_010, WebRegistryAdminAuthority010,
+    WebRegistryHistoryEntry010, WebRegistryOperatorGrant010, WebRegistryOwnedHistoryEntry010,
+    WebRegistryWriteSnapshot010, WebRegistryWriteState010, WebRegistryWriteStore010,
+};
+pub use web_write_journal010::WebRegistryWriteJournal010;
 
 pub(crate) fn rejected() -> Error {
     Error::ValidationError("record.rejected".into())
@@ -142,6 +178,17 @@ pub struct RegistryGate<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized
 pub type Gate = RegistryGate<dyn Source, dyn Clock, dyn Store>;
 /// A gate whose trusted dependencies can move into a serialized Guard owner.
 pub type SendGate = RegistryGate<dyn Source + Send, dyn Clock + Send, dyn Store + Send>;
+fn check_config(cfg: &Config) -> Result<()> {
+    if [&cfg.source, &cfg.registry, &cfg.network]
+        .iter()
+        .any(|v| v.is_empty() || v.len() > 256 || v.contains(['\0', '\r', '\n']))
+        || !parse_did_010(&format!("did:sage:{}:a", cfg.registry))
+            .is_ok_and(|parsed| format!("{}:{}", parsed.kind, parsed.locator) == cfg.registry)
+    {
+        return Err(rejected());
+    }
+    Ok(())
+}
 impl Gate {
     /// Construct with explicitly trusted dependencies. No default positive cache.
     pub fn new(
@@ -166,12 +213,7 @@ impl SendGate {
 }
 impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C, T> {
     fn from_parts(cfg: Config, source: Box<S>, clock: Box<C>, store: Box<T>) -> Result<Self> {
-        if [&cfg.source, &cfg.registry, &cfg.network]
-            .iter()
-            .any(|v| v.is_empty() || v.len() > 256 || v.contains(['\0', '\r', '\n']))
-        {
-            return Err(rejected());
-        }
+        check_config(&cfg)?;
         Ok(Self {
             cfg,
             source,
@@ -195,17 +237,8 @@ impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C
         Ok(t)
     }
     fn valid_did(&self, did: &str) -> bool {
-        did.len() <= 256
-            && did
-                .strip_prefix(&format!("did:sage:{}:", self.cfg.registry))
-                .is_some_and(|s| {
-                    !s.is_empty()
-                        && s.len() <= 64
-                        && s != "."
-                        && s != ".."
-                        && s.bytes()
-                            .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
-                })
+        parse_did_010(did)
+            .is_ok_and(|parsed| format!("{}:{}", parsed.kind, parsed.locator) == self.cfg.registry)
     }
     fn read(&mut self, did: &str) -> Result<(Snapshot, Stamp)> {
         if !self.valid_did(did) {
@@ -298,6 +331,13 @@ impl<S: Source + ?Sized, C: Clock + ?Sized, T: Store + ?Sized> RegistryGate<S, C
         signing_url: &str,
         require_kem: bool,
     ) -> Result<(Pinned, Stamp)> {
+        parse_did_url_010(signing_url).map_err(|_| rejected())?;
+        if signing_url
+            .split_once('#')
+            .is_none_or(|(parent, _)| parent != did)
+        {
+            return Err(rejected());
+        }
         let (s, now) = self.read(did)?;
         if s.state != "active" {
             return Err(rejected());

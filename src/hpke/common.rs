@@ -61,6 +61,7 @@ pub fn kem_open(
 }
 
 /// `seed = HKDF-Expand(HKDF-Extract(SHA-256, exporter || ssE2E, salt = exportCtx), "SAGE-HPKE+E2E-Combiner", 32)`
+#[deprecated(since = "0.4.0", note = "use combine_secrets_010")]
 pub fn combine_secrets(
     exporter_hpke: &[u8],
     ss_e2e: &[u8],
@@ -94,6 +95,10 @@ pub fn hmac_expand(key: &[u8], label: &[u8], out_len: usize) -> Vec<u8> {
 }
 
 /// Traffic keys from the seed (`04-hpke.md` §4).
+#[deprecated(
+    since = "0.4.0",
+    note = "SAGE 0.10.0 record keys are derived inside RecordSession010"
+)]
 pub fn derive_traffic_keys(seed: &[u8]) -> Result<TrafficKeys> {
     if seed.len() < 32 {
         return Err(Error::CryptoError("seed must be at least 32 bytes".into()));
@@ -116,6 +121,7 @@ pub fn derive_traffic_keys(seed: &[u8]) -> Result<TrafficKeys> {
 
 /// ACK tag (`04-hpke.md` §5). `binds` is the transcript in the order
 /// `info, exportCtx, enc, ephC, ephS, initDID, respDID`.
+#[deprecated(since = "0.4.0", note = "use make_ack_tag_010")]
 pub fn make_ack_tag(
     seed: &[u8],
     ctx_id: &str,
@@ -143,6 +149,7 @@ pub fn make_ack_tag(
 }
 
 /// Constant-time ACK tag comparison.
+#[deprecated(since = "0.4.0", note = "use verify_ack_tag_010")]
 pub fn verify_ack_tag(expected: &[u8], actual: &[u8]) -> Result<()> {
     if expected.len() == actual.len() && bool::from(expected.ct_eq(actual)) {
         Ok(())
@@ -172,6 +179,7 @@ pub fn sha256_hash_hex(data: &[u8]) -> String {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // tests of the legacy HPKE helpers
 mod tests {
     use super::*;
 

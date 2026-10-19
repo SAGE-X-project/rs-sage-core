@@ -8,6 +8,8 @@
 //! - Session pool management
 //!
 //! Run with: cargo run --example session_management
+// Demonstrates SessionManager, which manages legacy sessions.
+#![allow(deprecated)]
 
 use sage_crypto_core::session::{Session, SessionManager, SessionManagerConfig};
 use sage_crypto_core::Result;

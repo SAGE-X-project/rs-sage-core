@@ -1,4 +1,6 @@
 //! HPKE handshake initiator (sage-spec `04-hpke.md`).
+// The legacy HPKE handshake client; deprecated items are used on purpose.
+#![allow(deprecated)]
 
 use crate::crypto::{KeyPair, Verifier as _};
 use crate::error::{Error, Result};
@@ -13,6 +15,10 @@ use zeroize::Zeroizing;
 
 /// Initiator configuration.
 #[derive(Debug, Clone)]
+#[deprecated(
+    since = "0.4.0",
+    note = "use hpke::completion010::CompletionEndpoint010"
+)]
 pub struct HpkeClientConfig {
     /// Suite ids this initiator will use
     pub suite: String,
@@ -27,6 +33,10 @@ impl Default for HpkeClientConfig {
 }
 
 /// State kept between `initialize` and `complete`.
+#[deprecated(
+    since = "0.4.0",
+    note = "use hpke::completion010::CompletionEndpoint010"
+)]
 pub struct HpkeClientState {
     ctx_id: String,
     peer_did: String,
@@ -43,6 +53,10 @@ impl HpkeClientState {
 }
 
 /// Result of a completed handshake on the initiator side.
+#[deprecated(
+    since = "0.4.0",
+    note = "use hpke::completion010::CompletionEndpoint010"
+)]
 pub struct HpkeClientSession {
     /// Session seed (the combined secret); feed it to
     /// `SecureSession::with_role(id, seed, true, cfg)` with the id from
@@ -55,6 +69,10 @@ pub struct HpkeClientSession {
 }
 
 /// The initiator.
+#[deprecated(
+    since = "0.4.0",
+    note = "use hpke::completion010::CompletionEndpoint010"
+)]
 pub struct HpkeClient {
     did: String,
     #[allow(dead_code)] // the transport signature of the init message is produced by the caller

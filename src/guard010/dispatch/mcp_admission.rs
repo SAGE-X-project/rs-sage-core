@@ -392,7 +392,7 @@ impl MCPGate {
             ensure(!s.retired && s.store.is_some())?;
             let mut pending = None;
             let result = catch_unwind(AssertUnwindSafe(|| {
-                let v = verify_intent(
+                let v = verify_received_intent(
                     &intent,
                     &s.recipient,
                     s.authority.as_mut(),
@@ -460,7 +460,7 @@ impl MCPGate {
                         return Err(Invalid);
                     }
                 }
-                verify_intent(
+                verify_received_intent(
                     &v.canonical,
                     &s.recipient,
                     s.authority.as_mut(),

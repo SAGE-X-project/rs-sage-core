@@ -15,6 +15,23 @@ must enforce the closed tool schema and all final arguments. A universal policy
 language is intentionally not supplied. Errors, unavailable decisions and timeouts
 must deny. Host callbacks must implement bounded deadlines.
 
+A receiver in a separate process does not hold the issuer's original request.
+`ReceiverPolicy::new` wraps a `ReceiverMapping` that returns the descriptors trusted
+administration provisioned for exactly `(issuer, policy_digest)` and evaluates the
+permitted operation. `verify_received_intent` and the receiver-side gates (dispatch,
+ledger, rejection publication, native MCP admission and hop parent checks) then
+recompute the policy and manifest commitments from those descriptors instead of
+comparing the original commitment, which remains a signed audit field.
+`verify_intent` and every Client or issuance path refuse a policy that exposes a
+receiver mapping and keep the exact original comparison. Unknown or retired
+commitments must fail in `approved`.
+
+`MCPHost::open_client` builds a host that only initiates root Client calls. It
+opens no admission gate, execution ledger, executor, policy or result signer,
+refuses `serve` and responder connections, and supervises only Client
+exchanges. A participant that also receives calls, including every hop
+participant, still uses `MCPHost::open`. This matches the Go `OpenMCPClientHost`.
+
 Successful verification owns the canonical complete envelope including proof.
 Intent digests therefore bind signatures as well as claims. Accessors expose copies
 in Go and immutable borrows in Rust. They do not create a dispatch capability.
@@ -321,3 +338,65 @@ ID reuse and exhaustion, protected input before/after READY, preparation failure
 transport failure/panic, key revocation and another thread closing during send.
 Implementation evidence does not promote Inspector catalog cases or establish full
 binding or Go/Rust interoperability conformance.
+
+
+## Public native MCP host
+
+`MCPHost::open` assembles the existing durable admission gate, owner monitor,
+fixed execution workers, Client pool and authenticated connection runner before
+peer input. Supply `MCPHostServices` only from protected local code: separate
+fresh intent/result registry authorities, approved policy, one immutable
+`MCPExecutor`, one protected result signer per worker, and trustworthy time.
+`MCPHostBounds` selects finite quotas and whole-millisecond deadlines. The host
+shares its clock across coordinators; registry, endpoint and Client clocks must
+use that same monotonic origin. All providers are bounded and non-reentrant.
+
+`connect` owns a `TcpStream`, including rejection, and runs synchronously on a
+bounded host worker. `serve` owns one `TcpListener` and exactly one accept worker
+per supplied handler. `MCPConnectionConfig` selects role, exact recipient/key,
+metadata, lifetime and setup budget locally. Both peers use the existing
+four-byte big-endian length framing, a deployment choice distinct from MCP
+stdio and protocol negotiation.
+
+A trusted `MCPConnectionHandler` constructs a fresh exclusively transferred
+endpoint only after connection reservation, confirms actual readiness in
+`prepare` before the initialized acknowledgement, and handles only fully
+authenticated MCP setup. Provider, socket and actual effect cleanup retain
+capacity until termination. The borrowed `MCPConnection` cannot outlive the
+handler callback; it exposes no READY setter, session, raw stream or worker token.
+
+Responder `serve_one` admits one protected request and publishes a verified
+signed result with its protected signer. An initiator uses `open_root_client`
+with a signed intent, independently captured original and `MCPClientServices`,
+then `exchange` returns only verified journaled delivery. `open_hop_client`
+requires the current actually admitted upstream `Invocation` and independent
+upstream authority/policy. The authenticated owner supplies the peer tuple
+and sender. Pending replies require identity-preserving polling after at least
+one second on both UTC and monotonic clocks; expiry and original deadlines
+still apply. First terminal consumption precedes output release.
+
+`MCPListener::close` stops carriage; full shutdown requires `MCPHost::close`.
+Host close retires rights before draining. A `false` result retains quotas and
+the ledger lock; finish bounded cleanup and retry close. Only `true` permits
+storage reopen or configuration reconstruction. Protect journal identities,
+issuer fences, key custody, actual immutable loaded components and all alternate
+routes. The issuer and MCP APIs remain separate; external consumer binding,
+authoritative deployments and complete host conformance remain unestablished.
+
+Linux/macOS unit and inert local TCP tests cover original/readiness denial,
+configuration rejection and retained capacity during incomplete shutdown.
+Separate-process TCP interoperability is bounded evidence, not complete host
+conformance or an FFI/WASM host claim. Earlier private-component sections retain
+their adapter scope; this native public coordinator assembles those adapters.
+
+### Issued journal transfer to a native MCP owner
+
+`Client::journaled_intent` copies the signed envelope from a healthy open
+journal without signing, sending, refreshing verification or appending an
+event. After protected issuance, obtain the snapshot, close the issuing Client,
+and call `MCPConnection::open_root_client` with `create=false`, the same stable
+path, independent capture and current protected services. Hop transfers use
+the corresponding admitted-parent entry. The owner repeats current verification
+and adopts the existing journal without re-signing. Never initialize another
+journal or reset the issuance fence on failure. Polling and the reopen monotonic
+delay still apply; a snapshot is data and grants no invocation authority.

@@ -209,7 +209,7 @@ fn unknown(s: &mut State, mut e: Entry) {
     }
 }
 fn dispatch(s: &mut State, raw: &[u8], pending: &mut Option<Entry>) -> Result<DispatchReceipt> {
-    let v = verify_intent(raw, &s.recipient, s.authority.as_mut(), s.policy.as_mut())?;
+    let v = verify_received_intent(raw, &s.recipient, s.authority.as_mut(), s.policy.as_mut())?;
     let (env, _) = intent_envelope(&v.canonical)?;
     let intent = &env["intent"];
     let i = Invocation {
@@ -253,7 +253,7 @@ fn dispatch(s: &mut State, raw: &[u8], pending: &mut Option<Entry>) -> Result<Di
         return Err(Invalid);
     }
     let result = (|| {
-        verify_intent(
+        verify_received_intent(
             &v.canonical,
             &s.recipient,
             s.authority.as_mut(),

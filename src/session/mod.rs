@@ -13,12 +13,15 @@ pub mod secure_session;
 pub mod types;
 
 // Re-export main types
+#[allow(deprecated)] // re-exports of legacy session derivation
 pub use derive::{
     compute_session_id, derive_session_seed, SessionParams, DEFAULT_LABEL, HPKE_E2E_LABEL,
     HPKE_LABEL,
 };
 pub use manager::{SessionManager, SessionManagerConfig};
+#[allow(deprecated)] // re-export of the legacy session
 pub use secure_session::{SecureSession, HEADER_SIZE, NONCE_SIZE, REPLAY_WINDOW_SIZE, SEQ_SIZE};
+#[allow(deprecated)] // re-exports include legacy session types
 pub use types::{Session, SessionConfig, SessionOpts, SessionStatus, DEFAULT_REKEY_INTERVAL};
 
 mod record010;

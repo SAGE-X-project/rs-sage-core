@@ -71,7 +71,7 @@ fn key_id(text: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
 }
 
-fn web_did(did: &str) -> bool {
+pub(super) fn web_did(did: &str) -> bool {
     if did.len() > 256 {
         return false;
     }
@@ -153,6 +153,15 @@ fn service_uri(text: &str) -> bool {
 /// key points, proofs, historic immutability, or controller authority; success
 /// must never authorize a protected operation.
 pub fn check_web_registry_record_shape_010(raw: &[u8], expected_did: &str, now: i64) -> Result<()> {
+    check_web_registry_record_shape_with_policy_010(raw, expected_did, now, true)
+}
+
+pub(super) fn check_web_registry_record_shape_with_policy_010(
+    raw: &[u8],
+    expected_did: &str,
+    now: i64,
+    require_usable_signing: bool,
+) -> Result<()> {
     check_web_registry_envelope_010(raw, now)?;
     if !web_did(expected_did) {
         return Err(invalid());
@@ -160,10 +169,34 @@ pub fn check_web_registry_record_shape_010(raw: &[u8], expected_did: &str, now: 
     let wrapper: BTreeMap<String, Box<serde_json::value::RawValue>> =
         serde_json::from_slice(raw).map_err(|_| invalid())?;
     let record_raw = wrapper.get("record").ok_or_else(invalid)?.get();
-    if record_raw.len() > MAX_RECORD {
+    check_record_shape_010(
+        record_raw.as_bytes(),
+        expected_did,
+        now,
+        require_usable_signing,
+    )
+}
+
+pub(super) fn check_record_shape_010(
+    raw: &[u8],
+    expected_did: &str,
+    now: i64,
+    require_usable_signing: bool,
+) -> Result<()> {
+    if raw.len() > MAX_RECORD {
         return Err(Error::ValidationError("size.exceeded".into()));
     }
+    if raw.is_empty()
+        || raw.starts_with(&[0xef, 0xbb, 0xbf])
+        || !super::web_envelope010::bounded_depth(raw)
+    {
+        return Err(invalid());
+    }
+    let record_raw = std::str::from_utf8(raw).map_err(|_| invalid())?;
     let record = jcs::parse(record_raw).map_err(|_| invalid())?;
+    if !super::web_envelope010::valid_numbers(&record) {
+        return Err(invalid());
+    }
     let fields = object(&record)?;
     if !closed(
         fields,
@@ -193,6 +226,7 @@ pub fn check_web_registry_record_shape_010(raw: &[u8], expected_did: &str, now: 
     let mut materials = HashSet::new();
     let mut previous = "";
     let mut active_signing = false;
+    let mut accepted_signing = false;
     for entry in keys {
         let key = object(entry)?;
         if !closed(
@@ -250,11 +284,14 @@ pub fn check_web_registry_record_shape_010(raw: &[u8], expected_did: &str, now: 
         if signature.len() > 87 || canonical_base64(signature, None).is_none() {
             return Err(invalid());
         }
-        if alg != "x25519" && key_state == "accepted" && expires.is_none_or(|expiry| now < expiry) {
-            active_signing = true;
+        if alg != "x25519" && key_state == "accepted" {
+            accepted_signing = true;
+            if expires.is_none_or(|expiry| now < expiry) {
+                active_signing = true;
+            }
         }
     }
-    if state == "active" && !active_signing {
+    if state == "active" && !active_signing && (require_usable_signing || !accepted_signing) {
         return Err(invalid());
     }
     let services = array(field(fields, "services")?)?;
