@@ -1,0 +1,17 @@
+{
+  "github.com/sage-x-project/sage": {
+    "Version": "v1.5.3-0.20261018151911-5035088faa8e",
+    "Sum": "h1:wl6qVEeeE3ZNoL/jaVhrbK3Ik8pjYBGROD4iDKAM+uU=",
+    "GoModSum": "h1:gVxxsTLKs1SVc/BFU9iAKhUvMidQ6qZr44y3JF3fLCU="
+  },
+  "github.com/sage-x-project/did-go": {
+    "Version": "v0.0.0-20261018080828-3b7a79c1c326",
+    "Sum": "h1:Am4pVUAnGnhje6WZgO19ltbRV1NDCfvmEzQAuwHInM8=",
+    "GoModSum": "h1:Xi8PmTFqnTT9F008Q4MvrZc6KFrtcrXBP/e1dH8mFaQ="
+  },
+  "github.com/sage-x-project/did-go/advanced/sage": {
+    "Version": "v0.0.0-20261018161639-7e49429885fc",
+    "Sum": "h1:HNPrGIYl6MFWPBCgXD/aS+MQwtdXIrV+xUyPWRAiPfI=",
+    "GoModSum": "h1:gkcVUjeYqhRIRSD8YRErTbHy8lQ85ghzay/cs3hA7d8="
+  }
+}

@@ -1,6 +1,6 @@
 //! Test-only local fixture process; no RPC, TLS or operation authorization.
 use sage_crypto_core::{
-    didsource010::{project, Projection},
+    didsource010::observe_views,
     error::Result,
     registry010::{
         Clock, Config, Journal, RecordObserver, RecordOrigin, RecordReader, RecordSnapshot, Stamp,
@@ -10,10 +10,15 @@ use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
     io::{self, Read},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
-struct Reader(RecordSnapshot);
+struct Reader(RecordSnapshot, Arc<AtomicUsize>);
 impl RecordReader for Reader {
     fn read_record(&mut self, _: &str) -> Result<RecordSnapshot> {
+        self.1.fetch_add(1, Ordering::SeqCst);
         Ok(self.0.clone())
     }
 }
@@ -76,16 +81,17 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             validated: true,
             conflicting: false,
         };
+        let reads = Arc::new(AtomicUsize::new(0));
         let mut o = RecordObserver::new(
             cfg,
-            Box::new(Reader(snapshot)),
+            Box::new(Reader(snapshot, reads.clone())),
             Box::new(Time),
             Box::new(Journal::open(&dir.path().join(i.to_string()), true)?),
         )?;
-        let observed = o.observe(did)?;
+        let paired = observe_views(&mut o, did)?;
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
         let mut views = BTreeMap::new();
-        for (name, p) in [("core10", Projection::Core10), ("did11", Projection::Did11)] {
-            let v = project(&observed, p)?;
+        for (name, v) in [("core10", paired.core10), ("did11", paired.did11)] {
             views.insert(name,json!({"document":String::from_utf8(v.document)?,"contentType":v.content_type,"metadata":v.metadata}));
         }
         results.insert(case["name"].as_str().ok_or("missing case name")?, views);
