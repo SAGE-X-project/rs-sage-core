@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Enforce line coverage of each new production file, excluding test code."""
+"""Enforce line coverage of each selected source file."""
 import json
 from pathlib import Path
 import sys
 
-FILES = ("src/didsource010.rs", "src/registry010/record_observer010.rs")
+FILES = (
+    "src/didsource010.rs",
+    "src/registry010/record_observer010.rs",
+    "src/crypto/keys.rs",
+    "src/crypto/p256.rs",
+    "src/crypto/secp256k1.rs",
+    "src/did/proof.rs",
+    "src/formats/mod.rs",
+    "src/registry010/web_record_proofs010.rs",
+)
 
 def main():
     report = json.loads(Path(sys.argv[1]).read_text())

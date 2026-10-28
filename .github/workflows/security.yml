@@ -35,7 +35,9 @@ jobs:
         tool: cargo-audit,cargo-deny
 
     - name: Known vulnerabilities (cargo audit)
-      run: cargo audit
+      run: |
+        cargo tree --invert crypto-bigint
+        cargo audit
 
     - name: Advisories and sources (cargo deny)
       run: cargo deny check advisories sources

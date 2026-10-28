@@ -29,16 +29,14 @@ pub fn generate_key_pop(did: &str, key_pair: &KeyPair) -> Result<Vec<u8>> {
         KeyType::Secp256k1 => {
             let sk = k256::ecdsa::SigningKey::from_slice(&key_pair.private_key_bytes())
                 .map_err(|e| Error::CryptoError(format!("invalid secp256k1 key: {e}")))?;
-            let (sig, recid) = sk
-                .sign_prehash_recoverable(&digest)
-                .map_err(|e| Error::CryptoError(format!("signing failed: {e}")))?;
-            let (sig, recid) = match sig.normalize_s() {
-                Some(low) => (
-                    low,
-                    k256::ecdsa::RecoveryId::from_byte(recid.to_byte() ^ 1).unwrap(),
-                ),
-                None => (sig, recid),
+            let (sig, recid) = sk.sign_prehash_recoverable(&digest);
+            let low = sig.normalize_s();
+            let recid = if low != sig {
+                k256::ecdsa::RecoveryId::from_byte(recid.to_byte() ^ 1).unwrap()
+            } else {
+                recid
             };
+            let sig = low;
             let mut out = sig.to_bytes().to_vec();
             out.push(recid.to_byte());
             Ok(out)
@@ -75,7 +73,7 @@ pub fn verify_key_pop(did: &str, key_type: KeyType, key_data: &[u8], proof: &[u8
                 .map_err(|_| Error::Verification("invalid secp256k1 key".into()))?;
             let sig = k256::ecdsa::Signature::from_slice(&proof[..64])
                 .map_err(|_| Error::Verification("invalid secp256k1 proof".into()))?;
-            let sig = sig.normalize_s().unwrap_or(sig);
+            let sig = sig.normalize_s();
             vk.verify_prehash(&digest, &sig)
                 .map_err(|_| Error::Verification("proof of possession failed".into()))
         }
@@ -88,6 +86,29 @@ pub fn verify_key_pop(did: &str, key_type: KeyType, key_data: &[u8], proof: &[u8
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_unsupported_keys_and_malformed_proofs() {
+        let did = "did:sage:ethereum:0xabc";
+        let p256 = KeyPair::from_private_key_bytes(KeyType::P256, &[1u8; 32]).unwrap();
+        assert!(matches!(
+            generate_key_pop(did, &p256),
+            Err(Error::Unsupported(_))
+        ));
+        assert!(matches!(
+            verify_key_pop(did, KeyType::P256, &p256.public_key_bytes(), &[]),
+            Err(Error::Unsupported(_))
+        ));
+        for kind in [KeyType::Ed25519, KeyType::Secp256k1] {
+            let key = KeyPair::from_private_key_bytes(kind, &[1u8; 32]).unwrap();
+            let public = key.public_key_bytes();
+            for length in [0, 1, 63, 66] {
+                assert!(verify_key_pop(did, kind, &public, &[0u8; 66][..length]).is_err());
+            }
+            assert!(verify_key_pop(did, kind, &public, &[0u8; 64]).is_err());
+            assert!(verify_key_pop(did, kind, &[], &[0u8; 64]).is_err());
+        }
+    }
 
     #[test]
     fn roundtrip_and_binding() {

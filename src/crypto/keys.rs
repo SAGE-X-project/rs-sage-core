@@ -9,9 +9,7 @@
 use crate::crypto::{Algorithm, Signature, Signer, Verifier};
 use crate::error::{Error, Result};
 use hex;
-use k256::elliptic_curve::sec1::ToEncodedPoint;
-// Curve key generation requires rand_core 0.6.
-use k256::elliptic_curve::rand_core::OsRng;
+use k256::elliptic_curve::{sec1::ToSec1Point, Generate};
 use rand::TryRng;
 use serde::{Deserialize, Serialize};
 
@@ -89,10 +87,10 @@ impl PublicKey {
         match self {
             PublicKey::Ed25519(key_bytes) => key_bytes.to_vec(),
             PublicKey::Secp256k1(key_bytes) => k256::PublicKey::from_sec1_bytes(key_bytes)
-                .map(|k| k.to_encoded_point(true).as_bytes().to_vec())
+                .map(|k| k.to_sec1_point(true).as_bytes().to_vec())
                 .unwrap_or_default(),
             PublicKey::P256(key_bytes) => p256::PublicKey::from_sec1_bytes(key_bytes)
-                .map(|k| k.to_encoded_point(true).as_bytes().to_vec())
+                .map(|k| k.to_sec1_point(true).as_bytes().to_vec())
                 .unwrap_or_default(),
         }
     }
@@ -147,7 +145,7 @@ impl PublicKey {
                 let key = k256::PublicKey::from_sec1_bytes(bytes)
                     .map_err(|_| Error::InvalidInput("Invalid Secp256k1 public key".to_string()))?;
                 Ok(PublicKey::Secp256k1(uncompressed_65(
-                    key.to_encoded_point(false).as_bytes(),
+                    key.to_sec1_point(false).as_bytes(),
                 )))
             }
             KeyType::P256 => {
@@ -160,7 +158,7 @@ impl PublicKey {
                 let key = p256::PublicKey::from_sec1_bytes(bytes)
                     .map_err(|_| Error::InvalidInput("Invalid P-256 public key".to_string()))?;
                 Ok(PublicKey::P256(uncompressed_65(
-                    key.to_encoded_point(false).as_bytes(),
+                    key.to_sec1_point(false).as_bytes(),
                 )))
             }
         }
@@ -206,20 +204,14 @@ impl PrivateKey {
                 let signing_key = k256::ecdsa::SigningKey::from_slice(key_bytes)
                     .expect("validated on construction");
                 PublicKey::Secp256k1(uncompressed_65(
-                    signing_key
-                        .verifying_key()
-                        .to_encoded_point(false)
-                        .as_bytes(),
+                    signing_key.verifying_key().to_sec1_point(false).as_bytes(),
                 ))
             }
             PrivateKey::P256(key_bytes) => {
                 let signing_key = p256::ecdsa::SigningKey::from_slice(key_bytes)
                     .expect("validated on construction");
                 PublicKey::P256(uncompressed_65(
-                    signing_key
-                        .verifying_key()
-                        .to_encoded_point(false)
-                        .as_bytes(),
+                    signing_key.verifying_key().to_sec1_point(false).as_bytes(),
                 ))
             }
         }
@@ -255,11 +247,17 @@ impl KeyPair {
                 PrivateKey::Ed25519(bytes)
             }
             KeyType::Secp256k1 => {
-                let signing_key = k256::ecdsa::SigningKey::random(&mut OsRng);
+                use k256::ecdsa::SigningKey;
+                let signing_key = SigningKey::try_generate_from_rng(&mut rand::rngs::SysRng)
+                    .map_err(|e| Error::CryptoError(format!("OS randomness unavailable: {e}")))?;
                 PrivateKey::Secp256k1(signing_key.to_bytes().into())
             }
             KeyType::P256 => {
-                let signing_key = p256::ecdsa::SigningKey::random(&mut OsRng);
+                let signing_key =
+                    p256::ecdsa::SigningKey::try_generate_from_rng(&mut rand::rngs::SysRng)
+                        .map_err(|e| {
+                            Error::CryptoError(format!("OS randomness unavailable: {e}"))
+                        })?;
                 PrivateKey::P256(signing_key.to_bytes().into())
             }
         };
@@ -350,17 +348,15 @@ impl Signer for KeyPair {
                 let signing_key = k256::ecdsa::SigningKey::from_slice(key_bytes)
                     .map_err(|e| Error::CryptoError(format!("Invalid Secp256k1 key: {e}")))?;
                 let digest = keccak256(message);
-                let (sig, recid) = signing_key
-                    .sign_prehash_recoverable(&digest)
-                    .map_err(|e| Error::CryptoError(format!("Secp256k1 signing failed: {e}")))?;
-                // k256 emits low-S; normalise defensively and keep v consistent.
-                let (sig, recid) = match sig.normalize_s() {
-                    Some(low) => (
-                        low,
-                        k256::ecdsa::RecoveryId::from_byte(recid.to_byte() ^ 1).unwrap(),
-                    ),
-                    None => (sig, recid),
+                let (sig, recid) = signing_key.sign_prehash_recoverable(&digest);
+                // Keep the recovery ID consistent with defensive low-S normalization.
+                let low = sig.normalize_s();
+                let recid = if low != sig {
+                    k256::ecdsa::RecoveryId::from_byte(recid.to_byte() ^ 1).unwrap()
+                } else {
+                    recid
                 };
+                let sig = low;
                 let mut out = [0u8; 65];
                 out[..64].copy_from_slice(&sig.to_bytes());
                 out[64] = recid.to_byte();
@@ -371,7 +367,7 @@ impl Signer for KeyPair {
                 let signing_key = p256::ecdsa::SigningKey::from_slice(key_bytes)
                     .map_err(|e| Error::CryptoError(format!("Invalid P-256 key: {e}")))?;
                 let sig: p256::ecdsa::Signature = signing_key.sign(message);
-                let sig = sig.normalize_s().unwrap_or(sig);
+                let sig = sig.normalize_s();
                 let mut out = [0u8; 64];
                 out.copy_from_slice(&sig.to_bytes());
                 Ok(Signature::P256(out))
@@ -404,7 +400,7 @@ impl Verifier for PublicKey {
                 let sig = k256::ecdsa::Signature::from_slice(&sig_bytes[..64])
                     .map_err(|_| Error::Verification("Invalid Secp256k1 signature".to_string()))?;
                 // (r, s) and (r, N - s) are both valid; verify the low-S form.
-                let sig = sig.normalize_s().unwrap_or(sig);
+                let sig = sig.normalize_s();
                 verifying_key
                     .verify_prehash(&keccak256(message), &sig)
                     .map_err(|_| {
@@ -417,7 +413,7 @@ impl Verifier for PublicKey {
                     .map_err(|_| Error::Verification("Invalid P-256 public key".to_string()))?;
                 let sig = p256::ecdsa::Signature::from_slice(sig_bytes)
                     .map_err(|_| Error::Verification("Invalid P-256 signature".to_string()))?;
-                let sig = sig.normalize_s().unwrap_or(sig);
+                let sig = sig.normalize_s();
                 verifying_key.verify(message, &sig).map_err(|_| {
                     Error::Verification("P-256 signature verification failed".to_string())
                 })
