@@ -14,8 +14,7 @@ use p256::ecdsa::{
     signature::{Signer as P256Signer, Verifier as P256Verifier},
     Signature as P256Signature, SigningKey, VerifyingKey,
 };
-// These curve APIs require rand_core 0.6. Use their compatible OS RNG.
-use p256::elliptic_curve::rand_core::OsRng;
+use p256::elliptic_curve::Generate;
 use sha2::{Digest, Sha256};
 
 /// P-256 ECDSA key pair
@@ -52,7 +51,8 @@ impl P256KeyPair {
     /// let keypair = P256KeyPair::generate().unwrap();
     /// ```
     pub fn generate() -> Result<Self> {
-        let signing_key = SigningKey::random(&mut OsRng);
+        let signing_key = SigningKey::try_generate_from_rng(&mut rand::rngs::SysRng)
+            .map_err(|e| Error::CryptoError(format!("OS randomness unavailable: {e}")))?;
         let verifying_key = VerifyingKey::from(&signing_key);
 
         Ok(Self {
@@ -115,7 +115,7 @@ impl P256KeyPair {
     /// ```
     pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
         let signature: P256Signature = self.signing_key.sign(message);
-        let signature = signature.normalize_s().unwrap_or(signature);
+        let signature = signature.normalize_s();
         Ok(signature.to_bytes().to_vec())
     }
 
@@ -136,7 +136,7 @@ impl P256KeyPair {
 
         let sig = P256Signature::try_from(signature)
             .map_err(|e| Error::InvalidInput(format!("Invalid signature format: {e}")))?;
-        let sig = sig.normalize_s().unwrap_or(sig);
+        let sig = sig.normalize_s();
 
         self.verifying_key
             .verify(message, &sig)
@@ -154,26 +154,17 @@ impl P256KeyPair {
     /// assert_eq!(pub_key.len(), 65); // uncompressed SEC1
     /// ```
     pub fn public_key_bytes(&self) -> Vec<u8> {
-        self.verifying_key
-            .to_encoded_point(false)
-            .as_bytes()
-            .to_vec()
+        self.verifying_key.to_sec1_point(false).as_bytes().to_vec()
     }
 
     /// Compressed SEC1 encoding (33 bytes)
     pub fn public_key_bytes_compressed(&self) -> Vec<u8> {
-        self.verifying_key
-            .to_encoded_point(true)
-            .as_bytes()
-            .to_vec()
+        self.verifying_key.to_sec1_point(true).as_bytes().to_vec()
     }
 
     /// Get the public key bytes in uncompressed format (65 bytes)
     pub fn public_key_bytes_uncompressed(&self) -> Vec<u8> {
-        self.verifying_key
-            .to_encoded_point(false)
-            .as_bytes()
-            .to_vec()
+        self.verifying_key.to_sec1_point(false).as_bytes().to_vec()
     }
 
     /// Get the private key bytes (32 bytes)

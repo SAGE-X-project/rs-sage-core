@@ -184,13 +184,13 @@ impl KeyExporter for PublicKey {
             }
             PublicKey::P256(key_bytes) => {
                 // P-256 uses EC JWK format
-                use p256::elliptic_curve::sec1::ToEncodedPoint;
+                use p256::elliptic_curve::sec1::ToSec1Point;
                 use p256::PublicKey as P256PublicKey;
 
                 let public_key = P256PublicKey::from_sec1_bytes(key_bytes)
                     .map_err(|e| Error::Serialization(format!("Invalid P-256 public key: {e}")))?;
 
-                let point = public_key.to_encoded_point(false); // uncompressed
+                let point = public_key.to_sec1_point(false); // uncompressed
                 let x = general_purpose::URL_SAFE_NO_PAD.encode(point.x().ok_or_else(|| {
                     Error::Serialization("Failed to get x coordinate".to_string())
                 })?);
@@ -354,14 +354,14 @@ impl KeyExporter for PrivateKey {
             )),
             PrivateKey::P256(key_bytes) => {
                 // P-256 private key JWK export
-                use p256::elliptic_curve::sec1::ToEncodedPoint;
+                use p256::elliptic_curve::sec1::ToSec1Point;
                 use p256::SecretKey as P256SecretKey;
 
                 let secret_key = P256SecretKey::from_slice(key_bytes)
                     .map_err(|e| Error::Serialization(format!("Invalid P-256 private key: {e}")))?;
 
                 let public_key = secret_key.public_key();
-                let point = public_key.to_encoded_point(false); // uncompressed
+                let point = public_key.to_sec1_point(false); // uncompressed
 
                 let x = general_purpose::URL_SAFE_NO_PAD.encode(point.x().ok_or_else(|| {
                     Error::Serialization("Failed to get x coordinate".to_string())
