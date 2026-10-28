@@ -217,6 +217,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_encoding_and_validation_boundaries() {
+        let pair = P256KeyPair::from_private_key_bytes(&[1u8; 32]).unwrap();
+        let compressed = pair.public_key_bytes_compressed();
+        assert_eq!(compressed.len(), 33);
+        assert!(matches!(compressed[0], 2 | 3));
+        let public = P256KeyPair::from_public_key_bytes(&compressed).unwrap();
+        assert_eq!(public, *pair.verifying_key());
+        assert_eq!(
+            public.to_sec1_point(false).as_bytes(),
+            pair.public_key_bytes()
+        );
+        assert_eq!(pair.algorithm(), Algorithm::P256);
+        let debug = format!("{pair:?}");
+        assert!(debug.contains("public_key"));
+        assert!(debug.contains(&pair.key_id()));
+        assert!(matches!(
+            P256KeyPair::from_private_key_bytes(&[0u8; 32]),
+            Err(Error::CryptoError(_))
+        ));
+        assert!(matches!(
+            P256KeyPair::from_public_key_bytes(&[0u8; 65]),
+            Err(Error::CryptoError(_))
+        ));
+        assert!(matches!(
+            pair.verify(b"sample", &[0u8; 64]),
+            Err(Error::InvalidInput(_))
+        ));
+    }
+
+    #[test]
     fn test_generate() {
         let keypair = P256KeyPair::generate().unwrap();
         assert_eq!(keypair.public_key_bytes().len(), 65); // uncompressed SEC1

@@ -88,6 +88,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rejects_unsupported_keys_and_malformed_proofs() {
+        let did = "did:sage:ethereum:0xabc";
+        let p256 = KeyPair::from_private_key_bytes(KeyType::P256, &[1u8; 32]).unwrap();
+        assert!(matches!(
+            generate_key_pop(did, &p256),
+            Err(Error::Unsupported(_))
+        ));
+        assert!(matches!(
+            verify_key_pop(did, KeyType::P256, &p256.public_key_bytes(), &[]),
+            Err(Error::Unsupported(_))
+        ));
+        for kind in [KeyType::Ed25519, KeyType::Secp256k1] {
+            let key = KeyPair::from_private_key_bytes(kind, &[1u8; 32]).unwrap();
+            let public = key.public_key_bytes();
+            for length in [0, 1, 63, 66] {
+                assert!(verify_key_pop(did, kind, &public, &[0u8; 66][..length]).is_err());
+            }
+            assert!(verify_key_pop(did, kind, &public, &[0u8; 64]).is_err());
+            assert!(verify_key_pop(did, kind, &[], &[0u8; 64]).is_err());
+        }
+    }
+
+    #[test]
     fn roundtrip_and_binding() {
         let did = "did:sage:ethereum:0xabc";
         for kt in [KeyType::Ed25519, KeyType::Secp256k1] {
