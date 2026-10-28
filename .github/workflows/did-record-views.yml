@@ -28,7 +28,7 @@ jobs:
           toolchain: "1.88.0"
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.26.8"
           cache-dependency-path: tests/go-did-reference/go.sum
