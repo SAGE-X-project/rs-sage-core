@@ -218,6 +218,8 @@ mod tests {
     }
 
     fn fixture() -> JsonValue {
+        use ed25519_dalek::Signer as _;
+
         let ed_private = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
         let ed_public = ed_private.verifying_key().to_bytes();
         let ed_sig = ed_private.sign(&challenge("a-ed", "ed25519", &ed_public));
