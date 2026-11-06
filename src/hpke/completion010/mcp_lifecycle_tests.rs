@@ -19,6 +19,7 @@ fn monitor(capacity: usize) -> (OwnerMonitor, Local) {
     )
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn setup_expiry_is_independent_and_registration_survives_logical_close() {
     let (left, right, mut a, mut b, _, tmp) = owner_pair();
     let (gate, _) = gate(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
@@ -35,6 +36,7 @@ fn setup_expiry_is_independent_and_registration_survives_logical_close() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn local_observation_does_not_refresh_ready_session_idle_deadline() {
     let (mut left, right, mut a, mut b, controls, tmp) = owner_pair();
     let (gate, _) = gate(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
@@ -53,6 +55,7 @@ fn local_observation_does_not_refresh_ready_session_idle_deadline() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn record_activity_refreshes_idle_but_never_absolute_session_lifetime() {
     let (mut left, right, mut a, mut b, controls, tmp) = owner_pair();
     let (gate, _) = gate(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
@@ -79,6 +82,7 @@ fn record_activity_refreshes_idle_but_never_absolute_session_lifetime() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn response_permit_deadline_remains_watched_after_worker_completion() {
     let (mut left, right, mut a, mut b, _, tmp) = owner_pair();
     let (gate, _) = gate(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
@@ -105,6 +109,7 @@ fn response_permit_deadline_remains_watched_after_worker_completion() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn client_receive_expiry_is_independent_of_blocked_io_and_retains_registration() {
     let pool = Arc::new(ClientPool::new(1, 30000).unwrap());
     let (monitor, clock) = monitor(1);
@@ -164,6 +169,7 @@ impl Drop for DropClock {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn closed_client_registration_outlives_dependency_destructors() {
     for failed_constructor in [false, true] {
         let pool = Arc::new(ClientPool::new(1, 30000).unwrap());
@@ -213,6 +219,7 @@ fn closed_client_registration_outlives_dependency_destructors() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn fresh_poll_retires_previous_transport_deadline_without_refreshing_execution() {
     let (mut left, right, mut a, mut b, controls, tmp) = owner_pair();
     let (gate, gate_clock) = gate(&tmp.path().join("execution"), Arc::new(Sink::default()), 2);
@@ -253,6 +260,7 @@ fn fresh_poll_retires_previous_transport_deadline_without_refreshing_execution()
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn closed_owner_cannot_free_capacity_or_close_another_owner() {
     let (monitor, _) = monitor(2);
     let tmp = tempfile::tempdir().unwrap();
@@ -276,6 +284,7 @@ fn closed_owner_cannot_free_capacity_or_close_another_owner() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn monitor_clock_failure_closes_owners_and_prevents_replacement_registration() {
     let (monitor, clock) = monitor(1);
     let (_, right, _, mut b, _, tmp) = owner_pair();
@@ -292,6 +301,7 @@ fn monitor_clock_failure_closes_owners_and_prevents_replacement_registration() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn setup_receive_can_be_closed_without_waiting_for_its_provider() {
     struct Waiting {
         entered: mpsc::SyncSender<SetupClose>,
@@ -338,6 +348,7 @@ fn setup_receive_can_be_closed_without_waiting_for_its_provider() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn monitor_attachment_is_rejected_after_any_setup_owner_was_created() {
     let (left, right, mut a, mut b, _, tmp) = owner_pair();
     let (gate, _) = gate(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);

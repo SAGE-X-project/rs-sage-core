@@ -706,6 +706,7 @@ mod owned_tls {
         }
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support networking")]
     fn http_application_owned_tls_round_trip() {
         for unavailable in [false, true] {
             let _ = rustls::crypto::ring::default_provider().install_default();

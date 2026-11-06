@@ -24,6 +24,7 @@ fn start(gate: Arc<MCPGate>, worker_ms: i64) -> Workers {
     .unwrap()
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn independent_monitor_cancels_running_work_but_retains_quota_until_actual_return() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -80,6 +81,7 @@ fn independent_monitor_cancels_running_work_but_retains_quota_until_actual_retur
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn independent_monitor_closes_admission_while_component_provider_is_blocked() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("execution");
@@ -115,6 +117,7 @@ fn independent_monitor_closes_admission_while_component_provider_is_blocked() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn monitor_cancels_expired_queue_before_claim_without_releasing_durable_slot() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -133,6 +136,7 @@ fn monitor_cancels_expired_queue_before_claim_without_releasing_durable_slot() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn monitor_clock_rollback_retires_gate_and_closes_current_operation() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let sink = Arc::new(Sink::default());
@@ -151,6 +155,7 @@ fn monitor_clock_rollback_retires_gate_and_closes_current_operation() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn empty_worker_pool_stops_and_cannot_restart_retired_gate() {
     let tmp = tempfile::tempdir().unwrap();
     let (gate, _) = gate(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
@@ -169,6 +174,7 @@ fn empty_worker_pool_stops_and_cannot_restart_retired_gate() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn independent_monitor_closes_blocked_reply_and_stop_keeps_output_charged() {
     use g::mcp_setup::{SetupClose, SetupIO};
     struct Blocked {
@@ -222,6 +228,7 @@ fn independent_monitor_closes_blocked_reply_and_stop_keeps_output_charged() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn expired_older_work_does_not_close_a_new_pending_poll() {
     use g::mcp_setup::{SetupClose, SetupIO};
     struct Output;
@@ -254,6 +261,7 @@ fn expired_older_work_does_not_close_a_new_pending_poll() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn one_fixed_worker_keeps_second_admitted_effect_queued_while_first_is_blocked() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");

@@ -15,6 +15,7 @@ impl Authority for Expiry {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn failed_storage_and_late_expiry_do_not_release_output() {
     for capacity in [false, true] {
         let (_d, p, c, s, v) = setup();

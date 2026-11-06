@@ -73,6 +73,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn empty_or_closed_journal_cannot_supply_public_authority() {
         let dir = tempfile::tempdir().unwrap();
         let authority = Authority;

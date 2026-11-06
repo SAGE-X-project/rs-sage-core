@@ -1229,6 +1229,7 @@ fn http_framing_rejections() {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn durable_completion() {
     let (mut a, mut b, c, tmp) = pair();
     let ja = Rc::new(RefCell::new(
@@ -1407,6 +1408,7 @@ fn non_http_owner_clock_panic_retires_keys() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn non_http_owner_loopback_runtime() {
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};

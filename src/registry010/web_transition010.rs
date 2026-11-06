@@ -978,6 +978,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn operator_journal_commits_grants_and_recovers_them() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("operator.log");
@@ -1104,6 +1105,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn operator_journal_revokes_after_signer_expiry() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("expired-operator.log");
@@ -1476,6 +1478,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn write_journal_survives_restart_and_refreshes_response() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("writes.log");
@@ -1598,6 +1601,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn public_envelope_uses_committed_journal_state() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("writes.log");
@@ -1634,6 +1638,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn write_journal_rejects_incomplete_tail() {
         use std::io::Write;
         let dir = tempfile::tempdir().unwrap();
@@ -1670,6 +1675,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn write_journal_recovers_expired_signer_after_restart() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("writes.log");

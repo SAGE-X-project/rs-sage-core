@@ -127,6 +127,7 @@ mod tests {
         serde_json::to_vec(&e).unwrap()
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn independent_intents_do_not_write_on_denial() {
         for c in cases() {
             if c["operation"] != "sage.guard.intent.verify" {
@@ -303,6 +304,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn intent_signature_algorithm_boundary_accepts_only_ed25519() {
         for algorithm in ["ed25519", "ecdsa-p256-sha256", "secp256k1"] {
             let mut f = fixture();
@@ -338,6 +340,7 @@ mod tests {
         }
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn retries_reauthenticate_and_recovery_never_reserves_again() {
         let mut f = fixture();
         let dir = tempfile::tempdir().unwrap();
@@ -372,6 +375,7 @@ mod tests {
         l.close().unwrap();
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn valid_signed_conflicts_preserve_storage() {
         for (field, value) in [
             ("arguments", json!({"path":"other.txt"})),
@@ -401,6 +405,7 @@ mod tests {
         }
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn concurrent_identical_reservations_are_single() {
         let f = fixture();
         let dir = tempfile::tempdir().unwrap();
@@ -432,6 +437,7 @@ mod tests {
         l.lock().unwrap().close().unwrap();
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn concurrent_calls_cannot_share_nonce() {
         let f = fixture();
         let dir = tempfile::tempdir().unwrap();
@@ -497,6 +503,7 @@ mod tests {
         }
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn expiry_during_storage_keeps_committed_denial() {
         let f = fixture();
         let dir = tempfile::tempdir().unwrap();
@@ -516,6 +523,7 @@ mod tests {
         l.close().unwrap();
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn missing_exclusive_and_closed_storage_deny() {
         let f = fixture();
         let dir = tempfile::tempdir().unwrap();

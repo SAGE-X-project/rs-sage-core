@@ -33,6 +33,7 @@ fn independent_mcp_verification() {
 }
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn mcp_client_consumes_invalid_and_valid_invocations() {
     for valid in [false, true] {
         let (_d, _p, c, _s, v) = super::client_tests::setup();

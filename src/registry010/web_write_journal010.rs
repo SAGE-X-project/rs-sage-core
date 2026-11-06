@@ -289,6 +289,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn uncertain_write_keeps_exclusive_lock() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("writes.log");

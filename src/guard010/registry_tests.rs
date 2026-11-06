@@ -150,6 +150,7 @@ fn registry_authority_fresh_reads_and_pin() {
     assert!(a.now().is_err());
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn registry_authority_final_dispatch() {
     for mode in [
         "valid", "boundary", "revoked", "unready", "source", "clock", "stale", "rollback",

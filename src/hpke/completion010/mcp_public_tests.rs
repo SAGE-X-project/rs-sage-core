@@ -231,6 +231,7 @@ fn public_host_rejects_configuration_before_storage() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn public_tcp_host_binds_capture_and_readiness_before_one_effect() {
     for mode in ["allowed", "changed capture", "prepare denied"] {
         let dir = tempfile::tempdir().unwrap();
@@ -325,6 +326,7 @@ fn tcp_pair() -> (TcpStream, TcpStream) {
     (left, right)
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn public_factory_remains_charged_until_cleanup_and_close() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("gate");
@@ -388,6 +390,7 @@ fn public_factory_remains_charged_until_cleanup_and_close() {
     assert_eq!(count.load(Ordering::SeqCst), 1);
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn public_connection_rejects_wrong_config_before_endpoint() {
     let dir = tempfile::tempdir().unwrap();
     let clock = public_clock();
@@ -647,6 +650,7 @@ fn client_host_bounds() -> g::MCPClientHostBounds {
 /// An initiator-only host completes a root call against a full receiver host
 /// without a gate, ledger, executor, policy or result signer.
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn initiator_only_host_completes_root_call() {
     let dir = tempfile::tempdir().unwrap();
     let sink = Arc::new(PublicSink::default());
@@ -686,6 +690,7 @@ fn initiator_only_host_completes_root_call() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn initiator_only_host_refuses_receiver_roles() {
     let clock = public_clock();
     let client = g::MCPHost::open_client(Box::new(clock.clone()), client_host_bounds()).unwrap();

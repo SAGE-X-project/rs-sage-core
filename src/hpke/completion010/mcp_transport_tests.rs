@@ -130,6 +130,7 @@ impl Handler for HopClientHandler {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn tcp_owner_rejects_missing_hop_capture_before_protected_send() {
     let tmp = tempfile::tempdir().unwrap();
     let sink = Arc::new(Sink::default());
@@ -183,6 +184,7 @@ impl Handler for ClientHandler {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn owned_tcp_listener_completes_real_handshake_setup_and_protected_exchange() {
     let tmp = tempfile::tempdir().unwrap();
     let sink = Arc::new(Sink::default());
@@ -260,6 +262,7 @@ fn socket_pair() -> (TcpStream, TcpStream) {
     (client, server)
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn handshake_timeout_shuts_socket_but_retains_factory_and_fixed_worker_capacity() {
     let tmp = tempfile::tempdir().unwrap();
     let (host, gate, _) = host(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
@@ -299,6 +302,7 @@ fn handshake_timeout_shuts_socket_but_retains_factory_and_fixed_worker_capacity(
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn listener_and_connection_rejection_close_transferred_native_sockets() {
     let tmp = tempfile::tempdir().unwrap();
     let (host, gate, _) = host(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
@@ -322,6 +326,7 @@ fn listener_and_connection_rejection_close_transferred_native_sockets() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn bounded_frame_reader_handles_benign_fragmentation_and_incomplete_frame_timeout() {
     for complete in [true, false] {
         let tmp = tempfile::tempdir().unwrap();
@@ -352,6 +357,7 @@ fn bounded_frame_reader_handles_benign_fragmentation_and_incomplete_frame_timeou
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn framed_io_checks_original_clock_deadline_even_when_wall_time_remains() {
     let tmp = tempfile::tempdir().unwrap();
     let (host, gate, clock) = host(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
@@ -380,6 +386,7 @@ impl Handler for BlockedReady {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn owner_close_interrupts_native_client_receive_while_server_handler_remains_charged() {
     let tmp = tempfile::tempdir().unwrap();
     let (server, server_gate, server_clock) =
@@ -447,6 +454,7 @@ impl Drop for DropFactory {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn listener_shutdown_keeps_worker_quota_until_handler_dependencies_are_destroyed() {
     let tmp = tempfile::tempdir().unwrap();
     let (host, gate, _) = host(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
@@ -517,6 +525,7 @@ impl Handler for CleanupEndpoint {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn failed_handshake_keeps_connection_slot_until_endpoint_cleanup_finishes() {
     let tmp = tempfile::tempdir().unwrap();
     let (host, gate, clock) = host(&tmp.path().join("execution"), Arc::new(Sink::default()), 1);
