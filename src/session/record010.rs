@@ -16,6 +16,9 @@ const LIMIT: u64 = 1000;
 const MAX_AAD: usize = 4033;
 const MAX_WIRE: usize = 8 * 1024 * 1024;
 
+#[cfg(test)]
+type TestClock = std::sync::Arc<dyn Fn() -> Instant + Send + Sync>;
+
 /// Owns directional counters and replay state; not Clone or serializable.
 /// Reconstructing with an old seed would reuse nonces and is forbidden.
 pub struct RecordSession010 {
@@ -28,6 +31,8 @@ pub struct RecordSession010 {
     created: Instant,
     active: Instant,
     closed: bool,
+    #[cfg(test)]
+    clock: Option<TestClock>,
 }
 fn invalid(message: &str) -> Error {
     Error::InvalidInput(message.into())
@@ -35,6 +40,14 @@ fn invalid(message: &str) -> Error {
 impl RecordSession010 {
     /// Accepts the 32-byte seed and transcript hash from a fresh authenticated handshake.
     pub fn new(seed: &[u8], th: &[u8], initiator: bool) -> Result<Self> {
+        Self::new_sampled(seed, th, initiator, Instant::now)
+    }
+    fn new_sampled(
+        seed: &[u8],
+        th: &[u8],
+        initiator: bool,
+        sample: impl FnOnce() -> Instant,
+    ) -> Result<Self> {
         let seed: [u8; 32] = seed
             .try_into()
             .map_err(|_| invalid("seed must be 32 bytes"))?;
@@ -45,7 +58,7 @@ impl RecordSession010 {
         hash.update(b"sage-session|0.10.0");
         hash.update(th);
         let sid = URL_SAFE_NO_PAD.encode(&hash.finalize()[..16]);
-        let now = Instant::now();
+        let now = sample();
         Ok(Self {
             seed: Zeroizing::new(seed),
             th,
@@ -56,7 +69,29 @@ impl RecordSession010 {
             created: now,
             active: now,
             closed: false,
+            #[cfg(test)]
+            clock: None,
         })
+    }
+    // Test-only construction: a clock is selected before created/active exist.
+    // There is deliberately no setter that can reset an already-owned session.
+    #[cfg(test)]
+    pub(crate) fn new_with_test_clock(
+        seed: &[u8],
+        th: &[u8],
+        initiator: bool,
+        clock: TestClock,
+    ) -> Result<Self> {
+        let mut session = Self::new_sampled(seed, th, initiator, || clock())?;
+        session.clock = Some(clock);
+        Ok(session)
+    }
+    fn now(&self) -> Instant {
+        #[cfg(test)]
+        if let Some(clock) = &self.clock {
+            return clock();
+        }
+        Instant::now()
     }
     /// Public identifier derived from the transcript.
     pub fn id(&self) -> &str {
@@ -67,8 +102,23 @@ impl RecordSession010 {
         self.seed.zeroize();
         self.closed = true;
     }
-    fn live(&mut self) -> Result<()> {
-        self.live_at(Instant::now())
+    fn live(&mut self, _stage: &str) -> Result<()> {
+        let now = self.now();
+        #[cfg(test)]
+        let was_closed = self.closed;
+        let result = self.live_at(now);
+        #[cfg(test)]
+        if result.is_err() {
+            eprintln!(
+                "record-lifetime-refusal stage={} closed_before={} absolute_ns={} idle_ns={} explicit_test_clock={}",
+                _stage,
+                was_closed,
+                now.duration_since(self.created).as_nanos(),
+                now.duration_since(self.active).as_nanos(),
+                self.clock.is_some(),
+            );
+        }
+        result
     }
     fn live_at(&mut self, now: Instant) -> Result<()> {
         if self.closed
@@ -116,7 +166,7 @@ impl RecordSession010 {
     /// Allocate a sequence and return wire bytes. Transport retries reuse these
     /// bytes; they must not recreate a record by encrypting again.
     pub fn seal(&mut self, plaintext: &[u8], caller_aad: &[u8]) -> Result<Vec<u8>> {
-        self.live()?;
+        self.live("pre-seal")?;
         if caller_aad.len() > MAX_AAD || plaintext.len() > MAX_WIRE - 36 {
             return Err(invalid("record size limit"));
         }
@@ -141,11 +191,11 @@ impl RecordSession010 {
                 },
             )
             .map_err(|_| Error::CryptoError("record encryption failed".into()))?;
-        self.live()?;
+        self.live("post-seal")?;
         let mut wire = seq.to_be_bytes().to_vec();
         wire.extend(nonce);
         wire.extend(encrypted);
-        self.active = Instant::now();
+        self.active = self.now();
         Ok(wire)
     }
     /// Authenticate and accept once. Exclusive mutable access serializes replay
@@ -161,7 +211,7 @@ impl RecordSession010 {
         caller_aad: &[u8],
         accept: impl FnOnce() -> Result<()>,
     ) -> Result<Vec<u8>> {
-        self.live()?;
+        self.live("pre-open")?;
         if wire.len() < 36 || wire.len() > MAX_WIRE || caller_aad.len() > MAX_AAD {
             return Err(invalid("record size limit"));
         }
@@ -196,7 +246,7 @@ impl RecordSession010 {
                 },
             )
             .map_err(|_| Error::Verification("record authentication failed".into()))?;
-        if let Err(error) = self.live() {
+        if let Err(error) = self.live("post-open") {
             plaintext.zeroize();
             return Err(error);
         }
@@ -205,7 +255,7 @@ impl RecordSession010 {
             return Err(error);
         }
         self.seen[index] |= bit;
-        self.active = Instant::now();
+        self.active = self.now();
         Ok(plaintext)
     }
 }
@@ -214,6 +264,94 @@ impl RecordSession010 {
 mod tests {
     use super::*;
     use serde_json::Value;
+    use std::sync::{
+        atomic::{AtomicU64, AtomicUsize, Ordering::SeqCst},
+        Arc,
+    };
+
+    fn controlled_session(initiator: bool) -> (RecordSession010, Arc<AtomicU64>) {
+        let epoch = Instant::now();
+        let ticks = Arc::new(AtomicU64::new(0));
+        let current = ticks.clone();
+        let clock: TestClock =
+            Arc::new(move || epoch + Duration::from_millis(current.load(SeqCst)));
+        let session =
+            RecordSession010::new_with_test_clock(&[1; 32], &[2; 32], initiator, clock).unwrap();
+        (session, ticks)
+    }
+
+    #[test]
+    fn explicit_clock_preserves_lifetime_and_failed_acceptance() {
+        let (mut idle, ticks) = controlled_session(true);
+        let origin = idle.created;
+        ticks.store(599_000, SeqCst);
+        assert!(idle.seal(b"inert", b"").is_ok());
+        assert_eq!(idle.created, origin);
+        assert_eq!(idle.active, origin + Duration::from_secs(599));
+        ticks.store(1_199_000, SeqCst);
+        assert!(idle.seal(b"inert", b"").is_err());
+        assert!(idle.closed);
+        assert_eq!(*idle.seed, [0; 32]);
+
+        let (mut absolute, ticks) = controlled_session(true);
+        let origin = absolute.created;
+        for step in 1..=6 {
+            ticks.store(step * 599_000, SeqCst);
+            assert!(absolute.seal(b"inert", b"").is_ok());
+            assert_eq!(absolute.created, origin);
+        }
+        ticks.store(3_600_000, SeqCst);
+        assert!(absolute.seal(b"inert", b"").is_err());
+        assert!(absolute.closed);
+        assert_eq!(*absolute.seed, [0; 32]);
+
+        let (mut sender, _) = controlled_session(true);
+        let (mut receiver, ticks) = controlled_session(false);
+        let first = sender.seal(b"first", b"").unwrap();
+        ticks.store(1_000, SeqCst);
+        assert_eq!(receiver.open(&first, b"").unwrap(), b"first");
+        let active = receiver.active;
+        let origin = receiver.created;
+        ticks.store(2_000, SeqCst);
+        assert!(receiver.open(&first, b"").is_err());
+        let mut corrupt = sender.seal(b"second", b"").unwrap();
+        *corrupt.last_mut().unwrap() ^= 1;
+        assert!(receiver.open(&corrupt, b"").is_err());
+        assert_eq!(receiver.active, active);
+        assert_eq!(receiver.created, origin);
+        assert!(!receiver.closed);
+    }
+
+    #[test]
+    fn explicit_clock_checks_expiry_after_crypto() {
+        for opening in [false, true] {
+            let epoch = Instant::now();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let observed = calls.clone();
+            let clock: TestClock = Arc::new(move || {
+                let sample = observed.fetch_add(1, SeqCst);
+                epoch + Duration::from_secs(if sample < 2 { 0 } else { 600 })
+            });
+            let mut session =
+                RecordSession010::new_with_test_clock(&[1; 32], &[2; 32], !opening, clock).unwrap();
+            let result = if opening {
+                let mut peer = RecordSession010::new(&[1; 32], &[2; 32], true).unwrap();
+                let wire = peer.seal(b"inert", b"").unwrap();
+                session.open(&wire, b"")
+            } else {
+                session.seal(b"inert", b"")
+            };
+            assert!(result.is_err());
+            assert_eq!(calls.load(SeqCst), 3);
+            assert!(session.closed);
+            assert_eq!(*session.seed, [0; 32]);
+            assert_eq!(session.created, epoch);
+            assert_eq!(session.active, epoch);
+            assert_eq!(session.next, u64::from(!opening));
+            assert_eq!(session.seen, [0; 16]);
+        }
+    }
+
     #[test]
     fn independent_vectors() {
         let suite: Value = serde_json::from_str(include_str!(

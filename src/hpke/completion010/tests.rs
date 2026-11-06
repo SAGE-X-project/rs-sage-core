@@ -16,6 +16,7 @@ struct Control {
 struct Controls(
     Rc<RefCell<Control>>,
     std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    std::sync::Arc<std::sync::atomic::AtomicU64>,
 );
 impl Clock for Controls {
     fn now(&mut self) -> Result<Stamp> {
@@ -23,6 +24,10 @@ impl Clock for Controls {
         if c.mode == "clock-error" {
             return Err(bad());
         }
+        self.2.store(
+            u64::try_from(c.mono).map_err(|_| bad())?,
+            std::sync::atomic::Ordering::SeqCst,
+        );
         Ok(Stamp {
             mono_ms: c.mono,
             unix: c.utc,
@@ -204,6 +209,14 @@ fn pair() -> (
     Controls,
     tempfile::TempDir,
 ) {
+    pair_with_record_clock(false)
+}
+fn pair_with_record_clock(controlled: bool) -> (
+    CompletionEndpoint010,
+    CompletionEndpoint010,
+    Controls,
+    tempfile::TempDir,
+) {
     let tmp = tempfile::tempdir().unwrap();
     let controls = Controls(
         Rc::new(RefCell::new(Control {
@@ -211,7 +224,17 @@ fn pair() -> (
             ..Default::default()
         })),
         std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     );
+    let epoch = std::time::Instant::now();
+    let ticks = controls.2.clone();
+    let record_clock: RecordTestClock = std::sync::Arc::new(move || {
+        epoch
+            .checked_add(std::time::Duration::from_millis(
+                ticks.load(std::sync::atomic::Ordering::SeqCst),
+            ))
+            .expect("bounded explicit record test clock")
+    });
     let make = |did: &str, n: u8| {
         let gate = Gate::new(
             Config {
@@ -225,7 +248,7 @@ fn pair() -> (
             Box::new(Journal::open(&tmp.path().join(n.to_string()), true).unwrap()),
         )
         .unwrap();
-        CompletionEndpoint010::new(
+        let mut endpoint = CompletionEndpoint010::new(
             did,
             &format!("{did}#signing-1"),
             &[n; 32],
@@ -237,7 +260,11 @@ fn pair() -> (
                 seen: HashSet::new(),
             }),
         )
-        .unwrap()
+        .unwrap();
+        if controlled {
+            endpoint.record_clock = Some(record_clock.clone());
+        }
+        endpoint
     };
     (make(ALICE, 1), make(BOB, 2), controls, tmp)
 }
