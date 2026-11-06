@@ -107,14 +107,14 @@ jobs:
       run: cross build --release --target ${{ matrix.target }} --features ffi
 
   miri:
-    name: Miri (${{ matrix.partition }}/12)
+    name: Miri (${{ matrix.partition }}/27)
     runs-on: ubuntu-latest
     timeout-minutes: 180
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        partition: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        partition: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
@@ -153,19 +153,27 @@ jobs:
                 names.append(line[:-6])
             elif not re.fullmatch(r"[0-9]+ tests?, [0-9]+ benchmarks?", line):
                 raise SystemExit("unexpected library test inventory entry: " + line)
-        if len(names) < 12 or any(not name for name in names) or len(names) != len(set(names)):
+        if len(names) < 27 or any(not name for name in names) or len(names) != len(set(names)):
             raise SystemExit("empty or duplicate library test inventory")
         names.sort()
+        # Large boundary cases retain full inputs and receive dedicated jobs.
         isolated = [
             "execution010::tests::recovery_conversion_failure_keeps_exclusive_ownership",
             "guard010::dispatch_tests::storage_capacity_failure_retires_gate",
             "guard010::dispatch_tests::publication_tests::capacity_cannot_publish_unpersisted_completion",
             "guard010::dispatch_tests::publication_tests::unknown_and_reject_capacity_never_release_terminal",
+            "guard010::mcp_tests::mcp_envelope_size_boundary_exact",
+            "guard010::mcp_tests::mcp_envelope_size_boundary_over",
+            "guard010::tests::frozen_guard_case_json_bytes_1048576",
+            "guard010::tests::frozen_guard_case_json_members_4096",
+            "guard010::tests::frozen_guard_case_policy_members_2044",
+            "guard010::tests::frozen_guard_case_original_bytes_max",
+            "guard010::tests::manifest_file_limit",
         ]
         if len(isolated) != len(set(isolated)) or not set(isolated).issubset(names):
             raise SystemExit("full-capacity tests are missing or duplicated in the inventory")
         regular = [name for name in names if name not in isolated]
-        partitions = [regular[index::8] for index in range(8)] + [[name] for name in isolated]
+        partitions = [regular[index::16] for index in range(16)] + [[name] for name in isolated]
         flattened = [name for partition in partitions for name in partition]
         if len(flattened) != len(set(flattened)) or set(flattened) != set(names):
             raise SystemExit("library test partitions do not cover the complete inventory")
@@ -175,7 +183,7 @@ jobs:
         selected = partitions[index]
         root.joinpath("selected.txt").write_text("\n".join(selected) + "\n")
         canonical = ("\n".join(names) + "\n").encode()
-        manifest = {"partition": index, "partition_count": 12, "inventory_count": len(names),
+        manifest = {"partition": index, "partition_count": 27, "inventory_count": len(names),
                     "inventory_sha256": hashlib.sha256(canonical).hexdigest(),
                     "isolated_full_capacity_tests": isolated,
                     "partitions": partitions, "selected": selected}

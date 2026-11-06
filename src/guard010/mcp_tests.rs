@@ -57,18 +57,25 @@ fn mcp_client_consumes_invalid_and_valid_invocations() {
 }
 
 #[test]
-fn mcp_envelope_size_boundary() {
+fn mcp_envelope_size_boundary_exact() {
+    check_mcp_envelope_size_boundary(0);
+}
+
+#[test]
+fn mcp_envelope_size_boundary_over() {
+    check_mcp_envelope_size_boundary(1);
+}
+
+fn check_mcp_envelope_size_boundary(extra: usize) {
     let mut envelope = json!({"result":{"status":"completed","created":1700000000,"expires":1700000300,"output":{"text":""}},"proof":"test-only"});
     let base = encode(&envelope).unwrap().len();
-    for extra in [0, 1] {
-        envelope["result"]["output"]["text"] = json!("a".repeat(MAX_BYTES - base + extra));
-        let raw = serde_json::to_vec(&envelope).unwrap();
-        let text = if extra == 0 {
-            canonicalize(&raw).unwrap()
-        } else {
-            raw
-        };
-        let wire=serde_json::to_vec(&json!({"structuredContent":envelope,"content":[{"type":"text","text":std::str::from_utf8(&text).unwrap()}],"isError":false})).unwrap();
-        assert_eq!(parse_mcp_result(MCP_VERSION, &wire).is_ok(), extra == 0);
-    }
+    envelope["result"]["output"]["text"] = json!("a".repeat(MAX_BYTES - base + extra));
+    let raw = serde_json::to_vec(&envelope).unwrap();
+    let text = if extra == 0 {
+        canonicalize(&raw).unwrap()
+    } else {
+        raw
+    };
+    let wire=serde_json::to_vec(&json!({"structuredContent":envelope,"content":[{"type":"text","text":std::str::from_utf8(&text).unwrap()}],"isError":false})).unwrap();
+    assert_eq!(parse_mcp_result(MCP_VERSION, &wire).is_ok(), extra == 0);
 }
