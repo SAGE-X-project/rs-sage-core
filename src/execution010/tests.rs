@@ -13,6 +13,7 @@ fn base() -> Entry {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn shared_vectors() {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return;
@@ -57,6 +58,7 @@ fn shared_vectors() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn storage_failures() {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return;
@@ -123,6 +125,7 @@ fn recovery_conversion_failure_keeps_exclusive_ownership() {
         .contains("\"state\":\"UNKNOWN\""));
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn concurrent_reservation() {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return;
@@ -147,6 +150,7 @@ fn concurrent_reservation() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn terminal_write_failure() {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return;
@@ -191,6 +195,7 @@ fn reject_noncanonical_history() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn reserve_reads_all_existing_states_without_transitions() {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return;
@@ -222,6 +227,7 @@ fn reserve_reads_all_existing_states_without_transitions() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn failed_reservation_does_not_publish_identity() {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return;
