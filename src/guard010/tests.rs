@@ -32,9 +32,7 @@ fn frozen_independent_vectors() {
 fn check_frozen_guard_case(id: &str) {
     let c = frozen_cases()
         .iter()
-        .find(|c| {
-            c["id"] == id && c["operation"].as_str().unwrap().starts_with("sage.guard.")
-        })
+        .find(|c| c["id"] == id && c["operation"].as_str().unwrap().starts_with("sage.guard."))
         .unwrap();
     let op = c["operation"].as_str().unwrap();
     let (verdict, output) = super::fixtures_test::observe(op, c["input"].clone()).unwrap();
