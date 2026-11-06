@@ -107,10 +107,14 @@ jobs:
       run: cross build --release --target ${{ matrix.target }} --features ffi
 
   miri:
-    name: Miri
+    name: Miri (${{ matrix.partition }}/8)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
@@ -123,10 +127,94 @@ jobs:
     - name: Configure Rust cache
       uses: Swatinem/rust-cache@v2
 
-    - name: Run Miri on the library tests
+    - name: List and partition every library test
+      # Listing preserves ignored tests; each exact name belongs to one job.
+      env:
+        MIRIFLAGS: -Zmiri-disable-isolation
+        CARGO_TERM_COLOR: never
+        MIRI_PARTITION: ${{ matrix.partition }}
+      run: |
+        mkdir miri-evidence
+        cargo +nightly miri setup
+        rustc +nightly -Vv > miri-evidence/toolchain.txt
+        cargo +nightly miri --version >> miri-evidence/toolchain.txt
+        git rev-parse HEAD HEAD^{tree} > miri-evidence/source.txt
+        cargo +nightly miri test --lib -- --list --format terse > miri-evidence/inventory.txt
+        python3 - <<'PYTHON'
+        import hashlib, json, os, re
+        from pathlib import Path
+        root = Path("miri-evidence")
+        lines = root.joinpath("inventory.txt").read_text().splitlines()
+        names = []
+        for line in lines:
+            if not line.strip():
+                continue
+            if line.endswith(": test"):
+                names.append(line[:-6])
+            elif not re.fullmatch(r"[0-9]+ tests?, [0-9]+ benchmarks?", line):
+                raise SystemExit("unexpected library test inventory entry: " + line)
+        if len(names) < 8 or any(not name for name in names) or len(names) != len(set(names)):
+            raise SystemExit("empty or duplicate library test inventory")
+        names.sort()
+        partitions = [names[index::8] for index in range(8)]
+        flattened = [name for partition in partitions for name in partition]
+        if len(flattened) != len(set(flattened)) or set(flattened) != set(names):
+            raise SystemExit("library test partitions do not cover the complete inventory")
+        index = int(os.environ["MIRI_PARTITION"])
+        if not 0 <= index < len(partitions) or not partitions[index]:
+            raise SystemExit("invalid or empty library test partition")
+        selected = partitions[index]
+        root.joinpath("selected.txt").write_text("\n".join(selected) + "\n")
+        canonical = ("\n".join(names) + "\n").encode()
+        manifest = {"partition": index, "partition_count": 8, "inventory_count": len(names),
+                    "inventory_sha256": hashlib.sha256(canonical).hexdigest(),
+                    "partitions": partitions, "selected": selected}
+        root.joinpath("selection.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        print(f"Miri partition {index}: {len(selected)}/{len(names)} library tests")
+        PYTHON
+
+    - name: Run the selected library tests
       # These library tests use wall-clock timestamps from the host.
       env:
         MIRIFLAGS: -Zmiri-disable-isolation
+        CARGO_TERM_COLOR: never
       run: |
-        cargo +nightly miri setup
-        cargo +nightly miri test --lib
+        mapfile -t tests < miri-evidence/selected.txt
+        set +e
+        cargo +nightly miri test --lib -- --exact --color never "${tests[@]}" 2>&1 | tee miri-evidence/results.txt
+        status=("${PIPESTATUS[@]}")
+        set -e
+        printf '%s\n' "${status[0]}" > miri-evidence/exit-code.txt
+        if (( status[1] != 0 )); then exit "${status[1]}"; fi
+        exit "${status[0]}"
+
+    - name: Check every selected test has a terminal result
+      run: |
+        python3 - <<'PYTHON'
+        import json, re
+        from pathlib import Path
+        root = Path("miri-evidence")
+        selection = json.loads(root.joinpath("selection.json").read_text())
+        selected = set(selection["selected"])
+        terminal = {}
+        for line in root.joinpath("results.txt").read_text().splitlines():
+            match = re.fullmatch(r"test (.+?)(?: - should panic)? \.\.\. (ok|FAILED|ignored(?:,.*)?)", line)
+            if match is None:
+                continue
+            name, status = match.groups()
+            if name not in selected or name in terminal or status == "FAILED":
+                raise SystemExit("unexpected, duplicate, or failed Miri test result: " + line)
+            terminal[name] = status
+        if set(terminal) != selected:
+            raise SystemExit("Miri did not report every selected library test")
+        root.joinpath("terminal.json").write_text(json.dumps(terminal, indent=2) + "\n")
+        print(f"Verified terminal results for all {len(terminal)} selected library tests")
+        PYTHON
+
+    - name: Upload Miri test inventory and results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: miri-library-${{ matrix.partition }}
+        path: miri-evidence
+        if-no-files-found: error
