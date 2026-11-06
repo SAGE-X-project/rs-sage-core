@@ -27,9 +27,47 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v7
 
-    - name: Check memory test result validation (Linux only)
+    - name: Check memory test result validation and coverage (Linux only)
       if: runner.os == 'Linux'
-      run: python3 -m unittest discover -s scripts -p 'test_check_miri_results.py'
+      shell: bash
+      env:
+        CHECKER_COVERAGE_DIR: ${{ runner.temp }}/sage-checker-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+        CHECKER_COVERAGE_TOOL: ${{ runner.temp }}/sage-checker-tool-${{ github.run_id }}-${{ github.run_attempt }}
+      run: |
+        mkdir "$CHECKER_COVERAGE_DIR"
+        test ! -e "$CHECKER_COVERAGE_TOOL"
+        python3 -m venv "$CHECKER_COVERAGE_TOOL"
+        checker_python="$CHECKER_COVERAGE_TOOL/bin/python"
+        "$checker_python" -m pip install --disable-pip-version-check --no-index --no-deps --require-hashes \
+          -r scripts/checker-coverage-requirements.txt 2>&1 | tee "$CHECKER_COVERAGE_DIR/install.txt"
+        "$checker_python" --version > "$CHECKER_COVERAGE_DIR/python-version.txt"
+        "$checker_python" -m coverage --version > "$CHECKER_COVERAGE_DIR/coverage-version.txt"
+        git rev-parse HEAD 'HEAD^{tree}' > "$CHECKER_COVERAGE_DIR/source.txt"
+        sha256sum scripts/check_miri_results.py scripts/miri-checker.coveragerc \
+          scripts/checker-coverage-requirements.txt > "$CHECKER_COVERAGE_DIR/source-sha256.txt"
+        set +e
+        "$checker_python" -m coverage run --rcfile=scripts/miri-checker.coveragerc \
+          -m unittest discover -s scripts -p 'test_check_miri_results.py' 2>&1 | tee "$CHECKER_COVERAGE_DIR/tests.txt"
+        checker_status=("${PIPESTATUS[@]}")
+        set -e
+        printf '%s\n' "${checker_status[0]}" > "$CHECKER_COVERAGE_DIR/test-exit-code.txt"
+        printf '%s\n' "${checker_status[1]}" > "$CHECKER_COVERAGE_DIR/log-exit-code.txt"
+        "$checker_python" -m coverage combine --rcfile=scripts/miri-checker.coveragerc --keep "$CHECKER_COVERAGE_DIR"
+        "$checker_python" -m coverage json --rcfile=scripts/miri-checker.coveragerc --keep-combined --fail-under=0 \
+          -o "$CHECKER_COVERAGE_DIR/coverage.json" scripts/check_miri_results.py
+        "$checker_python" -m coverage report --rcfile=scripts/miri-checker.coveragerc --keep-combined \
+          scripts/check_miri_results.py | tee "$CHECKER_COVERAGE_DIR/coverage.txt"
+        test "${checker_status[0]}" -eq 0
+        test "${checker_status[1]}" -eq 0
+
+    - name: Upload memory result checker coverage (Linux only)
+      if: always() && runner.os == 'Linux'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: memory-result-checker-coverage
+        path: ${{ runner.temp }}/sage-checker-coverage-${{ github.run_id }}-${{ github.run_attempt }}/
+        if-no-files-found: error
+        include-hidden-files: true
 
     - name: Checkout sage-spec (test vectors)
       uses: actions/checkout@v7
