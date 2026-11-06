@@ -107,14 +107,14 @@ jobs:
       run: cross build --release --target ${{ matrix.target }} --features ffi
 
   miri:
-    name: Miri (${{ matrix.partition }}/8)
+    name: Miri (${{ matrix.partition }}/12)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        partition: [0, 1, 2, 3, 4, 5, 6, 7]
+        partition: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
@@ -153,10 +153,19 @@ jobs:
                 names.append(line[:-6])
             elif not re.fullmatch(r"[0-9]+ tests?, [0-9]+ benchmarks?", line):
                 raise SystemExit("unexpected library test inventory entry: " + line)
-        if len(names) < 8 or any(not name for name in names) or len(names) != len(set(names)):
+        if len(names) < 12 or any(not name for name in names) or len(names) != len(set(names)):
             raise SystemExit("empty or duplicate library test inventory")
         names.sort()
-        partitions = [names[index::8] for index in range(8)]
+        isolated = [
+            "execution010::tests::recovery_conversion_failure_keeps_exclusive_ownership",
+            "guard010::dispatch_tests::storage_capacity_failure_retires_gate",
+            "guard010::dispatch_tests::publication_tests::capacity_cannot_publish_unpersisted_completion",
+            "guard010::dispatch_tests::publication_tests::unknown_and_reject_capacity_never_release_terminal",
+        ]
+        if len(isolated) != len(set(isolated)) or not set(isolated).issubset(names):
+            raise SystemExit("full-capacity tests are missing or duplicated in the inventory")
+        regular = [name for name in names if name not in isolated]
+        partitions = [regular[index::8] for index in range(8)] + [[name] for name in isolated]
         flattened = [name for partition in partitions for name in partition]
         if len(flattened) != len(set(flattened)) or set(flattened) != set(names):
             raise SystemExit("library test partitions do not cover the complete inventory")
@@ -166,8 +175,9 @@ jobs:
         selected = partitions[index]
         root.joinpath("selected.txt").write_text("\n".join(selected) + "\n")
         canonical = ("\n".join(names) + "\n").encode()
-        manifest = {"partition": index, "partition_count": 8, "inventory_count": len(names),
+        manifest = {"partition": index, "partition_count": 12, "inventory_count": len(names),
                     "inventory_sha256": hashlib.sha256(canonical).hexdigest(),
+                    "isolated_full_capacity_tests": isolated,
                     "partitions": partitions, "selected": selected}
         root.joinpath("selection.json").write_text(json.dumps(manifest, indent=2) + "\n")
         print(f"Miri partition {index}: {len(selected)}/{len(names)} library tests")
