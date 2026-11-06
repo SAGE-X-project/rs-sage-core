@@ -211,7 +211,6 @@ impl Default for NonceStore {
 mod tests {
     use super::*;
     use std::thread;
-    use std::time::Duration as StdDuration;
 
     #[test]
     fn test_nonce_store_basic() {
@@ -229,35 +228,44 @@ mod tests {
 
     #[test]
     fn test_nonce_store_expiration() {
-        // Use very short TTL for testing
-        let store = NonceStore::new(Duration::milliseconds(100));
+        let store = NonceStore::new(Duration::minutes(5));
 
-        // Mark a nonce
+        // Fixed timestamps keep this independent of scheduler and coverage delays.
+        store
+            .entries
+            .insert("nonce-expiring".to_string(), DateTime::<Utc>::MAX_UTC);
+        assert!(!store.check_and_mark("nonce-expiring"));
+
+        store
+            .entries
+            .insert("nonce-expiring".to_string(), DateTime::<Utc>::MIN_UTC);
+
+        // Lazy cleanup permits reuse only after the retained entry expires.
         assert!(store.check_and_mark("nonce-expiring"));
-
-        // Wait for expiration
-        thread::sleep(StdDuration::from_millis(150));
-
-        // Should be able to use the same nonce again after expiration
-        assert!(store.check_and_mark("nonce-expiring"));
+        assert_eq!(store.len(), 1);
     }
 
     #[test]
     fn test_cleanup_expired() {
-        let store = NonceStore::new(Duration::milliseconds(100));
+        let store = NonceStore::new(Duration::minutes(5));
 
-        // Add multiple nonces
-        assert!(store.check_and_mark("nonce-1"));
-        assert!(store.check_and_mark("nonce-2"));
-        assert!(store.check_and_mark("nonce-3"));
+        // Seed expired and live entries without invoking lazy cleanup first.
+        store
+            .entries
+            .insert("nonce-1".to_string(), DateTime::<Utc>::MIN_UTC);
+        store
+            .entries
+            .insert("nonce-2".to_string(), DateTime::<Utc>::MIN_UTC);
+        store
+            .entries
+            .insert("nonce-3".to_string(), DateTime::<Utc>::MAX_UTC);
         assert_eq!(store.len(), 3);
 
-        // Wait for expiration
-        thread::sleep(StdDuration::from_millis(150));
-
-        // Cleanup
         store.cleanup_expired();
-        assert_eq!(store.len(), 0);
+        assert_eq!(store.len(), 1);
+        assert!(!store.entries.contains_key("nonce-1"));
+        assert!(!store.entries.contains_key("nonce-2"));
+        assert!(store.entries.contains_key("nonce-3"));
     }
 
     #[test]

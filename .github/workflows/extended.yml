@@ -125,5 +125,5 @@ jobs:
 
     - name: Run Miri on the library tests
       run: |
-        cargo miri setup
-        cargo miri test --lib
+        cargo +nightly miri setup
+        cargo +nightly miri test --lib
