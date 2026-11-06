@@ -124,6 +124,9 @@ jobs:
       uses: Swatinem/rust-cache@v2
 
     - name: Run Miri on the library tests
+      # These library tests use wall-clock timestamps from the host.
+      env:
+        MIRIFLAGS: -Zmiri-disable-isolation
       run: |
         cargo +nightly miri setup
         cargo +nightly miri test --lib
