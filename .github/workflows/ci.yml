@@ -27,6 +27,10 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v7
 
+    - name: Check memory test result validation (Linux only)
+      if: runner.os == 'Linux'
+      run: python3 -m unittest discover -s scripts -p 'test_check_miri_results.py'
+
     - name: Checkout sage-spec (test vectors)
       uses: actions/checkout@v7
       with:

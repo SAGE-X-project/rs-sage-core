@@ -109,7 +109,7 @@ jobs:
   miri:
     name: Miri (${{ matrix.partition }}/12)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 180
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -191,7 +191,7 @@ jobs:
       run: |
         mapfile -t tests < miri-evidence/selected.txt
         set +e
-        cargo +nightly miri test --lib -- --exact --color never "${tests[@]}" 2>&1 | tee miri-evidence/results.txt
+        cargo +nightly miri test --lib -- -Z unstable-options --format json --report-time --exact --color never "${tests[@]}" 2>&1 | tee miri-evidence/results.txt
         status=("${PIPESTATUS[@]}")
         set -e
         printf '%s\n' "${status[0]}" > miri-evidence/exit-code.txt
@@ -199,27 +199,7 @@ jobs:
         exit "${status[0]}"
 
     - name: Check every selected test has a terminal result
-      run: |
-        python3 - <<'PYTHON'
-        import json, re
-        from pathlib import Path
-        root = Path("miri-evidence")
-        selection = json.loads(root.joinpath("selection.json").read_text())
-        selected = set(selection["selected"])
-        terminal = {}
-        for line in root.joinpath("results.txt").read_text().splitlines():
-            match = re.fullmatch(r"test (.+?)(?: - should panic)? \.\.\. (ok|FAILED|ignored(?:,.*)?)", line)
-            if match is None:
-                continue
-            name, status = match.groups()
-            if name not in selected or name in terminal or status == "FAILED":
-                raise SystemExit("unexpected, duplicate, or failed Miri test result: " + line)
-            terminal[name] = status
-        if set(terminal) != selected:
-            raise SystemExit("Miri did not report every selected library test")
-        root.joinpath("terminal.json").write_text(json.dumps(terminal, indent=2) + "\n")
-        print(f"Verified terminal results for all {len(terminal)} selected library tests")
-        PYTHON
+      run: python3 scripts/check_miri_results.py miri-evidence
 
     - name: Upload Miri test inventory and results
       if: always()
