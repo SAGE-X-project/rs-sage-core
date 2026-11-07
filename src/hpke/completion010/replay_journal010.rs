@@ -290,6 +290,7 @@ mod tests {
         }
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn vectors() {
         let f: serde_json::Value = serde_json::from_str(include_str!(
             "../../../tests/fixtures/replay-journal010.json"
@@ -346,6 +347,7 @@ mod tests {
         }
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
     fn faults() {
         for kind in ["lock", "partial", "blank", "capacity", "io"] {
             let dir = tempfile::tempdir().unwrap();

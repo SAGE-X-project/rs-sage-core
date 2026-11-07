@@ -204,7 +204,9 @@ impl AuthenticatedCompletion010 {
         }
         let wire = match self.records.as_mut().ok_or_else(bad)?.seal(plaintext, &aad) {
             Ok(w) => w,
-            Err(_) => {
+            Err(_error) => {
+                #[cfg(test)]
+                eprintln!("completion-request record-seal-refusal: {_error}");
                 self.close();
                 return Err(bad());
             }
@@ -507,7 +509,9 @@ impl AuthenticatedCompletion010 {
         }
         let record = match self.records.as_mut().ok_or_else(bad)?.seal(data, &aad) {
             Ok(v) => v,
-            Err(_) => {
+            Err(_error) => {
+                #[cfg(test)]
+                eprintln!("completion-response record-seal-refusal: {_error}");
                 self.close();
                 return Err(bad());
             }

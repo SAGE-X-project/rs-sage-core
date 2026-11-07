@@ -16,6 +16,7 @@ struct Control {
 struct Controls(
     Rc<RefCell<Control>>,
     std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    std::sync::Arc<std::sync::atomic::AtomicU64>,
 );
 impl Clock for Controls {
     fn now(&mut self) -> Result<Stamp> {
@@ -23,6 +24,10 @@ impl Clock for Controls {
         if c.mode == "clock-error" {
             return Err(bad());
         }
+        self.2.store(
+            u64::try_from(c.mono).map_err(|_| bad())?,
+            std::sync::atomic::Ordering::SeqCst,
+        );
         Ok(Stamp {
             mono_ms: c.mono,
             unix: c.utc,
@@ -204,6 +209,16 @@ fn pair() -> (
     Controls,
     tempfile::TempDir,
 ) {
+    pair_with_record_clock(false)
+}
+fn pair_with_record_clock(
+    controlled: bool,
+) -> (
+    CompletionEndpoint010,
+    CompletionEndpoint010,
+    Controls,
+    tempfile::TempDir,
+) {
     let tmp = tempfile::tempdir().unwrap();
     let controls = Controls(
         Rc::new(RefCell::new(Control {
@@ -211,7 +226,17 @@ fn pair() -> (
             ..Default::default()
         })),
         std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     );
+    let epoch = std::time::Instant::now();
+    let ticks = controls.2.clone();
+    let record_clock: RecordTestClock = std::sync::Arc::new(move || {
+        epoch
+            .checked_add(std::time::Duration::from_millis(
+                ticks.load(std::sync::atomic::Ordering::SeqCst),
+            ))
+            .expect("bounded explicit record test clock")
+    });
     let make = |did: &str, n: u8| {
         let gate = Gate::new(
             Config {
@@ -225,7 +250,7 @@ fn pair() -> (
             Box::new(Journal::open(&tmp.path().join(n.to_string()), true).unwrap()),
         )
         .unwrap();
-        CompletionEndpoint010::new(
+        let mut endpoint = CompletionEndpoint010::new(
             did,
             &format!("{did}#signing-1"),
             &[n; 32],
@@ -237,7 +262,11 @@ fn pair() -> (
                 seen: HashSet::new(),
             }),
         )
-        .unwrap()
+        .unwrap();
+        if controlled {
+            endpoint.record_clock = Some(record_clock.clone());
+        }
+        endpoint
     };
     (make(ALICE, 1), make(BOB, 2), controls, tmp)
 }
@@ -701,107 +730,170 @@ fn session_response_scenarios() {
         "../../../tests/fixtures/session-response010.json"
     ))
     .unwrap();
-    for case in f["cases"].as_array().unwrap() {
-        let kind = case.as_str().unwrap();
-        let (mut a, mut b, c, _tmp) = pair();
-        if kind == "key-expiry-during-commit" {
-            c.0.borrow_mut().expiry = 101
-        }
-        let (mut p, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
-        let (mut server, r) = b.respond(&q, 300).unwrap();
-        let mut client = p.complete(&mut a, &r).unwrap();
-        let mut request = client.seal_request(&mut a, b"request", 300).unwrap();
+    let kinds: Vec<_> = f["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(kinds.len(), 38);
+    assert_eq!(kinds.as_slice(), SESSION_RESPONSE_CASES);
+    let unique: std::collections::BTreeSet<_> = kinds.iter().copied().collect();
+    assert_eq!(unique.len(), kinds.len());
+}
+
+fn check_session_response_scenario(kind: &str) {
+    let (mut a, mut b, c, _tmp) = pair();
+    if kind == "key-expiry-during-commit" {
+        c.0.borrow_mut().expiry = 101
+    }
+    let (mut p, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    let (mut server, r) = b.respond(&q, 300).unwrap();
+    let mut client = p.complete(&mut a, &r).unwrap();
+    let mut request = client.seal_request(&mut a, b"request", 300).unwrap();
+    server.open_request(&mut b, &request).unwrap();
+    if kind == "reverse" {
+        std::mem::swap(&mut a, &mut b);
+        std::mem::swap(&mut client, &mut server);
+        request = client.seal_request(&mut a, b"reverse", 300).unwrap();
         server.open_request(&mut b, &request).unwrap();
-        if kind == "reverse" {
-            std::mem::swap(&mut a, &mut b);
-            std::mem::swap(&mut client, &mut server);
-            request = client.seal_request(&mut a, b"reverse", 300).unwrap();
-            server.open_request(&mut b, &request).unwrap();
+    }
+    let q: Value = serde_json::from_slice(&request).unwrap();
+    let id = q["id"].as_str().unwrap();
+    let error = if [
+        "authentication_failed",
+        "policy_denied",
+        "operation_failed",
+        "unavailable",
+    ]
+    .contains(&kind)
+    {
+        Some(kind)
+    } else {
+        None
+    };
+    let data = if kind == "empty-data" {
+        b"".as_slice()
+    } else {
+        b"result".as_slice()
+    };
+    let response = server.seal_response(&mut b, id, data, error, 300).unwrap();
+    assert!(server.seal_response(&mut b, id, data, error, 300).is_err());
+    let mut other_id = String::new();
+    let mut other_response = Vec::new();
+    if ["cross-request", "out-of-order"].contains(&kind) {
+        let other = client.seal_request(&mut a, b"other", 300).unwrap();
+        server.open_request(&mut b, &other).unwrap();
+        let m: Value = serde_json::from_slice(&other).unwrap();
+        other_id = m["id"].as_str().unwrap().into();
+        other_response = server
+            .seal_response(&mut b, &other_id, b"other-result", None, 300)
+            .unwrap();
+    }
+    let changed = response_mutation(&response, &request, kind, &other_id, &b);
+    let accept =
+        error.is_some() || ["valid", "empty-data", "reverse", "out-of-order"].contains(&kind);
+    let mut closed = false;
+    match kind {
+        "duplicate-terminal" => {
+            client.open_response(&mut a, &response).unwrap();
         }
-        let q: Value = serde_json::from_slice(&request).unwrap();
-        let id = q["id"].as_str().unwrap();
-        let error = if [
-            "authentication_failed",
-            "policy_denied",
-            "operation_failed",
-            "unavailable",
-        ]
-        .contains(&kind)
-        {
-            Some(kind)
-        } else {
-            None
-        };
-        let data = if kind == "empty-data" {
-            b"".as_slice()
-        } else {
-            b"result".as_slice()
-        };
-        let response = server.seal_response(&mut b, id, data, error, 300).unwrap();
-        assert!(server.seal_response(&mut b, id, data, error, 300).is_err());
-        let mut other_id = String::new();
-        let mut other_response = Vec::new();
-        if ["cross-request", "out-of-order"].contains(&kind) {
-            let other = client.seal_request(&mut a, b"other", 300).unwrap();
-            server.open_request(&mut b, &other).unwrap();
-            let m: Value = serde_json::from_slice(&other).unwrap();
-            other_id = m["id"].as_str().unwrap().into();
-            other_response = server
-                .seal_response(&mut b, &other_id, b"other-result", None, 300)
-                .unwrap();
+        "out-of-order" => assert_eq!(
+            client.open_response(&mut a, &other_response).unwrap().data,
+            b"other-result"
+        ),
+        "store-error" => c.0.borrow_mut().mode = kind.into(),
+        "store-delay" | "revoke-init" | "revoke-resp" | "revoke-kem" | "source-error" => {
+            c.0.borrow_mut().mode = kind.into();
+            closed = true
         }
-        let changed = response_mutation(&response, &request, kind, &other_id, &b);
-        let accept =
-            error.is_some() || ["valid", "empty-data", "reverse", "out-of-order"].contains(&kind);
-        let mut closed = false;
-        match kind {
-            "duplicate-terminal" => {
-                client.open_response(&mut a, &response).unwrap();
-            }
-            "out-of-order" => assert_eq!(
-                client.open_response(&mut a, &other_response).unwrap().data,
-                b"other-result"
-            ),
-            "store-error" => c.0.borrow_mut().mode = kind.into(),
-            "store-delay" | "revoke-init" | "revoke-resp" | "revoke-kem" | "source-error" => {
-                c.0.borrow_mut().mode = kind.into();
-                closed = true
-            }
-            "key-expiry-during-commit" => {
-                c.0.borrow_mut().mode = "utc-delay".into();
-                closed = true
-            }
-            "closed" => {
-                client.close();
-                closed = true
-            }
-            "expired" => c.0.borrow_mut().utc = 400,
-            _ => {}
+        "key-expiry-during-commit" => {
+            c.0.borrow_mut().mode = "utc-delay".into();
+            closed = true
         }
-        let before = c.0.borrow().records;
-        let result = client.open_response(&mut a, &changed);
-        assert_eq!(result.is_ok(), accept, "{kind}");
-        if accept {
-            let r = result.unwrap();
-            assert_eq!(r.message_id, id);
-            assert_eq!(r.success, error.is_none());
-            assert_eq!(r.error, error.unwrap_or(""));
-            assert_eq!(r.data, data);
-            assert!(client.open_response(&mut a, &response).is_err());
-        } else {
-            assert_eq!(c.0.borrow().records, before, "{kind}: partial replay");
-            if closed {
-                assert_eq!(client.state(), "CLOSED", "{kind}")
-            } else if !["duplicate-terminal", "expired"].contains(&kind) {
-                c.0.borrow_mut().mode.clear();
-                assert_eq!(
-                    client.open_response(&mut a, &response).unwrap().data,
-                    data,
-                    "{kind}: consumed pending/sequence"
-                )
-            }
+        "closed" => {
+            client.close();
+            closed = true
+        }
+        "expired" => c.0.borrow_mut().utc = 400,
+        _ => {}
+    }
+    let before = c.0.borrow().records;
+    let result = client.open_response(&mut a, &changed);
+    assert_eq!(result.is_ok(), accept, "{kind}");
+    if accept {
+        let r = result.unwrap();
+        assert_eq!(r.message_id, id);
+        assert_eq!(r.success, error.is_none());
+        assert_eq!(r.error, error.unwrap_or(""));
+        assert_eq!(r.data, data);
+        assert!(client.open_response(&mut a, &response).is_err());
+    } else {
+        assert_eq!(c.0.borrow().records, before, "{kind}: partial replay");
+        if closed {
+            assert_eq!(client.state(), "CLOSED", "{kind}")
+        } else if !["duplicate-terminal", "expired"].contains(&kind) {
+            c.0.borrow_mut().mode.clear();
+            assert_eq!(
+                client.open_response(&mut a, &response).unwrap().data,
+                data,
+                "{kind}: consumed pending/sequence"
+            )
         }
     }
+}
+
+macro_rules! session_response_case_tests {
+    ($($name:ident => $case:literal,)*) => {
+        const SESSION_RESPONSE_CASES: &[&str] = &[$($case,)*];
+        $(
+            #[test]
+            fn $name() {
+                check_session_response_scenario($case);
+            }
+        )*
+    };
+}
+
+session_response_case_tests! {
+    session_response_case_valid => "valid",
+    session_response_case_empty_data => "empty-data",
+    session_response_case_authentication_failed => "authentication_failed",
+    session_response_case_policy_denied => "policy_denied",
+    session_response_case_operation_failed => "operation_failed",
+    session_response_case_unavailable => "unavailable",
+    session_response_case_request_hash => "request-hash",
+    session_response_case_message_id => "message-id",
+    session_response_case_cross_request => "cross-request",
+    session_response_case_recipient => "recipient",
+    session_response_case_did => "did",
+    session_response_case_kid => "kid",
+    session_response_case_role => "role",
+    session_response_case_context_id => "context_id",
+    session_response_case_session_id => "session_id",
+    session_response_case_same_id => "same-id",
+    session_response_case_same_nonce => "same-nonce",
+    session_response_case_signature => "signature",
+    session_response_case_tag => "tag",
+    session_response_case_missing_error => "missing-error",
+    session_response_case_unknown_error => "unknown-error",
+    session_response_case_success_error => "success-error",
+    session_response_case_success_type => "success-type",
+    session_response_case_duplicate_field => "duplicate-field",
+    session_response_case_unknown_field => "unknown-field",
+    session_response_case_plain_encoding => "plain-encoding",
+    session_response_case_duplicate_terminal => "duplicate-terminal",
+    session_response_case_store_error => "store-error",
+    session_response_case_store_delay => "store-delay",
+    session_response_case_key_expiry_during_commit => "key-expiry-during-commit",
+    session_response_case_revoke_init => "revoke-init",
+    session_response_case_revoke_resp => "revoke-resp",
+    session_response_case_revoke_kem => "revoke-kem",
+    session_response_case_source_error => "source-error",
+    session_response_case_closed => "closed",
+    session_response_case_expired => "expired",
+    session_response_case_reverse => "reverse",
+    session_response_case_out_of_order => "out-of-order",
 }
 
 #[test]
@@ -914,130 +1006,200 @@ fn mutate_http(m: &HTTPMessage010, kind: &str) -> HTTPMessage010 {
 fn http_session_scenarios() {
     let f: Value =
         serde_json::from_str(include_str!("../../../tests/fixtures/http-session010.json")).unwrap();
-    for v in f["cases"].as_array().unwrap() {
-        let kind = v.as_str().unwrap();
-        let (mut a, mut b, c, _tmp) = pair();
-        let (mut p, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
-        let (mut server, r) = b.respond(&q, 300).unwrap();
-        let mut client = p.complete(&mut a, &r).unwrap();
-        client.bind_http("https://agent.example/messages").unwrap();
-        server.bind_http("https://agent.example/messages").unwrap();
-        let mut q = client.seal_http_request(&mut a, b"request", 300).unwrap();
-        let invalid = kind.starts_with("request-")
-            || kind.starts_with("duplicate-")
-            || kind.starts_with("wrong-")
-            || kind.starts_with("content-")
-            || [
-                "body-digest",
-                "header-control",
-                "unknown-parameter",
-                "transfer-encoding",
-                "trailer",
-                "version",
-                "did",
-                "projection",
-                "metadata",
-                "signature",
-                "multiple-signatures",
-                "noncanonical-base64",
-                "coverage",
-            ]
-            .contains(&kind);
-        if invalid {
-            assert!(
-                server
-                    .open_http_request(&mut b, &mutate_http(&q, kind))
-                    .is_err(),
-                "{kind}"
-            );
-            assert_eq!(server.state(), "RESPONSE_SENT");
-        }
-        if kind == "bare-bypass" {
-            assert!(server.open_request(&mut b, &q.body).is_err());
-            assert!(client.seal_request(&mut a, b"", 300).is_err());
-        }
-        assert_eq!(server.open_http_request(&mut b, &q).unwrap(), b"request");
-        assert!(server.open_http_request(&mut b, &q).is_err());
-        if kind == "reverse" {
-            std::mem::swap(&mut a, &mut b);
-            std::mem::swap(&mut client, &mut server);
-            q = client.seal_http_request(&mut a, b"request", 300).unwrap();
-            server.open_http_request(&mut b, &q).unwrap();
-        }
-        let w: Value = serde_json::from_slice(&q.body).unwrap();
-        let id = w["id"].as_str().unwrap();
-        let data = if kind == "empty" {
-            b"".as_slice()
-        } else {
-            b"result".as_slice()
-        };
-        let error = if kind == "error" {
-            Some("policy_denied")
-        } else {
-            None
-        };
-        let mut r = server
-            .seal_http_response(&mut b, id, data, error, 300, 200)
-            .unwrap();
-        assert!(server
-            .seal_http_response(&mut b, id, data, error, 300, 200)
-            .is_err());
-        if kind == "response-status" || kind == "response-status-tamper" {
-            assert!(client
-                .open_http_response(&mut a, &mutate_http(&r, kind))
-                .is_err());
-        }
-        if kind == "reordered-parameters" {
-            for p in &mut r.headers {
-                if p[0] == "signature-input" {
-                    let (prefix, rest) = p[1].split_once(");").unwrap();
-                    let fields: Vec<_> = rest.split(';').rev().collect();
-                    p[1] = format!("{prefix});{}", fields.join(";"));
-                }
-            }
-            record010::http010::resign_test(&mut r, &b, Some(&q));
-        }
-        if kind == "inner-signature" {
-            let mut bad = r.clone();
-            let mut body: Value = serde_json::from_slice(&bad.body).unwrap();
-            body["signature"] = json!("A".repeat(86));
-            bad.body = canonical(&body);
-            record010::http010::resign_test(&mut bad, &b, Some(&q));
-            assert!(client.open_http_response(&mut a, &bad).is_err());
-        }
-        if kind == "response-request-signature" {
-            let mut altered = q.clone();
-            altered
-                .headers
-                .iter_mut()
-                .find(|p| p[0] == "signature")
-                .unwrap()[1]
-                .push_str("wrong");
-            let mut bad = r.clone();
-            record010::http010::resign_test(&mut bad, &b, Some(&altered));
-            assert!(client.open_http_response(&mut a, &bad).is_err());
-        }
-        if ["store-error", "store-delay", "revoke-resp"].contains(&kind) {
-            c.0.borrow_mut().mode = kind.into();
-            assert!(client.open_http_response(&mut a, &r).is_err());
-            c.0.borrow_mut().mode.clear();
-            if kind != "store-error" {
-                assert_eq!(client.state(), "CLOSED");
-                continue;
-            }
-        }
-        if kind == "expired" {
-            c.0.borrow_mut().utc = 400;
-            assert!(client.open_http_response(&mut a, &r).is_err());
-            continue;
-        }
-        let v = client.open_http_response(&mut a, &r).unwrap();
-        assert_eq!(v.message_id, id);
-        assert_eq!(v.success, error.is_none());
-        assert_eq!(v.error, error.unwrap_or(""));
-        assert_eq!(v.data, data);
-        assert!(client.open_http_response(&mut a, &r).is_err());
+    let kinds: Vec<_> = f["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(kinds.len(), 45);
+    assert_eq!(kinds.as_slice(), HTTP_SESSION_CASES);
+    let unique: std::collections::BTreeSet<_> = kinds.iter().copied().collect();
+    assert_eq!(unique.len(), kinds.len());
+}
+
+fn check_http_session_scenario(kind: &str) {
+    let (mut a, mut b, c, _tmp) = pair();
+    let (mut p, q) = a.start(BOB, &format!("{BOB}#signing-1"), 300).unwrap();
+    let (mut server, r) = b.respond(&q, 300).unwrap();
+    let mut client = p.complete(&mut a, &r).unwrap();
+    client.bind_http("https://agent.example/messages").unwrap();
+    server.bind_http("https://agent.example/messages").unwrap();
+    let mut q = client.seal_http_request(&mut a, b"request", 300).unwrap();
+    let invalid = kind.starts_with("request-")
+        || kind.starts_with("duplicate-")
+        || kind.starts_with("wrong-")
+        || kind.starts_with("content-")
+        || [
+            "body-digest",
+            "header-control",
+            "unknown-parameter",
+            "transfer-encoding",
+            "trailer",
+            "version",
+            "did",
+            "projection",
+            "metadata",
+            "signature",
+            "multiple-signatures",
+            "noncanonical-base64",
+            "coverage",
+        ]
+        .contains(&kind);
+    if invalid {
+        assert!(
+            server
+                .open_http_request(&mut b, &mutate_http(&q, kind))
+                .is_err(),
+            "{kind}"
+        );
+        assert_eq!(server.state(), "RESPONSE_SENT");
     }
+    if kind == "bare-bypass" {
+        assert!(server.open_request(&mut b, &q.body).is_err());
+        assert!(client.seal_request(&mut a, b"", 300).is_err());
+    }
+    assert_eq!(server.open_http_request(&mut b, &q).unwrap(), b"request");
+    assert!(server.open_http_request(&mut b, &q).is_err());
+    if kind == "reverse" {
+        std::mem::swap(&mut a, &mut b);
+        std::mem::swap(&mut client, &mut server);
+        q = client.seal_http_request(&mut a, b"request", 300).unwrap();
+        server.open_http_request(&mut b, &q).unwrap();
+    }
+    let w: Value = serde_json::from_slice(&q.body).unwrap();
+    let id = w["id"].as_str().unwrap();
+    let data = if kind == "empty" {
+        b"".as_slice()
+    } else {
+        b"result".as_slice()
+    };
+    let error = if kind == "error" {
+        Some("policy_denied")
+    } else {
+        None
+    };
+    let mut r = server
+        .seal_http_response(&mut b, id, data, error, 300, 200)
+        .unwrap();
+    assert!(server
+        .seal_http_response(&mut b, id, data, error, 300, 200)
+        .is_err());
+    if kind == "response-status" || kind == "response-status-tamper" {
+        assert!(client
+            .open_http_response(&mut a, &mutate_http(&r, kind))
+            .is_err());
+    }
+    if kind == "reordered-parameters" {
+        for p in &mut r.headers {
+            if p[0] == "signature-input" {
+                let (prefix, rest) = p[1].split_once(");").unwrap();
+                let fields: Vec<_> = rest.split(';').rev().collect();
+                p[1] = format!("{prefix});{}", fields.join(";"));
+            }
+        }
+        record010::http010::resign_test(&mut r, &b, Some(&q));
+    }
+    if kind == "inner-signature" {
+        let mut bad = r.clone();
+        let mut body: Value = serde_json::from_slice(&bad.body).unwrap();
+        body["signature"] = json!("A".repeat(86));
+        bad.body = canonical(&body);
+        record010::http010::resign_test(&mut bad, &b, Some(&q));
+        assert!(client.open_http_response(&mut a, &bad).is_err());
+    }
+    if kind == "response-request-signature" {
+        let mut altered = q.clone();
+        altered
+            .headers
+            .iter_mut()
+            .find(|p| p[0] == "signature")
+            .unwrap()[1]
+            .push_str("wrong");
+        let mut bad = r.clone();
+        record010::http010::resign_test(&mut bad, &b, Some(&altered));
+        assert!(client.open_http_response(&mut a, &bad).is_err());
+    }
+    if ["store-error", "store-delay", "revoke-resp"].contains(&kind) {
+        c.0.borrow_mut().mode = kind.into();
+        assert!(client.open_http_response(&mut a, &r).is_err());
+        c.0.borrow_mut().mode.clear();
+        if kind != "store-error" {
+            assert_eq!(client.state(), "CLOSED");
+            return;
+        }
+    }
+    if kind == "expired" {
+        c.0.borrow_mut().utc = 400;
+        assert!(client.open_http_response(&mut a, &r).is_err());
+        return;
+    }
+    let v = client.open_http_response(&mut a, &r).unwrap();
+    assert_eq!(v.message_id, id);
+    assert_eq!(v.success, error.is_none());
+    assert_eq!(v.error, error.unwrap_or(""));
+    assert_eq!(v.data, data);
+    assert!(client.open_http_response(&mut a, &r).is_err());
+}
+
+macro_rules! http_session_case_tests {
+    ($($name:ident => $case:literal,)*) => {
+        const HTTP_SESSION_CASES: &[&str] = &[$($case,)*];
+        $(
+            #[test]
+            fn $name() {
+                check_http_session_scenario($case);
+            }
+        )*
+    };
+}
+
+http_session_case_tests! {
+    http_session_case_valid => "valid",
+    http_session_case_reverse => "reverse",
+    http_session_case_error => "error",
+    http_session_case_empty => "empty",
+    http_session_case_request_method => "request-method",
+    http_session_case_request_target => "request-target",
+    http_session_case_request_authority => "request-authority",
+    http_session_case_response_status => "response-status",
+    http_session_case_response_status_tamper => "response-status-tamper",
+    http_session_case_body_digest => "body-digest",
+    http_session_case_duplicate_signature => "duplicate-signature",
+    http_session_case_duplicate_input => "duplicate-input",
+    http_session_case_duplicate_digest => "duplicate-digest",
+    http_session_case_duplicate_type => "duplicate-type",
+    http_session_case_duplicate_sage => "duplicate-sage",
+    http_session_case_content_type => "content-type",
+    http_session_case_content_encoding => "content-encoding",
+    http_session_case_transfer_encoding => "transfer-encoding",
+    http_session_case_trailer => "trailer",
+    http_session_case_content_length => "content-length",
+    http_session_case_header_control => "header-control",
+    http_session_case_unknown_parameter => "unknown-parameter",
+    http_session_case_duplicate_parameter => "duplicate-parameter",
+    http_session_case_wrong_tag => "wrong-tag",
+    http_session_case_wrong_keyid => "wrong-keyid",
+    http_session_case_wrong_nonce => "wrong-nonce",
+    http_session_case_wrong_created => "wrong-created",
+    http_session_case_wrong_alg => "wrong-alg",
+    http_session_case_coverage => "coverage",
+    http_session_case_signature => "signature",
+    http_session_case_multiple_signatures => "multiple-signatures",
+    http_session_case_noncanonical_base64 => "noncanonical-base64",
+    http_session_case_version => "version",
+    http_session_case_did => "did",
+    http_session_case_projection => "projection",
+    http_session_case_metadata => "metadata",
+    http_session_case_bare_bypass => "bare-bypass",
+    http_session_case_response_request_signature => "response-request-signature",
+    http_session_case_reordered_parameters => "reordered-parameters",
+    http_session_case_inner_signature => "inner-signature",
+    http_session_case_replay => "replay",
+    http_session_case_store_error => "store-error",
+    http_session_case_store_delay => "store-delay",
+    http_session_case_revoke_resp => "revoke-resp",
+    http_session_case_expired => "expired",
 }
 
 const HTTP_TARGET: &str = "https://localhost:8443/messages";
@@ -1229,6 +1391,7 @@ fn http_framing_rejections() {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn durable_completion() {
     let (mut a, mut b, c, tmp) = pair();
     let ja = Rc::new(RefCell::new(
@@ -1407,6 +1570,7 @@ fn non_http_owner_clock_panic_retires_keys() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn non_http_owner_loopback_runtime() {
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};

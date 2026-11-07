@@ -19,6 +19,7 @@ fn independent_rpc_requests() {
 }
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn response_consumes_invocation() {
     let v = suite();
     assert_eq!(v["responses"].as_array().unwrap().len(), 22);

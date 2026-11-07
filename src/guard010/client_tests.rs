@@ -80,6 +80,7 @@ fn suite() -> Value {
     serde_json::from_str(include_str!("testdata/guard-client.json")).unwrap()
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn captured_client_binds_original_before_journal() {
     let mut v = suite();
     let request_id = "00000000-0000-4000-8000-000000000002";
@@ -192,6 +193,7 @@ impl HopParent for ParentState {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn hop_client_capture_and_parent_gate() {
     let v = suite();
     let incoming = hex::decode(text(&v["input"], "envelope_hex")).unwrap();
@@ -419,6 +421,7 @@ fn apply(
     o
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn independent_client_scenarios() {
     for case in suite()["cases"].as_array().unwrap() {
         let (_d, _p, c, s, v) = setup();
@@ -435,6 +438,7 @@ fn independent_client_scenarios() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn concurrent_terminal_consumption() {
     let (_d, _p, c, s, v) = setup();
     let c = Arc::new(c);
@@ -468,6 +472,7 @@ fn concurrent_terminal_consumption() {
     c.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn restart_preserves_polling_and_consumption() {
     let (_d, p, c, s, v) = setup();
     let raw = hex::decode(text(&v["input"], "envelope_hex")).unwrap();
@@ -496,6 +501,7 @@ fn restart_preserves_polling_and_consumption() {
     c.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn missing_exclusive_and_corrupt_storage() {
     let (_d, p, c, s, v) = setup();
     let raw = hex::decode(text(&v["input"], "envelope_hex")).unwrap();
@@ -509,6 +515,7 @@ fn missing_exclusive_and_corrupt_storage() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn handoff_duration_and_uncertain_transmission() {
     for fail in [false, true] {
         let (_d, _p, c, s, _v) = setup();

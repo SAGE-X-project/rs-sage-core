@@ -86,6 +86,7 @@ fn status(b: &[u8]) -> String {
         .into()
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn pending_then_finish_is_one_reply_and_terminal_is_immutable() {
     let (_d, p, g, o) = setup();
     let mut r = g.dispatch(&raw()).unwrap();
@@ -113,6 +114,7 @@ fn pending_then_finish_is_one_reply_and_terminal_is_immutable() {
     g.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn late_accepted_response_and_expired_new_retrieval() {
     let (_d, _p, g, o) = setup();
     let mut r = g.dispatch(&raw()).unwrap();
@@ -132,6 +134,7 @@ fn late_accepted_response_and_expired_new_retrieval() {
     g.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn signer_failures_never_replace_terminal_bytes() {
     for kind in ["unavailable", "wrong-key", "corrupt", "revoked", "expired"] {
         let (_d, p, g, o) = setup();
@@ -168,6 +171,7 @@ fn signer_failures_never_replace_terminal_bytes() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn expiry_during_storage_keeps_terminal_without_refresh() {
     let (_d, p, g, o) = setup();
     let mut r = g.dispatch(&raw()).unwrap();
@@ -184,6 +188,7 @@ fn expiry_during_storage_keeps_terminal_without_refresh() {
     g.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn rejection_reserves_identity_and_never_overwrites_execution() {
     let (_d, p, g, o) = setup();
     let mut s = signer();
@@ -208,6 +213,7 @@ fn rejection_reserves_identity_and_never_overwrites_execution() {
     g.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn unknown_recovery_and_foreign_tokens_fail_closed() {
     let (_d, p, g, o) = setup();
     let mut old = g.dispatch(&raw()).unwrap();
@@ -244,6 +250,7 @@ fn unknown_recovery_and_foreign_tokens_fail_closed() {
     g.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn concurrent_finish_signs_once() {
     let (_d, _p, g, o) = setup();
     g.dispatch(&raw()).unwrap();
@@ -312,6 +319,7 @@ fn capacity_cannot_publish_unpersisted_completion() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn malformed_output_does_not_sign_or_write() {
     let (dir, _path, gate, o) = setup();
     let _r = gate.dispatch(&raw()).unwrap();
@@ -396,6 +404,7 @@ fn unknown_and_reject_capacity_never_release_terminal() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn rpc_session_gate_and_one_response() {
     let suite: Value = serde_json::from_str(include_str!("../testdata/guard-rpc.json")).unwrap();
     for case in suite["requests"].as_array().unwrap() {
@@ -442,6 +451,7 @@ fn rpc_session_gate_and_one_response() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn rpc_session_capacity_and_parallel_identity() {
     let (_d, _p, g, o) = setup();
     let g = Arc::new(g);

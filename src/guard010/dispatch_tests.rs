@@ -172,6 +172,7 @@ fn state(path: &std::path::Path) -> String {
         .into()
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn dispatch_exactly_once_and_recovery() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("journal");
@@ -215,6 +216,7 @@ fn dispatch_exactly_once_and_recovery() {
     recovered.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn final_denials_and_commit_uncertainty_never_retry() {
     for kind in [
         "key",
@@ -260,6 +262,7 @@ fn final_denials_and_commit_uncertainty_never_retry() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn retirement_and_replacement_serialize_with_commit() {
     for replace in [false, true] {
         let dir = tempfile::tempdir().unwrap();
@@ -324,6 +327,7 @@ fn retirement_and_replacement_serialize_with_commit() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn early_retirement_component_denial_and_replacement_have_zero_effects() {
     for kind in ["retire", "component", "replace", "closed"] {
         let dir = tempfile::tempdir().unwrap();
@@ -354,6 +358,7 @@ fn early_retirement_component_denial_and_replacement_have_zero_effects() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn concurrent_identical_dispatches_commit_once() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("journal");
@@ -382,6 +387,7 @@ fn concurrent_identical_dispatches_commit_once() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn independent_intent_denials_never_commit() {
     let suite: Value = serde_json::from_str(include_str!("testdata/guard-records.json")).unwrap();
     for case in suite["cases"].as_array().unwrap() {

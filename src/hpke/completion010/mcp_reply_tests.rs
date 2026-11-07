@@ -103,6 +103,7 @@ fn hop_inputs() -> (Vec<u8>, Vec<u8>, HopPolicy, HopPolicy) {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn owned_root_binds_captured_input_before_journal_and_runtime() {
     for mode in ["wrong request", "changed original", "allowed"] {
         let (left, right, mut a, mut b, _, tmp) = owner_pair();
@@ -157,6 +158,7 @@ fn owned_root_binds_captured_input_before_journal_and_runtime() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn owned_hop_rechecks_parent_before_mcp_transport() {
     for mode in ["denied at open", "revoked before send", "allowed"] {
         let (left, right, mut a, mut b, _, tmp) = owner_pair();
@@ -359,6 +361,7 @@ impl<'a> Link<'a> {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn owned_reply_and_client_consume_terminal_once_including_tcp_runtime() {
     for tcp in [false, true] {
         let (left, right, mut a, mut b, _, tmp) = owner_pair();
@@ -391,6 +394,7 @@ fn owned_reply_and_client_consume_terminal_once_including_tcp_runtime() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn pending_reply_ends_invocation_and_fresh_poll_does_not_repeat_effect() {
     let (left, right, mut a, mut b, control, tmp) = owner_pair();
     let sink = Arc::new(Sink::default());
@@ -428,6 +432,7 @@ fn pending_reply_ends_invocation_and_fresh_poll_does_not_repeat_effect() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn failed_reply_does_not_erase_execution_or_allow_second_response() {
     for mode in ["send-error", "close", "panic", "deadline"] {
         let (mut left, right, mut a, mut b, control, tmp) = owner_pair();
@@ -470,6 +475,7 @@ fn failed_reply_does_not_erase_execution_or_allow_second_response() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn protected_deadline_after_admission_fails_transport_without_rollback() {
     let (mut left, right, mut a, mut b, control, tmp) = owner_pair();
     let sink = Arc::new(Sink::default());
@@ -527,6 +533,7 @@ impl g::ClientClock for CloseAfterTerminal {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn close_after_durable_acceptance_suppresses_output_and_reopen_cannot_redeliver() {
     let (left, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("client");
@@ -579,6 +586,7 @@ fn close_after_durable_acceptance_suppresses_output_and_reopen_cannot_redeliver(
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn old_worker_deadline_does_not_close_new_poll_after_pending_reply() {
     let (mut left, right, mut a, mut b, control, tmp) = owner_pair();
     let sink = Arc::new(Sink::default());
@@ -623,6 +631,7 @@ fn old_worker_deadline_does_not_close_new_poll_after_pending_reply() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn oversized_completed_result_is_preserved_without_transport_output() {
     let (mut left, right, mut a, mut b, _, tmp) = owner_pair();
     let sink = Arc::new(Sink::default());
@@ -648,6 +657,7 @@ fn oversized_completed_result_is_preserved_without_transport_output() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn reply_final_publication_rechecks_registry_observation_age() {
     for delay in [5000, 5001] {
         let (mut left, right, mut a, mut b, control, tmp) = owner_pair();
@@ -682,6 +692,7 @@ fn reply_final_publication_rechecks_registry_observation_age() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn client_rejects_wrong_result_authority_and_unverified_receive_failure() {
     for mode in [
         "authority",
@@ -736,6 +747,7 @@ fn client_rejects_wrong_result_authority_and_unverified_receive_failure() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn client_quota_is_shared_and_not_released_by_close_during_receive() {
     let (left, right, mut a, mut b, _, tmp) = owner_pair();
     let sink = Arc::new(Sink::default());
@@ -791,6 +803,7 @@ fn client_quota_is_shared_and_not_released_by_close_during_receive() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn server_reply_permit_cannot_cross_gates_or_repeat() {
     let (mut left, right, mut a, mut b, _, tmp) = owner_pair();
     let sink = Arc::new(Sink::default());
@@ -835,6 +848,7 @@ impl Drop for CleanupClock {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn failed_constructor_keeps_quota_until_journal_and_dependency_cleanup_end() {
     let pool = Arc::new(ClientPool::new(1, 30000).unwrap());
     let first_pool = pool.clone();
@@ -908,6 +922,7 @@ fn failed_constructor_keeps_quota_until_journal_and_dependency_cleanup_end() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn reply_storage_or_signer_failure_retires_unclaimed_execution() {
     for storage in [false, true] {
         let (mut left, right, mut a, mut b, _, tmp) = owner_pair();

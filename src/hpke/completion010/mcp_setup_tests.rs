@@ -83,48 +83,58 @@ pub(super) fn setup_request(id: &str, step: usize) -> Vec<u8> {
 }
 pub(super) const ID1: &str = "00000000-0000-4000-8000-000000000001";
 pub(super) const ID2: &str = "00000000-0000-4000-8000-000000000002";
+fn mcp_setup_encrypted_lifecycle(tcp: bool) {
+    let (left, right, mut a, mut b, _, _tmp) = owner_pair();
+    let mut client = MCPSetup::new(left, &mut a, "client", "1").unwrap();
+    let mut server = MCPSetup::new(right, &mut b, "server", "1").unwrap();
+    let sockets = if tcp {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let c = TcpStream::connect_timeout(&listener.local_addr().unwrap(), Duration::from_secs(2))
+            .unwrap();
+        let (s, _) = listener.accept().unwrap();
+        for socket in [&c, &s] {
+            socket
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            socket
+                .set_write_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+        }
+        Some((c, s))
+    } else {
+        None
+    };
+    let mut io = PairIO {
+        server: &mut server,
+        endpoint: &mut b,
+        reply: Capture::default(),
+        tcp: sockets,
+        prepared: 0,
+    };
+    client.run(&mut a, &mut io, &mut || Ok(())).unwrap();
+    assert_eq!(io.prepared, 1);
+    assert_eq!(client.phase(), Phase::Ready);
+    assert_eq!(server.phase(), Phase::Ready);
+    assert_eq!(client.history(), server.history());
+    assert_eq!(client.history().len(), 2);
+    assert!(client
+        .run(&mut a, &mut Capture::default(), &mut || Ok(()))
+        .is_err());
+    assert_eq!(client.phase(), Phase::Closed);
+}
+
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support networking")]
 fn mcp_setup_encrypted_lifecycle_and_tcp_runtime() {
     for tcp in [false, true] {
-        let (left, right, mut a, mut b, _, _tmp) = owner_pair();
-        let mut client = MCPSetup::new(left, &mut a, "client", "1").unwrap();
-        let mut server = MCPSetup::new(right, &mut b, "server", "1").unwrap();
-        let sockets = if tcp {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let c =
-                TcpStream::connect_timeout(&listener.local_addr().unwrap(), Duration::from_secs(2))
-                    .unwrap();
-            let (s, _) = listener.accept().unwrap();
-            for socket in [&c, &s] {
-                socket
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                socket
-                    .set_write_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-            }
-            Some((c, s))
-        } else {
-            None
-        };
-        let mut io = PairIO {
-            server: &mut server,
-            endpoint: &mut b,
-            reply: Capture::default(),
-            tcp: sockets,
-            prepared: 0,
-        };
-        client.run(&mut a, &mut io, &mut || Ok(())).unwrap();
-        assert_eq!(io.prepared, 1);
-        assert_eq!(client.phase(), Phase::Ready);
-        assert_eq!(server.phase(), Phase::Ready);
-        assert_eq!(client.history(), server.history());
-        assert_eq!(client.history().len(), 2);
-        assert!(client
-            .run(&mut a, &mut Capture::default(), &mut || Ok(()))
-            .is_err());
-        assert_eq!(client.phase(), Phase::Closed);
+        mcp_setup_encrypted_lifecycle(tcp);
     }
+}
+
+#[cfg(miri)]
+#[test]
+fn mcp_setup_encrypted_lifecycle_in_memory() {
+    mcp_setup_encrypted_lifecycle(false);
 }
 #[test]
 fn mcp_setup_ready_past_setup_deadline_uses_protected_limits() {

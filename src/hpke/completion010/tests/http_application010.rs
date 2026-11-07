@@ -11,7 +11,14 @@ type ApplicationPair = (
     tempfile::TempDir,
 );
 fn application_pair(http: bool, target: &str) -> ApplicationPair {
-    let (mut a, mut b, controls, tmp) = pair();
+    application_pair_with_record_clock(http, target, false)
+}
+fn application_pair_with_record_clock(
+    http: bool,
+    target: &str,
+    controlled: bool,
+) -> ApplicationPair {
+    let (mut a, mut b, controls, tmp) = pair_with_record_clock(controlled);
     let (left, right) = if http {
         a.bind_http(target).unwrap();
         b.bind_http(target).unwrap();
@@ -706,6 +713,7 @@ mod owned_tls {
         }
     }
     #[test]
+    #[cfg_attr(miri, ignore = "Miri does not support networking")]
     fn http_application_owned_tls_round_trip() {
         for unavailable in [false, true] {
             let _ = rustls::crypto::ring::default_provider().install_default();
@@ -829,7 +837,10 @@ mod owned_tls {
 
 #[test]
 fn http_application_size_and_argument_refusals() {
-    let (mut left, mut right, mut a, mut b, _c, _tmp) = application_pair(true, TARGET);
+    // Interpret the full-size crypto with one explicit logical clock from
+    // session creation. This is not a host-time performance qualification.
+    let (mut left, mut right, mut a, mut b, _c, _tmp) =
+        application_pair_with_record_clock(true, TARGET, true);
     assert!(left
         .seal_request(&mut a, &vec![0; 16349], None, 300)
         .is_err());
@@ -852,17 +863,19 @@ fn http_application_size_and_argument_refusals() {
     assert!(right
         .seal_response(&mut b, "not-an-id", b"", None, None, 300, 200)
         .is_err());
-    let reply = right
-        .seal_response(
-            &mut b,
-            view.id(),
-            &payload,
-            Some(&BTreeMap::new()),
-            None,
-            300,
-            200,
-        )
-        .unwrap();
+    let reply_result = right.seal_response(
+        &mut b,
+        view.id(),
+        &payload,
+        Some(&BTreeMap::new()),
+        None,
+        300,
+        200,
+    );
+    if let Err(error) = &reply_result {
+        eprintln!("http-application-size response-refusal: {error}");
+    }
+    let reply = reply_result.unwrap();
     assert_eq!(left.open_response(&mut a, &reply).unwrap().data(), payload);
     for mut message in [request.clone(), reply.clone()] {
         message.body = vec![0; 32769];

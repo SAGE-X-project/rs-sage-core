@@ -41,6 +41,8 @@ mod replay_journal010;
 pub use replay_journal010::ReplayJournal010;
 type Raw = BTreeMap<String, Box<RawValue>>;
 type Fields = BTreeMap<String, String>;
+#[cfg(test)]
+type RecordTestClock = std::sync::Arc<dyn Fn() -> std::time::Instant + Send + Sync>;
 fn canonical(v: &impl Serialize) -> Vec<u8> {
     crate::jcs::canonical(&serde_json::to_vec(v).expect("serializable closed object"))
         .expect("closed ASCII object")
@@ -267,6 +269,8 @@ pub struct CompletionEndpoint010 {
     kem: EndpointKem,
     last: Option<Stamp>,
     identity: uuid::Uuid,
+    #[cfg(test)]
+    record_clock: Option<RecordTestClock>,
 }
 impl CompletionEndpoint010 {
     /// Copies the local Ed25519 seed and optional X25519 key. Current registered
@@ -297,6 +301,8 @@ impl CompletionEndpoint010 {
             kem: EndpointKem::Local(Zeroizing::new(kem.to_vec())),
             last: None,
             identity: uuid::Uuid::new_v4(),
+            #[cfg(test)]
+            record_clock: None,
         })
     }
     /// Keeps the Ed25519 signing key and the optional X25519 KEM key in
@@ -332,7 +338,21 @@ impl CompletionEndpoint010 {
             },
             last: None,
             identity: uuid::Uuid::new_v4(),
+            #[cfg(test)]
+            record_clock: None,
         })
+    }
+    fn new_record_session(
+        &self,
+        seed: &[u8],
+        th: &[u8],
+        initiator: bool,
+    ) -> Result<RecordSession010> {
+        #[cfg(test)]
+        if let Some(clock) = &self.record_clock {
+            return RecordSession010::new_with_test_clock(seed, th, initiator, clock.clone());
+        }
+        RecordSession010::new(seed, th, initiator)
     }
     fn sample(&mut self) -> Result<Stamp> {
         if self.signing.is_none() {
@@ -563,10 +583,7 @@ impl CompletionEndpoint010 {
         {
             return Err(bad());
         }
-        Ok((
-            owned(self.identity, result, a, b, end, expires, false)?,
-            bytes,
-        ))
+        Ok((owned(self, result, a, b, end, expires, false)?, bytes))
     }
     #[cfg(test)]
     fn local_signing_key(&self) -> &SigningKey {
@@ -705,15 +722,7 @@ impl PendingCompletion010 {
         {
             return Err(bad());
         }
-        owned(
-            e.identity,
-            result,
-            self.a.clone(),
-            self.b.clone(),
-            end,
-            0,
-            true,
-        )
+        owned(e, result, self.a.clone(), self.b.clone(), end, 0, true)
     }
 }
 /// Private seed plus immutable public authenticated tuple. Not a dispatch API.
@@ -738,7 +747,7 @@ pub struct AuthenticatedCompletion010 {
     received: BTreeMap<String, record010::RecordRequest010>,
 }
 fn owned(
-    endpoint: uuid::Uuid,
+    endpoint: &CompletionEndpoint010,
     result: Derivation010,
     a: Pinned,
     b: Pinned,
@@ -756,13 +765,13 @@ fn owned(
     }
     tuple.insert("th".into(), B64.encode(result.th));
     tuple.insert("sid".into(), result.sid);
-    let records = RecordSession010::new(&result.seed, &result.th, initiator)?;
+    let records = endpoint.new_record_session(&result.seed, &result.th, initiator)?;
     Ok(AuthenticatedCompletion010 {
         application: false,
         record_used: false,
         http_target: String::new(),
         http_authority: String::new(),
-        endpoint,
+        endpoint: endpoint.identity,
         a,
         b,
         tuple,

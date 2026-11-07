@@ -262,6 +262,7 @@ fn row(path: &std::path::Path) -> Value {
     serde_json::from_str(raw.lines().last().unwrap()).unwrap()
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn close_before_reservation_denies_with_zero_effects() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -281,6 +282,7 @@ fn close_before_reservation_denies_with_zero_effects() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn admission_fences_before_effects_and_gate_close_cancels_unclaimed_work() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -325,6 +327,7 @@ fn crash_after_durable_admission_fixture() {
     std::process::exit(0);
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support subprocess execution")]
 fn crash_recovery_marks_admission_unknown_and_never_executes_again() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("execution");
@@ -369,6 +372,7 @@ fn crash_recovery_marks_admission_unknown_and_never_executes_again() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn admitted_worker_persists_signed_result_once_and_duplicate_never_runs() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -399,6 +403,7 @@ fn admitted_worker_persists_signed_result_once_and_duplicate_never_runs() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn parent_admission_is_bound_to_the_active_admitted_worker() {
     for retire in [false, true] {
         let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
@@ -441,6 +446,7 @@ fn parent_admission_is_bound_to_the_active_admitted_worker() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn close_during_post_fence_callback_denies_and_retains_history() {
     for panic in [false, true] {
         let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
@@ -478,6 +484,7 @@ fn close_during_post_fence_callback_denies_and_retains_history() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn retired_and_expired_queue_entries_are_never_claimed() {
     for mode in ["retired", "deadline", "rollback", "run-error", "run-panic"] {
         let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
@@ -510,6 +517,7 @@ fn retired_and_expired_queue_entries_are_never_claimed() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn capacity_is_shared_across_connections_and_retained_during_actual_run() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -544,6 +552,7 @@ fn capacity_is_shared_across_connections_and_retained_during_actual_run() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn queue_capacity_race_fails_atomic_insertion() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -567,6 +576,7 @@ fn queue_capacity_race_fails_atomic_insertion() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn queue_insertion_failure_has_no_visibility_or_effect() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -585,6 +595,7 @@ fn queue_insertion_failure_has_no_visibility_or_effect() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn close_during_fence_preserves_actual_storage_outcome() {
     for mode in 0..=2 {
         let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
@@ -612,6 +623,7 @@ fn close_during_fence_preserves_actual_storage_outcome() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn closing_one_shared_owner_does_not_close_another() {
     let (mut first_client, first_right, mut first_a, mut first_b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -644,6 +656,7 @@ fn closing_one_shared_owner_does_not_close_another() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn authenticated_setup_reaches_record_limit_before_owner_history() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -667,6 +680,7 @@ fn authenticated_setup_reaches_record_limit_before_owner_history() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn failed_unknown_persistence_retires_scope_and_keeps_writer_lock() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -689,6 +703,7 @@ fn failed_unknown_persistence_retires_scope_and_keeps_writer_lock() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn policy_generation_change_before_coordinator_denies_admission() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -709,6 +724,7 @@ fn policy_generation_change_before_coordinator_denies_admission() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn component_generation_change_before_coordinator_denies_admission() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -729,6 +745,7 @@ fn component_generation_change_before_coordinator_denies_admission() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn session_generation_change_before_coordinator_denies_admission() {
     for revocation in [1, 2] {
         let (mut client, right, mut a, mut b, controls, tmp) = owner_pair();
@@ -752,6 +769,7 @@ fn session_generation_change_before_coordinator_denies_admission() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn observation_acquired_before_operation_start_is_rejected() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -772,6 +790,7 @@ fn observation_acquired_before_operation_start_is_rejected() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn policy_retirement_and_claim_are_serialized() {
     for claim_first in [false, true] {
         let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
@@ -799,6 +818,7 @@ fn policy_retirement_and_claim_are_serialized() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn component_replacement_and_claim_are_serialized() {
     for claim_first in [false, true] {
         let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
@@ -830,6 +850,7 @@ fn component_replacement_and_claim_are_serialized() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn scheduler_cancel_and_claim_race_is_serialized() {
     for claim_first in [false, true] {
         let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
@@ -861,6 +882,7 @@ fn scheduler_cancel_and_claim_race_is_serialized() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn unavailable_storage_cancels_existing_unclaimed_work() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -882,6 +904,7 @@ fn unavailable_storage_cancels_existing_unclaimed_work() {
     assert_eq!(row(&path)["state"], "EXECUTING"); // unavailable is not fabricated UNKNOWN
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn completion_expiry_closes_owner_without_losing_signed_outcome() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -911,6 +934,7 @@ impl r::Clock for AdvancingClock {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn final_admission_rechecks_observation_age_and_fixed_request_deadline() {
     for (delay, refresh_registry, accepted) in [
         (4999, false, true),
@@ -949,6 +973,7 @@ fn final_admission_rechecks_observation_age_and_fixed_request_deadline() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn ready_session_expiry_denies_new_admission_and_closes_owner() {
     let (mut client, right, mut a, mut b, control, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -969,6 +994,7 @@ fn ready_session_expiry_denies_new_admission_and_closes_owner() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn protected_deadline_before_final_admission_retains_identity_and_reservation() {
     let (mut client, right, mut a, mut b, control, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -1003,6 +1029,7 @@ fn protected_deadline_before_final_admission_retains_identity_and_reservation() 
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn authenticated_tcp_request_reaches_durable_inert_execution() {
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
@@ -1052,6 +1079,7 @@ impl g::ResultSigner for FailedSigner {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn failed_result_persistence_retires_other_unclaimed_work() {
     let (mut client, right, mut a, mut b, _, tmp) = owner_pair();
     let path = tmp.path().join("execution");
@@ -1088,6 +1116,7 @@ fn failed_result_persistence_retires_other_unclaimed_work() {
     gate.close().unwrap();
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn admission_requires_ready_owner_from_this_gate() {
     for ready_unbound in [false, true] {
         let (mut client, right, mut a, mut b, _, tmp) = owner_pair();

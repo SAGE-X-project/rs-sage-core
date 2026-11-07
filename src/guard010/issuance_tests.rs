@@ -167,6 +167,7 @@ fn proposal() -> IntentProposal {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn issuer_journals_and_resumes_without_new_signature() {
     let f = Services::new();
     let directory = tempfile::tempdir().unwrap();
@@ -243,6 +244,7 @@ fn issuer_denies_changed_authority_before_key_use() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn issuer_preserves_failure_fence_across_restart() {
     for mode in ["signer-failure", "wrong-proof", "partial-fence"] {
         let f = Services::new();
@@ -269,6 +271,7 @@ fn issuer_preserves_failure_fence_across_restart() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn issuer_enforces_owner_and_one_use() {
     let f = Services::new();
     let directory = tempfile::tempdir().unwrap();
@@ -309,6 +312,7 @@ fn issuer_rejects_invalid_proposal_and_retires_after_panic() {
     assert!(issuer.authorize(proposal()).is_err());
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn hop_issuer_requires_admitted_parent_before_signing() {
     for allowed in [true, false] {
         let suite: Value =
@@ -408,6 +412,7 @@ fn issuer_process_helper() {
     }
 }
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support subprocess execution")]
 fn issuer_process_restart() {
     let run = |path: &Path, mode: &str| {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
@@ -437,6 +442,7 @@ fn issuer_process_restart() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn issuer_rechecks_after_fence_and_after_signing() {
     for post_sign in [false, true] {
         let f = Services::new();
@@ -483,6 +489,7 @@ fn issuer_rejects_other_key_role_and_weak_key() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn issuer_preserves_quoted_argument_strings() {
     let f = Services::new();
     let directory = tempfile::tempdir().unwrap();
@@ -512,6 +519,7 @@ fn issuer_preserves_quoted_argument_strings() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "Miri does not support directory fsync")]
 fn journaled_intent_snapshot_does_not_use_authority_or_transport() {
     let f = Services::new();
     let directory = tempfile::tempdir().unwrap();
