@@ -211,7 +211,9 @@ fn pair() -> (
 ) {
     pair_with_record_clock(false)
 }
-fn pair_with_record_clock(controlled: bool) -> (
+fn pair_with_record_clock(
+    controlled: bool,
+) -> (
     CompletionEndpoint010,
     CompletionEndpoint010,
     Controls,

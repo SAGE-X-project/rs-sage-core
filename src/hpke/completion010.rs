@@ -583,10 +583,7 @@ impl CompletionEndpoint010 {
         {
             return Err(bad());
         }
-        Ok((
-            owned(self, result, a, b, end, expires, false)?,
-            bytes,
-        ))
+        Ok((owned(self, result, a, b, end, expires, false)?, bytes))
     }
     #[cfg(test)]
     fn local_signing_key(&self) -> &SigningKey {
@@ -725,15 +722,7 @@ impl PendingCompletion010 {
         {
             return Err(bad());
         }
-        owned(
-            e,
-            result,
-            self.a.clone(),
-            self.b.clone(),
-            end,
-            0,
-            true,
-        )
+        owned(e, result, self.a.clone(), self.b.clone(), end, 0, true)
     }
 }
 /// Private seed plus immutable public authenticated tuple. Not a dispatch API.
