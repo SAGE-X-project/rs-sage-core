@@ -487,7 +487,9 @@ mod tests {
                 op,
                 i["plaintext"]["length"].as_u64().unwrap_or(0) as usize,
                 i["record_hex"].as_str().map_or(0, |value| value.len() / 2),
-                i["caller_aad_hex"].as_str().map_or(0, |value| value.len() / 2),
+                i["caller_aad_hex"]
+                    .as_str()
+                    .map_or(0, |value| value.len() / 2),
                 phase,
             );
         };
