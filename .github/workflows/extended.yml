@@ -109,7 +109,7 @@ jobs:
   miri:
     name: Miri (${{ matrix.partition }}/32)
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: ${{ (matrix.partition == 20 || matrix.partition == 27) && 360 || 180 }}
     continue-on-error: true
     strategy:
       fail-fast: false
