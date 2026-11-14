@@ -109,7 +109,7 @@ jobs:
   miri:
     name: Miri
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
     continue-on-error: true
     steps:
     - name: Checkout repository
@@ -123,7 +123,16 @@ jobs:
     - name: Configure Rust cache
       uses: Swatinem/rust-cache@v2
 
-    - name: Run Miri on the library tests
+    - name: Run Miri on the FFI tests
+      # All unsafe code is in src/ffi, built only with the `ffi` feature;
+      # without it the crate denies unsafe code, so those are the tests
+      # Miri has something to check in.
+      # rust-toolchain.toml takes precedence over the nightly installed
+      # above, and only nightly ships Miri; select it explicitly.
+      # The tests read the system clock and OS randomness, which Miri
+      # isolates by default.
+      env:
+        MIRIFLAGS: -Zmiri-disable-isolation
       run: |
-        cargo miri setup
-        cargo miri test --lib
+        cargo +nightly miri setup
+        cargo +nightly miri test --lib --features ffi ffi::
