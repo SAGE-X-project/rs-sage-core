@@ -124,6 +124,8 @@ jobs:
       uses: Swatinem/rust-cache@v2
 
     - name: Run Miri on the library tests
+      # rust-toolchain.toml takes precedence over the nightly installed
+      # above, and only nightly ships Miri; select it explicitly.
       run: |
-        cargo miri setup
-        cargo miri test --lib
+        cargo +nightly miri setup
+        cargo +nightly miri test --lib
