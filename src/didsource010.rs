@@ -139,3 +139,71 @@ pub fn project(observed: &ObservedRecord, projection: Projection) -> Result<Docu
         content_type: projection.media_type(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One active record with a single accepted key. The observer checks
+    /// records before projection; these views skip it to reach the checks
+    /// `project` keeps for itself.
+    fn view(alg: &str, key: &str) -> Value {
+        json!({
+            "id": "did:sage:test:1",
+            "state": "active",
+            "version": "1",
+            "controller": "did:sage:test:1",
+            "keys": [{"name": "k1", "state": "accepted", "alg": alg, "key": key}],
+            "services": [],
+        })
+    }
+
+    fn code(view: Value) -> String {
+        match project(&ObservedRecord::for_tests(view, 0), Projection::Core10) {
+            Err(Error::ValidationError(code)) => code,
+            Err(e) => panic!("wrong error: {e}"),
+            Ok(_) => panic!("projected"),
+        }
+    }
+
+    #[test]
+    fn a_well_formed_key_projects() {
+        let key = URL_SAFE_NO_PAD.encode([7u8; 65]);
+        let observed = ObservedRecord::for_tests(view("ecdsa-p256-sha256", &key), 0);
+        assert!(project(&observed, Projection::Did11).is_ok());
+    }
+
+    #[test]
+    fn key_material_that_is_not_base64url_is_invalid() {
+        assert_eq!(code(view("ed25519", "not base64!")), "record.invalid");
+    }
+
+    #[test]
+    fn an_ec_key_that_is_not_an_uncompressed_point_is_invalid() {
+        let key = URL_SAFE_NO_PAD.encode([7u8; 33]);
+        assert_eq!(code(view("ecdsa-p256-sha256", &key)), "record.invalid");
+    }
+
+    #[test]
+    fn an_unknown_algorithm_is_invalid() {
+        let key = URL_SAFE_NO_PAD.encode([7u8; 32]);
+        assert_eq!(code(view("rsa", &key)), "record.invalid");
+    }
+
+    #[test]
+    fn a_record_without_keys_is_invalid() {
+        let mut v = view("ed25519", "");
+        v.as_object_mut().unwrap().remove("keys");
+        assert_eq!(code(v), "record.invalid");
+    }
+
+    #[test]
+    fn a_document_over_256_kib_is_refused() {
+        let mut v = view("ed25519", &URL_SAFE_NO_PAD.encode([7u8; 32]));
+        let uri = format!("https://example.com/{}", "a".repeat(1024));
+        v["services"] = (0..300)
+            .map(|i| json!({"name": format!("s{i}"), "type": "T", "uri": uri}))
+            .collect();
+        assert_eq!(code(v), "size.exceeded");
+    }
+}
