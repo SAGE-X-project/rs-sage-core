@@ -35,7 +35,7 @@ jobs:
       - name: Install coverage tool
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov@0.6.21
+          tool: cargo-llvm-cov@0.9.1
       - name: Prepare the library lockfile
         run: cargo generate-lockfile
       - name: Run units and collect coverage

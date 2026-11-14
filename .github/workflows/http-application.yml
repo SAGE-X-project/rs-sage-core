@@ -41,7 +41,7 @@ jobs:
       - name: Install coverage tool
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov@0.6.21
+          tool: cargo-llvm-cov@0.9.1
       - name: Prepare library dependencies
         run: cargo generate-lockfile
       - name: Observe fixed handshake key authority units
