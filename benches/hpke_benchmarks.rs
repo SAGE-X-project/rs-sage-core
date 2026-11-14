@@ -5,24 +5,22 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-// The legacy X25519 API requires rand_core 0.6.
-use rand_core_06::OsRng;
 use sage_crypto_core::hpke::{combine_secrets, derive_traffic_keys, make_ack_tag, verify_ack_tag};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 fn bench_x25519_key_generation(c: &mut Criterion) {
     c.bench_function("x25519_key_generation", |b| {
-        b.iter(|| EphemeralSecret::random_from_rng(OsRng));
+        b.iter(|| EphemeralSecret::random_from_rng(&mut rand::rng()));
     });
 }
 
 fn bench_x25519_diffie_hellman(c: &mut Criterion) {
-    let bob_secret = EphemeralSecret::random_from_rng(OsRng);
+    let bob_secret = EphemeralSecret::random_from_rng(&mut rand::rng());
     let bob_public = PublicKey::from(&bob_secret);
 
     c.bench_function("x25519_diffie_hellman", |b| {
         b.iter(|| {
-            let alice_secret = EphemeralSecret::random_from_rng(OsRng);
+            let alice_secret = EphemeralSecret::random_from_rng(&mut rand::rng());
             alice_secret.diffie_hellman(black_box(&bob_public))
         });
     });
