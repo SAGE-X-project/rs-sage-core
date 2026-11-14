@@ -89,7 +89,7 @@ fn hop_inputs() -> (Vec<u8>, Vec<u8>, HopPolicy, HopPolicy) {
         manifest: canonical(&fixture["approved_manifest"]),
     };
     let incoming = signed_hop(parent, 3);
-    let original = g::original_commitment(&[incoming.clone()]).unwrap();
+    let original = g::original_commitment(std::slice::from_ref(&incoming)).unwrap();
     let mut child: Value = serde_json::from_slice(&envelope()).unwrap();
     child["intent"]["original_digest"] = json!(original);
     let outgoing = signed_hop(child, 1);

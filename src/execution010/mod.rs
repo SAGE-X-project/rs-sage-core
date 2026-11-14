@@ -72,7 +72,7 @@ fn envelope(s: &str, empty: bool) -> bool {
         return empty;
     }
     s.len() <= 2 * 1024 * 1024
-        && s.len() % 2 == 0
+        && s.len().is_multiple_of(2)
         && s.bytes()
             .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
 }

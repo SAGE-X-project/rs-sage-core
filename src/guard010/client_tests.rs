@@ -200,7 +200,7 @@ fn hop_client_capture_and_parent_gate() {
     let c = text(&v["input"], "expected_issuer");
     let mut policy = v["input"]["approved_policy"].clone();
     policy["issuer"] = json!(b);
-    let digest = original_commitment(&[incoming.clone()]).unwrap();
+    let digest = original_commitment(std::slice::from_ref(&incoming)).unwrap();
     child["intent"]["issuer"] = json!(b);
     child["intent"]["recipient"] = json!(c);
     child["intent"]["keyid"] = json!(format!("{b}#signing-1"));

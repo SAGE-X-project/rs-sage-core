@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Toolchain
+- `rust-toolchain.toml` and the CI workflows use the stable toolchain instead
+  of pinning 1.88.0. `rust-version` stays 1.88, but CI no longer builds with it.
+- Code flagged by the newer Clippy now uses `is_multiple_of`, `checked_div`
+  and `slice::from_ref`. Behavior is unchanged.
+- The coverage jobs use cargo-llvm-cov 0.9.1, which finds test binaries in the
+  build directory layout of current Cargo.
+- Unit tests cover the checks `didsource010::project` keeps for itself: key
+  material that is not base64url, EC keys that are not uncompressed points,
+  unknown algorithms, records without keys, and documents over 256 KiB.
+
 ### Deprecated
 - Legacy APIs with a SAGE 0.10.0 replacement carry `#[deprecated(since = "0.4.0")]`
   (docs/legacy-010-deprecation.md, class A) and keep their behavior:

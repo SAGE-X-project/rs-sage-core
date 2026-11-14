@@ -88,6 +88,20 @@ impl ObservedRecord {
         &self.observed_at
     }
 }
+#[cfg(test)]
+impl ObservedRecord {
+    /// A record taken as already observed at `unix`, so projection can be
+    /// tested on views the observer would have refused.
+    pub(crate) fn for_tests(view: serde_json::Value, unix: i64) -> Self {
+        Self {
+            record: serde_json::to_vec(&view).unwrap(),
+            view,
+            source: "test".into(),
+            completed: Stamp { mono_ms: 0, unix },
+            observed_at: serde_json::json!(unix),
+        }
+    }
+}
 /// A serialized complete reader for public DID views. Protected operations
 /// still use their own fresh RegistryGate; views are not reusable authority.
 pub struct RecordObserver {
