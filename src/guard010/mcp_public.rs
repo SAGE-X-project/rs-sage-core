@@ -101,7 +101,7 @@ fn millis(d: Duration, max: u64) -> Result<i64> {
     ensure(
         d >= Duration::from_millis(1)
             && d <= Duration::from_millis(max)
-            && d.subsec_nanos() % 1_000_000 == 0,
+            && d.subsec_nanos().is_multiple_of(1_000_000),
     )?;
     i64::try_from(d.as_millis()).map_err(|_| Invalid)
 }
@@ -197,7 +197,7 @@ impl MCPHost {
                 && (1..=256).contains(&b.owners)
                 && b.tick >= Duration::from_millis(1)
                 && b.tick <= Duration::from_millis(1000)
-                && b.tick.subsec_nanos() % 1_000_000 == 0
+                && b.tick.subsec_nanos().is_multiple_of(1_000_000)
                 && b.tick < b.client,
         )?;
         let shared = Arc::new(Mutex::new(clock));

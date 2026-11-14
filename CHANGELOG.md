@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Toolchain
+- `rust-toolchain.toml` and the CI workflows use the stable toolchain instead
+  of pinning 1.88.0. `rust-version` stays 1.88, but CI no longer builds with it.
+- Code flagged by the newer Clippy now uses `is_multiple_of`, `checked_div`
+  and `slice::from_ref`. Behavior is unchanged.
+
 ### Deprecated
 - Legacy APIs with a SAGE 0.10.0 replacement carry `#[deprecated(since = "0.4.0")]`
   (docs/legacy-010-deprecation.md, class A) and keep their behavior:

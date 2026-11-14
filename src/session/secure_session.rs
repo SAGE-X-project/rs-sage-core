@@ -265,11 +265,8 @@ impl SecureSession {
     }
 
     fn generation(&self, seq: u64) -> u64 {
-        if self.config.rekey_interval == 0 {
-            0
-        } else {
-            seq / self.config.rekey_interval
-        }
+        // An interval of 0 disables rekeying: every sequence is generation 0.
+        seq.checked_div(self.config.rekey_interval).unwrap_or(0)
     }
 
     fn key_for(&self, base: &[u8; 32], direction: &str, seq: u64) -> Result<Zeroizing<[u8; 32]>> {
