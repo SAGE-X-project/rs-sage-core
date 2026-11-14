@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn test_timestamp_exact_boundary() {
         let service = VerificationService::new();
-        let now = chrono::Utc::now().timestamp();
+        let now = 1_700_000_000;
 
         // Message exactly at max age boundary
         let msg = MessageBuilder::new()
@@ -599,7 +599,7 @@ mod tests {
             ..Default::default()
         };
 
-        let is_valid = service.verify_timestamp(&msg, &options).unwrap();
+        let is_valid = service.verify_timestamp_at(&msg, &options, now).unwrap();
         assert!(is_valid); // Should be valid at the boundary
     }
 
@@ -1325,7 +1325,7 @@ mod tests {
     #[test]
     fn test_timestamp_at_clock_skew_boundary() {
         let service = VerificationService::new();
-        let now = chrono::Utc::now().timestamp();
+        let now = 1_700_000_000;
 
         // Message exactly at 60 seconds in future (at boundary)
         let msg = MessageBuilder::new()
@@ -1340,14 +1340,14 @@ mod tests {
             ..Default::default()
         };
 
-        let is_valid = service.verify_timestamp(&msg, &options).unwrap();
+        let is_valid = service.verify_timestamp_at(&msg, &options, now).unwrap();
         assert!(is_valid); // Should be valid at boundary
     }
 
     #[test]
     fn test_timestamp_just_beyond_clock_skew() {
         let service = VerificationService::new();
-        let now = chrono::Utc::now().timestamp();
+        let now = 1_700_000_000;
 
         // Message just beyond clock skew (61 seconds in future)
         let msg = MessageBuilder::new()
@@ -1362,7 +1362,7 @@ mod tests {
             ..Default::default()
         };
 
-        let is_valid = service.verify_timestamp(&msg, &options).unwrap();
+        let is_valid = service.verify_timestamp_at(&msg, &options, now).unwrap();
         assert!(!is_valid); // Should be invalid
     }
 
