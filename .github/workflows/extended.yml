@@ -126,6 +126,10 @@ jobs:
     - name: Run Miri on the library tests
       # rust-toolchain.toml takes precedence over the nightly installed
       # above, and only nightly ships Miri; select it explicitly.
+      # The tests read the system clock and OS randomness, which Miri
+      # isolates by default.
+      env:
+        MIRIFLAGS: -Zmiri-disable-isolation
       run: |
         cargo +nightly miri setup
         cargo +nightly miri test --lib
