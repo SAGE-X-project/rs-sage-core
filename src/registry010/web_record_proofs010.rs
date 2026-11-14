@@ -203,6 +203,7 @@ pub(super) fn check_record_proofs_010(record: &Value, expected_did: &str) -> Res
 mod tests {
     use super::*;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use ed25519_dalek::Signer as _;
     use serde_json::{json, Value as JsonValue};
 
     const DID: &str = "did:sage:web:agents.example.com:billing-bot";
